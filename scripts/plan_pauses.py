@@ -1,0 +1,214 @@
+"""Pause rhythm layer (PLAN.md 2.4 table, 3.2 step 2).
+
+Every gap between consecutive words of at least SHOW_MIN gets a RECOMMENDED keep length:
+
+    NORMAL                keep 0.25s   ordinary sentence boundary
+    ENUMERATION           keep 0.11s   items in a list - tighter
+    QUOTE_TO_EXPLANATION  keep 0.40s   quoting then explaining - more air
+    TRANSITION            keep all     topic change - intentional breath
+    QUESTION_TO_ANSWER    keep all     rhetorical question then answer
+    SPEAKER_CHANGE        keep all     handled by the speaker-block layer, not here
+
+Gaps of LLM_MIN or longer are classified by one LLM call (with a few words of context on
+each side); shorter ones are NORMAL. Model: claude-haiku-4-5 (PLAN.md 12장 모델 선택) - this
+is high-volume categorical labeling driven almost entirely by lexical discourse markers
+("다시 말하면", "첫째", question marks), not the harder semantic judgment NG classification
+needs, so the cheapest tier is the cost-effective choice here. A wrong label only changes
+how much silence is trimmed, never what's said, so the downside of a miss is small (PLAN.md
+2.4 "정상 발화는 절대 잘리지 않는다" doesn't even apply to pauses - there's no speech here to
+protect). In the review UI each gap is a gauge the user can
+drag (down to 0 = delete the pause entirely) and double-click to return to this
+recommendation. Changing a global target in the UI moves every recommendation with it.
+
+The trim never touches speech: it removes the MIDDLE of the gap, leaving the kept length
+split around it, plus PROTECT_SEC after the previous word and before the next (2.4 hard
+rule 4: 10-20ms boundary protection).
+
+Writes <folder>/edit/pauses.json. Existing labels are reused for unchanged gaps, so
+re-running does not re-pay for classification.
+
+Usage:
+    python scripts/plan_pauses.py <videos/NAME> [--no-llm]
+"""
+from __future__ import annotations
+import argparse
+import json
+import os
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel
+
+from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json
+
+SHOW_MIN = 0.12       # below this a gap is articulation, not a pause; Scribe jitter is 50-100ms
+LLM_MIN = 0.35        # gaps this long get context-classified; shorter ones are NORMAL
+PROTECT_SEC = 0.02    # never cut within this of a word boundary
+MIN_TRIM = 0.05       # don't bother removing less than this
+LONG_GAP_FALLBACK = 1.5  # without an LLM, gaps this long are assumed intentional
+
+PRESETS = {
+    "NORMAL":               {"target": 0.25, "trim": True},
+    "ENUMERATION":          {"target": 0.11, "trim": True},
+    "QUOTE_TO_EXPLANATION": {"target": 0.40, "trim": True},
+    "TRANSITION":           {"target": None, "trim": False},
+    "QUESTION_TO_ANSWER":   {"target": None, "trim": False},
+    "SPEAKER_CHANGE":       {"target": None, "trim": False},
+}
+
+Style = Literal["NORMAL", "ENUMERATION", "QUOTE_TO_EXPLANATION", "TRANSITION", "QUESTION_TO_ANSWER"]
+
+
+class GapLabel(BaseModel):
+    gap_id: int
+    style: Style
+
+
+class GapLabels(BaseModel):
+    labels: list[GapLabel]
+
+
+SYSTEM = """\
+너는 한국어 강의 영상의 편집자다. 문장과 문장 사이의 쉼(무음)을 문맥에 따라 분류한다.
+각 쉼에 대해 앞 문맥과 뒤 문맥이 주어진다. 다음 중 하나로 분류하라.
+
+NORMAL: 일반적인 문장 사이. 특별한 의도 없는 쉼.
+ENUMERATION: 나열 중 ("첫째... 둘째...", "A, B, C"). 항목 사이의 쉼.
+QUOTE_TO_EXPLANATION: 인용·개념 제시 후 설명으로 넘어가는 지점 ("~라고 합니다. (쉼) 이게 무슨 뜻이냐면").
+TRANSITION: 주제가 바뀌는 지점. 새 섹션·새 화제의 시작. 의도적 호흡.
+QUESTION_TO_ANSWER: 청중에게 질문을 던지고 답하기 전의 쉼 ("왜 그럴까요? (쉼) 이유는").
+
+판단이 애매하면 NORMAL. 모든 gap_id에 대해 정확히 하나씩 답하라.
+"""
+
+
+def usable_range(gap_start: float, gap_end: float) -> tuple[float, float]:
+    return gap_start + PROTECT_SEC, gap_end - PROTECT_SEC
+
+
+def recommended_keep(gap: dict, targets: dict[str, float | None]) -> float:
+    """Seconds of silence to keep for this gap under the given per-style targets."""
+    us, ue = usable_range(gap["gap_start"], gap["gap_end"])
+    usable = max(0.0, ue - us)
+    target = targets.get(gap["style"])
+    if target is None or usable - target < MIN_TRIM:
+        return round(usable, 3)
+    return round(target, 3)
+
+
+def trim_for_keep(gap: dict, keep_sec: float) -> dict | None:
+    """The span to remove so that `keep_sec` of the gap remains (None = nothing removed)."""
+    us, ue = usable_range(gap["gap_start"], gap["gap_end"])
+    usable = ue - us
+    if usable <= 0 or keep_sec >= usable - 0.01:
+        return None
+    if keep_sec <= 0.001:
+        return {"start": round(us, 3), "end": round(ue, 3)}
+    half = keep_sec / 2
+    return {"start": round(us + half, 3), "end": round(ue - half, 3)}
+
+
+def build_gaps(words: list[dict]) -> list[dict]:
+    gaps = []
+    for i in range(len(words) - 1):
+        a, b = words[i], words[i + 1]
+        dur = b["start"] - a["end"]
+        if dur < SHOW_MIN:
+            continue
+        gaps.append({
+            "id": len(gaps),
+            "prev_wi": a["wi"], "next_wi": b["wi"],
+            "gap_start": round(a["end"], 3), "gap_end": round(b["start"], 3),
+            "duration": round(dur, 3),
+            "speaker_change": a.get("speaker_id") != b.get("speaker_id"),
+            "before": " ".join(w["text"] for w in words[max(0, i - 7):i + 1]),
+            "after": " ".join(w["text"] for w in words[i + 1:i + 8]),
+        })
+    return gaps
+
+
+def classify_with_llm(gaps: list[dict]) -> dict[int, str]:
+    import anthropic
+    client = anthropic.Anthropic()
+    labels: dict[int, str] = {}
+    chunk = 120
+    for k in range(0, len(gaps), chunk):
+        part = gaps[k:k + chunk]
+        lines = [f"[gap {g['id']}] ({g['duration']:.2f}s)\n  앞: …{g['before']}\n  뒤: {g['after']}…" for g in part]
+        resp = client.messages.parse(
+            model="claude-haiku-4-5-20251001", max_tokens=8000, system=SYSTEM,
+            messages=[{"role": "user", "content": "\n\n".join(lines)}], output_format=GapLabels,
+            thinking={"type": "disabled"})
+        for lab in resp.parsed_output.labels:
+            labels[lab.gap_id] = lab.style
+    return labels
+
+
+def previous_labels(folder: Path) -> dict[tuple[int, int], str]:
+    p = edit_dir(folder) / "pauses.json"
+    if not p.exists():
+        return {}
+    old = json.loads(p.read_text())
+    return {(g["prev_wi"], g["next_wi"]): g["style"] for g in old.get("gaps", []) if g.get("llm_labeled")}
+
+
+def plan(folder: Path, use_llm: bool = True) -> Path:
+    words = words_only(load_transcript(folder))
+    gaps = build_gaps(words)
+    reuse = previous_labels(folder)
+
+    labels: dict[int, str] = {}
+    need = [g for g in gaps if not g["speaker_change"] and g["duration"] >= LLM_MIN]
+    for g in need:
+        key = (g["prev_wi"], g["next_wi"])
+        if key in reuse:
+            labels[g["id"]] = reuse[key]
+    todo = [g for g in need if g["id"] not in labels]
+    if use_llm and todo:
+        load_env()
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            print(f"classifying {len(todo)} gaps with claude-haiku-4-5 ({len(need) - len(todo)} reused)...")
+            labels.update(classify_with_llm(todo))
+        else:
+            print("ANTHROPIC_API_KEY not set - using conservative fallback labels")
+
+    targets = {k: v["target"] for k, v in PRESETS.items()}
+    for g in gaps:
+        if g["speaker_change"]:
+            style = "SPEAKER_CHANGE"
+        elif g["id"] in labels:
+            style = labels[g["id"]]
+        elif g["duration"] >= LLM_MIN:
+            style = "TRANSITION" if g["duration"] >= LONG_GAP_FALLBACK else "NORMAL"
+        else:
+            style = "NORMAL"
+        g["style"] = style
+        g["llm_labeled"] = g["id"] in labels
+        g["rec_keep"] = recommended_keep(g, targets)
+        g["trim"] = trim_for_keep(g, g["rec_keep"])
+
+    trimmed = [g for g in gaps if g["trim"]]
+    removed = sum(g["trim"]["end"] - g["trim"]["start"] for g in trimmed)
+    by_style: dict[str, int] = {}
+    for g in gaps:
+        by_style[g["style"]] = by_style.get(g["style"], 0) + 1
+    print(f"gaps >= {SHOW_MIN}s: {len(gaps)}  " + ", ".join(f"{k}={v}" for k, v in sorted(by_style.items())))
+    print(f"recommended trims: {len(trimmed)} gaps, {removed:.1f}s of silence removed")
+
+    out = edit_dir(folder) / "pauses.json"
+    write_json(out, {"presets": PRESETS, "show_min": SHOW_MIN, "llm_min": LLM_MIN,
+                     "protect_sec": PROTECT_SEC, "gaps": gaps})
+    print(f"wrote {out}")
+    return out
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("folder")
+    ap.add_argument("--no-llm", action="store_true")
+    args = ap.parse_args()
+    plan(video_dir(args.folder), use_llm=not args.no_llm)
+
+
+if __name__ == "__main__":
+    main()

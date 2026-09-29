@@ -1,0 +1,375 @@
+"""전체 루프 (docs/기획/03-두-관점-평가.md) - 이음새 부분 루프(seam_refine.py)가 컷 하나하나의
+매끄러움만 보는 것과 달리, 결과 전체를 두 관점에서 읽는다.
+
+  - PD 평가 (원본 + 잘린 부분 + 이유를 다 보고 판단): 맥락상 더 잘랐어야 하는데 안 잘린 곳
+    (missed_cut - NG/화자 이탈이 아직 남아있음)과, 맥락상 필요한데 잘려서 결과가 이상해질
+    구간(over_cut)을 양방향으로 찾는다.
+  - 시청자 평가 (결과 텍스트만 봄, 무엇이 잘렸는지 모름): "이 글이 그 자체로 완결된 내용으로
+    읽히는가"를 순수하게 판정한다 - 흐름 단절(jump), 이해 불가(unclear), 과밀/지루함 등.
+
+만드는 모델과 판정 모델이 다르다는 원칙(seam_refine.py와 동일)에 더해, PD와 시청자도 서로 다른
+모델이다.
+
+2026-09-29 2차 구현 - "축소분 제대로 구현해" 반영:
+  - **ng.json 역전파**: `draft_cuts.json`의 `sources`(각 병합 컷이 어느 ng 항목/화자블록 줄에서
+    왔는지)를 거슬러 올라가, over_cut·outtake·시청자 jump/unclear를 실제 ng 항목의 flag까지
+    반영한다. 이제 검토 화면에 뜬다(ng.json을 읽는 건 이미 server.py가 하니까).
+  - **재투입 반복** (문서 2.7, 최대 2회): missed_cut으로 새 후보가 생기면 assemble_draft.py ->
+    seam_refine.py를 다시 돌려 결과 텍스트가 바뀐 상태로 PD·시청자를 한 번 더 부른다. 아무것도
+    안 바뀌면 그 자리에서 멈춘다(텍스트가 같으면 다시 불러도 의미 있는 새 정보가 없다).
+  - **outtake**: `ng.json` 항목에 `outtake_suggested`/`outtake_reason`으로 남긴다.
+    `server.py`의 `payload()`가 이 두 필드를 프론트엔드로 그대로 전달한다(2026-09-29 추가).
+    `decisions.json`의 `outtakes`(별표) 리스트는 사용자가 직접 켜고 끄는 것이라 자동으로
+    채우지 않음 - "제안됨"과 "사용자가 확정한 별"을 구분해야 해서다. 이 제안을 화면에
+    배지 등으로 표시하는 건 검토 화면 자체를 다루는 세션 몫으로 남아 있다.
+
+Usage:
+    python scripts/global_review.py <videos/NAME> [--max-rounds 2]
+"""
+from __future__ import annotations
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Literal, Optional
+
+from pydantic import BaseModel
+
+from common import (load_env, video_dir, edit_dir, load_transcript, words_only, write_json,
+                    trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs)
+
+PD_MODEL = "claude-opus-5-5"
+VIEWER_MODEL = "claude-fable-5-1"
+VIEWER_FALLBACK_MODEL = "claude-sonnet-5"
+HERE = Path(__file__).resolve().parent
+
+
+# --------------------------------------------------------------------------------- views
+
+def build_pd_view(words: list[dict], final_cuts: list[dict]) -> str:
+    """원본 전체를 컷이 인라인으로 보이는 형태로, 줄마다 단어 id 구간을 표시한다(missed_cut을
+    찾았을 때 정확한 wi_start/wi_end를 답하려면 모델이 참조할 id가 텍스트에 직접 있어야 한다 -
+    없으면 모델이 추측한 값을 내놓고 대부분 틀린다). 잘린 부분도 그대로 보여준다(PD는 뭐가 왜
+    잘렸는지 알아야 판단할 수 있음)."""
+    from detect_speaker_blocks import split_lines
+    cuts_sorted = sorted(final_cuts, key=lambda c: c["wi_start"])
+    cut_at_start = {c["wi_start"]: c for c in cuts_sorted}
+
+    lines = split_lines(words)
+    out = []
+    for ln in lines:
+        seg = words[ln["wi_start"]:ln["wi_end"] + 1]
+        pieces = []
+        i = 0
+        while i < len(seg):
+            wi = seg[i]["wi"]
+            if wi in cut_at_start:
+                c = cut_at_start[wi]
+                text = " ".join(w["text"] for w in words[c["wi_start"]:c["wi_end"]])
+                pieces.append(f"⟦CUT id={c['cut_id']} flag={c.get('flag') or '없음'}⟧{text}⟦/CUT⟧")
+                i += c["wi_end"] - wi
+            else:
+                pieces.append(seg[i]["text"])
+                i += 1
+        out.append(f"[{ln['wi_start']}-{ln['wi_end']}] {' '.join(pieces)}")
+    return "\n".join(out)
+
+
+def gap_mark(gap: float) -> str:
+    if gap >= 0.8:
+        return " ··· "
+    if gap >= 0.4:
+        return " ·· "
+    if gap >= 0.15:
+        return " · "
+    return " "
+
+
+def build_viewer_view(words: list[dict], final_cuts: list[dict]) -> tuple[str, list[dict]]:
+    """잘린 부분은 전혀 안 보여준다. 결과에 남는 단어만, 쉼 표시와 함께. 이음새(컷 경계)마다
+    구간 번호(⟦S N⟧)를 매겨 시청자가 위치를 지목할 수 있게 하되, 무엇이 잘렸는지는 드러내지
+    않는다 - 구간이 끊긴다는 사실 자체는 시청자도 체감하는 것이라 숨기지 않는다."""
+    cut_ranges = sorted([(c["wi_start"], c["wi_end"]) for c in final_cuts])
+    segments: list[dict] = []
+    cur: list[dict] = []
+    seg_id = 0
+
+    def flush():
+        nonlocal cur, seg_id
+        if cur:
+            segments.append({"id": seg_id, "wi_start": cur[0]["wi"], "wi_end": cur[-1]["wi"] + 1,
+                             "words": cur})
+            seg_id += 1
+            cur = []
+
+    cut_set = set()
+    for s, e in cut_ranges:
+        cut_set.update(range(s, e))
+    for w in words:
+        if w["wi"] in cut_set:
+            flush()
+            continue
+        cur.append(w)
+    flush()
+
+    out = []
+    for seg in segments:
+        ws = seg["words"]
+        piece = [f"⟦S{seg['id']}⟧"]
+        for k, w in enumerate(ws):
+            piece.append(w["text"])
+            if k + 1 < len(ws):
+                piece.append(gap_mark(ws[k + 1]["start"] - w["end"]))
+        out.append(" ".join(piece))
+    return " ".join(out), segments
+
+
+# --------------------------------------------------------------------------------- PD
+
+class PDFinding(BaseModel):
+    type: Literal["missed_cut", "over_cut", "outtake"]
+    cut_id: Optional[int] = None      # over_cut/outtake: final_cuts의 cut_id
+    wi_start: Optional[int] = None    # missed_cut: 원본 단어 id (반열림)
+    wi_end: Optional[int] = None
+    reason: str
+    confidence: float
+    severity: Literal["high", "medium", "low"]
+
+
+class PDReview(BaseModel):
+    findings: list[PDFinding]
+
+
+PD_SYSTEM = """\
+너는 과학·논문 근거 기반 육아 강의 채널의 전담 편집자다. 이 채널 원칙: 재촬영은 마지막 시도만
+남긴다. 강조 반복과 교육적 재진술은 살린다. 카메라 밖 대화(촬영 지시 등)는 모두 지운다.
+
+아래는 원본 전체 트랜스크립트다. 줄마다 맨 앞 [123-130] 같은 표시가 그 줄의 단어 id 구간이다
+(반열림 - 130은 포함 안 됨). ⟦CUT id=N flag=...⟧잘린 텍스트⟦/CUT⟧ 표시가 이미 컷 결정이 내려진
+구간이다. flag=복원후보는 사람이 검토할 예정, flag=없음은 이미 확정 적용된 컷이다.
+
+다음을 찾아라(빈도 낮음 - 없으면 findings 빈 리스트). **이미 CUT 표시된 구간과 겹치는 위치는
+missed_cut으로 다시 보고하지 마라** - 이미 처리 중이다.
+- missed_cut: CUT 표시가 안 됐는데 남아있으면 안 되는 것 - 재시작의 앞 시도, 카메라 밖 대화,
+  말버릇 반복. **반드시** wi_start/wi_end를 채워라 - 그 구간이 속한 줄 맨 앞의 [숫자-숫자] 표시를
+  보고 실제 단어 위치로 답하라(대략 짐작하지 말고, 문제되는 단어들이 정확히 어디서 시작해서
+  어디서 끝나는지 줄 안에서 세어라). wi_start/wi_end 없이는 이 finding을 적용할 수 없다.
+- over_cut: CUT 표시된 구간인데, 그 안에 결과에서 사라지면 안 되는 정보(새 사실·수치·예시·조건)가
+  있어서 과하게 잘린 것. **반드시** 그 ⟦CUT id=N⟧의 N을 cut_id에 그대로 채워라.
+- outtake: 재미있거나 웃긴 NG로, 엔딩 아웃테이크 코너에 쓸 만한 것. 마찬가지로 cut_id를 채워라.
+
+각 finding: type, (해당 필드), reason(한국어 한 문장), confidence(0-1), severity(high/medium/low).
+"""
+
+
+def pd_review(pd_view: str) -> list[PDFinding]:
+    import anthropic
+    client = anthropic.Anthropic()
+    resp = client.messages.parse(model=PD_MODEL, max_tokens=6000, system=PD_SYSTEM,
+                                 messages=[{"role": "user", "content": pd_view}],
+                                 output_format=PDReview, **thinking_kwargs(PD_MODEL))
+    return resp.parsed_output.findings
+
+
+# --------------------------------------------------------------------------------- viewer
+
+class ViewerFinding(BaseModel):
+    type: Literal["jump", "unclear", "rushed", "dragging", "repetition", "boring"]
+    segment_id: int
+    quote: str
+    reason: str
+    severity: Literal["high", "medium", "low"]
+
+
+class ViewerOverall(BaseModel):
+    flow: int
+    pace: int
+    comment: str
+
+
+class ViewerReview(BaseModel):
+    findings: list[ViewerFinding]
+    overall: ViewerOverall
+
+
+VIEWER_SYSTEM = """\
+너는 3세 아이를 키우는 부모다. 퇴근길 지하철에서 휴대폰으로 육아 강의 영상을 1배속으로 보고 있다.
+아래는 영상에서 들리는 말을 받아 적은 것이다. ⟦S번호⟧는 구간 표시, `·`은 짧은 쉼, `··`은 중간 쉼,
+`···`은 긴 쉼이다.
+
+보다가 "어?" 하고 걸리는 곳, 너무 빨라서 따라가기 힘든 곳, 늘어져서 넘기고 싶은 곳, 같은 말을 또
+듣는 느낌이 드는 곳, 지루해서 스킵하고 싶은 곳을 솔직하게 짚어라. 문제없으면 없다고 하라.
+
+각 finding: type(jump/unclear/rushed/dragging/repetition/boring), segment_id(가장 가까운 ⟦S번호⟧),
+quote(짧은 인용), reason(한 문장), severity. 마지막에 overall(flow 1-5, pace 1-5, comment 한 문장).
+"""
+
+
+def viewer_review(viewer_view: str) -> tuple[ViewerReview, str]:
+    import anthropic
+    client = anthropic.Anthropic()
+    model = VIEWER_MODEL
+    try:
+        resp = client.messages.parse(model=model, max_tokens=4000, system=VIEWER_SYSTEM,
+                                     messages=[{"role": "user", "content": viewer_view}],
+                                     output_format=ViewerReview, **thinking_kwargs(model))
+    except Exception as e:
+        print(f"  {VIEWER_MODEL} 호출 실패({e}) - {VIEWER_FALLBACK_MODEL}로 대체")
+        model = VIEWER_FALLBACK_MODEL
+        resp = client.messages.parse(model=model, max_tokens=4000, system=VIEWER_SYSTEM,
+                                     messages=[{"role": "user", "content": viewer_view}],
+                                     output_format=ViewerReview, thinking={"type": "disabled"})
+    return resp.parsed_output, model
+
+
+# --------------------------------------------------------------------------------- 한 라운드
+
+def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
+    ng_path = edit / "ng.json"
+    ng_items = json.loads(ng_path.read_text()) if ng_path.exists() else []
+    final_path = edit / "final_cuts.json"
+    final_cuts = json.loads(final_path.read_text())["cuts"] if final_path.exists() else []
+    draft_path = edit / "draft_cuts.json"
+    draft_cuts = json.loads(draft_path.read_text())["cuts"] if draft_path.exists() else []
+
+    pd_view = build_pd_view(words, final_cuts)
+    viewer_view, segments = build_viewer_view(words, final_cuts)
+    print(f"  PD 입력 {len(pd_view)}자 ({PD_MODEL}), 시청자 입력 {len(viewer_view)}자 "
+          f"({len(segments)}구간, {VIEWER_MODEL} 시도)")
+
+    pd_findings = pd_review(pd_view)
+    print(f"  PD 발견: {len(pd_findings)}건")
+    for f in pd_findings:
+        print(f"    {f.type} sev={f.severity} conf={f.confidence:.2f} :: {f.reason}")
+
+    viewer_result, viewer_model_used = viewer_review(viewer_view)
+    print(f"  시청자 발견: {len(viewer_result.findings)}건 (flow={viewer_result.overall.flow} "
+          f"pace={viewer_result.overall.pace})")
+    for f in viewer_result.findings:
+        print(f"    {f.type} sev={f.severity} S{f.segment_id} :: {f.reason}")
+
+    seg_by_id = {s["id"]: s for s in segments}
+    final_by_id = {c["cut_id"]: c for c in final_cuts}
+
+    # missed_cut -> 새 ng 후보 (항상 flag=restore - 검증 안 된 새 경로라 보수적으로)
+    new_ng_items = []
+    for f in pd_findings:
+        if f.type != "missed_cut" or f.wi_start is None or f.wi_end is None:
+            continue
+        seg = [w for w in words if f.wi_start <= w["wi"] < f.wi_end]
+        if not seg:
+            continue
+        new_ng_items.append({
+            "raw_word_index_start": f.wi_start, "raw_word_index_end": f.wi_end,
+            "follow_word_index_start": f.wi_end, "follow_word_index_end": f.wi_end,
+            "start": seg[0]["start"], "end": seg[-1]["end"],
+            "duration": round(seg[-1]["end"] - seg[0]["start"], 3),
+            "n_words": len(seg), "deleted_text": " ".join(w["text"] for w in seg),
+            "following_text_in_raw": "", "similarity_to_following": None, "prefix_similarity": None,
+            "dominant_speaker": seg[0].get("speaker_id"), "n_speakers_in_run": len({w.get("speaker_id") for w in seg}),
+            "has_word_fragment": False, "has_internal_repetition": False,
+            "label": "GLOBAL_REVIEW_MISSED_CUT",
+            "route": "CUT", "flag": "restore",
+            "route_reason": f"전체 루프 PD 평가: {f.reason} (confidence={f.confidence:.2f}) - 복원 후보로 자름",
+            "llm_classification": None, "llm_model": PD_MODEL,
+        })
+
+    # over_cut/outtake (PD) -> final_cuts.json + ng.json 역전파
+    flag_updates, outtake_marks, ng_backprop = 0, 0, 0
+    for f in pd_findings:
+        if f.type not in ("over_cut", "outtake") or f.cut_id not in final_by_id:
+            continue
+        c = final_by_id[f.cut_id]
+        if f.type == "over_cut":
+            reason = f"전체 루프 PD: 정보 손실 의심 - {f.reason}"
+            if c.get("flag") != "restore":
+                flag_updates += 1
+            c["flag"] = "restore"
+            c["flag_reason"] = f"{c.get('flag_reason') or ''}; {reason}".strip("; ")
+            for idx in trace_to_ng_indices(f.cut_id, draft_cuts):
+                if apply_flag_to_ng(ng_items, idx, reason):
+                    ng_backprop += 1
+        else:  # outtake
+            for idx in trace_to_ng_indices(f.cut_id, draft_cuts):
+                if idx < len(ng_items):
+                    ng_items[idx]["outtake_suggested"] = True
+                    ng_items[idx]["outtake_reason"] = f.reason
+                    outtake_marks += 1
+
+    # 시청자 jump/unclear -> 구조적으로 걸 수 있는 인접 컷에 flag (final_cuts + ng.json 역전파)
+    for vf in viewer_result.findings:
+        if vf.type not in ("jump", "unclear"):
+            continue
+        seg = seg_by_id.get(vf.segment_id)
+        if not seg:
+            continue
+        for c in final_cuts:
+            if c["wi_end"] == seg["wi_start"] or c["wi_start"] == seg["wi_end"]:
+                reason = f"전체 루프 시청자: {vf.type} - {vf.reason}"
+                if c.get("flag") != "restore":
+                    flag_updates += 1
+                c["flag"] = "restore"
+                c["flag_reason"] = f"{c.get('flag_reason') or ''}; {reason}".strip("; ")
+                for idx in trace_to_ng_indices(c["cut_id"], draft_cuts):
+                    if apply_flag_to_ng(ng_items, idx, reason):
+                        ng_backprop += 1
+
+    if new_ng_items:
+        ng_items.extend(new_ng_items)
+    write_json(ng_path, ng_items)
+    write_json(final_path, {"cuts": final_cuts})
+
+    print(f"  적용: 새 컷 후보 {len(new_ng_items)}건, final_cuts flag 갱신 {flag_updates}건, "
+          f"ng.json 역전파 {ng_backprop}건(검토 화면에 반영됨), outtake 표시 {outtake_marks}건")
+
+    return {
+        "pd_model": PD_MODEL, "viewer_model": viewer_model_used,
+        "pd_findings": [f.model_dump() for f in pd_findings],
+        "viewer_findings": [f.model_dump() for f in viewer_result.findings],
+        "viewer_overall": viewer_result.overall.model_dump(),
+        "new_ng_items": len(new_ng_items), "flag_updates": flag_updates,
+        "ng_backprop": ng_backprop, "outtake_marks": outtake_marks,
+    }
+
+
+def rerun_assemble_and_seam(folder: Path) -> None:
+    for script in ("assemble_draft.py", "seam_refine.py"):
+        subprocess.run([sys.executable, str(HERE / script), str(folder)], check=True)
+
+
+def iterate(folder: Path, max_rounds: int = 2) -> Path:
+    load_env()
+    edit = edit_dir(folder)
+    words = words_only(load_transcript(folder))
+
+    rounds = []
+    for r in range(1, max_rounds + 1):
+        print(f"=== 전체 루프 {r}/{max_rounds}라운드 ===")
+        result = one_round(folder, words, edit)
+        rounds.append(result)
+        if result["new_ng_items"] == 0:
+            print("  새로 반영할 컷 없음 - 결과 텍스트가 안 바뀌므로 재투입 종료")
+            break
+        if r == max_rounds:
+            print(f"  최대 라운드({max_rounds}) 도달 - 종료")
+            break
+        print("  missed_cut 반영 위해 assemble_draft -> seam_refine 재실행...")
+        rerun_assemble_and_seam(folder)
+
+    out = edit / "global_review.json"
+    write_json(out, {"rounds": rounds, "n_rounds": len(rounds)})
+    print(f"wrote {out} ({len(rounds)}라운드)")
+    return out
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("folder")
+    ap.add_argument("--max-rounds", type=int, default=2)
+    args = ap.parse_args()
+    iterate(video_dir(args.folder), max_rounds=args.max_rounds)
+
+
+if __name__ == "__main__":
+    main()
