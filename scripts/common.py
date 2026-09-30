@@ -32,20 +32,31 @@ def load_env() -> None:
 
 
 def ensure_api_keys() -> None:
-    """`load_env()`로 이미 있는 키는 그대로 쓰고, 없는 키만 대화식으로 물어봐서 `.env`에
-    저장한다 - 스킬을 처음 설치한 사람이 `ELEVENLABS_API_KEY not set` 같은 에러를 만나기 전에
-    자연스럽게 설정을 끝내도록 한다. 표준입력이 터미널이 아니면(백그라운드 실행 등) 물어볼 수
-    없으니 조용히 넘어가고, 이후 실제로 그 키가 필요한 단계에서 원래 하던 대로 명확한 에러를
-    낸다."""
+    """`load_env()`로 이미 있는 키는 그대로 쓰고, 없는 키만 채운다.
+
+    두 가지 실행 맥락을 구분한다:
+    - **사람이 직접 터미널에서 실행** (`python scripts/run.py ...`를 손으로 침): 표준입력이
+      진짜 터미널이라 `getpass`로 그 자리에서 대화식으로 물어보고 `.env`에 저장한다.
+    - **에이전트(클로드 코드)가 스킬로 대신 실행**: Bash 도구는 표준입력이 터미널이
+      아니라서(`sys.stdin.isatty()`가 항상 False, 2026-09-30 직접 확인) `getpass`가 아예
+      작동하지 않는다 - 예전엔 여기서 조용히 넘어가 버려서 한참 뒤 `transcribe.py`가 뜬금없이
+      에러를 냈다. 지금은 **필요한 키·설명·발급 링크·`.env`의 절대경로를 명확히 출력하고 즉시
+      종료**한다 - 에이전트가 이 출력을 읽고 사용자에게 대화로 물어본 뒤 그 경로에 직접
+      `.env`를 써주는 게 실제 온보딩 경로다(`SKILL.md` "에이전트가 지킬 것" 참고)."""
     load_env()
     missing = [(k, desc, url) for k, desc, url in REQUIRED_API_KEYS if not os.environ.get(k)]
     if not missing:
         return
+
+    env_path = PROJECT_ROOT / ".env"
+
     if not sys.stdin.isatty():
-        return
+        lines = [f"필요한 API 키가 없습니다 - {env_path}에 아래 형식으로 한 줄씩 추가해야 합니다:"]
+        for key, desc, url in missing:
+            lines.append(f"  {key}=<값>   # {desc}, 발급: {url}")
+        sys.exit("\n".join(lines))
 
     print("\n처음 실행하시는군요 - 필요한 API 키를 한 번만 물어볼게요. 저장되면 다음부터는 안 물어봅니다.\n")
-    env_path = PROJECT_ROOT / ".env"
     lines = env_path.read_text().splitlines() if env_path.exists() else []
     for key, desc, url in missing:
         print(f"- {key}: {desc}\n  발급: {url}")

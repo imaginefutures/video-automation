@@ -12,8 +12,7 @@
 ## 필요한 것
 
 - **Claude Code** (이 스킬을 실행하는 에이전트)
-- **API 키 두 개** — 처음 실행할 때 없으면 대화식으로 물어보고 `.env`에 저장해 줍니다. 직접 미리
-  만들어 둘 필요 없습니다.
+- **API 키 두 개** (아래 설치 2단계에서 설정합니다 — 미리 안 만들어 둬도 됩니다)
   - [Anthropic](https://console.anthropic.com/settings/keys) — NG 판별·전체 검토에 씀
   - [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) — 음성 전사(Scribe)에 씀
 - **ffmpeg / ffprobe** (시스템에 설치돼 있어야 함, `brew install ffmpeg` 등)
@@ -22,7 +21,7 @@
 
 ## 설치
 
-**스킬로 설치** (Claude Code):
+**1. 스킬로 설치** (Claude Code):
 
 ```bash
 git clone https://github.com/imaginefutures/video-automation.git
@@ -30,8 +29,17 @@ cd video-automation
 ln -sfn "$(pwd)" ~/.claude/skills/video-cut
 ```
 
-설치 후 Claude Code에서 "컷편집 해줘", "이 영상 러프컷 만들어줘" 같은 요청으로 자연스럽게 불러 쓸 수
-있습니다. `.claude-plugin/plugin.json`도 있어서 플러그인 형태로 설치하는 것도 가능합니다.
+`.claude-plugin/plugin.json`도 있어서 플러그인 형태로 설치하는 것도 가능합니다.
+
+**2. API 키 설정** — 설치 직후, 첫 영상을 넣기 전에 먼저 해두세요:
+
+```bash
+uv run python scripts/setup_keys.py
+```
+
+터미널에서 직접 돌리면 그 자리에서 두 키를 물어보고 `.env`에 저장합니다. **이 단계를 건너뛰어도
+됩니다** — Claude Code에서 스킬을 처음 부를 때 키가 없으면 Claude가 대화 중에 알아서 물어보고
+`.env`에 대신 써주는 보완 절차가 있습니다(누락 방지용 안전망이지, 이게 주 경로는 아닙니다).
 
 **스크립트만 직접 실행** (Claude Code 없이):
 
