@@ -12,12 +12,13 @@
 ## 필요한 것
 
 - **Claude Code** (이 스킬을 실행하는 에이전트)
-- **API 키 두 개** (아래 설치 2단계에서 설정합니다 — 미리 안 만들어 둬도 됩니다)
+- **[uv](https://docs.astral.sh/uv/)** — 없으면 스킬을 아예 실행할 수 없어 자동 확인이 안 됩니다.
+  미리 설치해 두세요(`curl -LsSf https://astral.sh/uv/install.sh | sh`). 나머지 파이썬
+  라이브러리는 `uv run`이 알아서 설치합니다
+- **ffmpeg / ffprobe**, **API 키 두 개** — 아래 설치 2단계(`scripts/setup.py`)가 확인해 줍니다.
+  미리 안 해둬도 되고, 빠뜨려도 Claude Code가 처음 스킬을 부를 때 알아서 확인합니다
   - [Anthropic](https://console.anthropic.com/settings/keys) — NG 판별·전체 검토에 씀
   - [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) — 음성 전사(Scribe)에 씀
-- **ffmpeg / ffprobe** (시스템에 설치돼 있어야 함, `brew install ffmpeg` 등)
-- **[uv](https://docs.astral.sh/uv/)** (Python 의존성 관리 — 나머지 파이썬 라이브러리는 `uv run`이
-  자동으로 설치합니다)
 
 ## 설치
 
@@ -31,27 +32,30 @@ ln -sfn "$(pwd)" ~/.claude/skills/video-cut
 
 `.claude-plugin/plugin.json`도 있어서 플러그인 형태로 설치하는 것도 가능합니다.
 
-**2. API 키 설정** — 설치 직후, 첫 영상을 넣기 전에 먼저 해두세요:
+**2. 환경/API 키 확인** — 설치 직후, 첫 영상을 넣기 전에 먼저 해두세요:
 
 ```bash
-uv run python scripts/setup_keys.py
+uv run python scripts/setup.py
 ```
 
-터미널에서 직접 돌리면 그 자리에서 두 키를 물어보고 `.env`에 저장합니다. **이 단계를 건너뛰어도
-됩니다** — Claude Code에서 스킬을 처음 부를 때 키가 없으면 Claude가 대화 중에 알아서 물어보고
-`.env`에 대신 써주는 보완 절차가 있습니다(누락 방지용 안전망이지, 이게 주 경로는 아닙니다).
+`ffmpeg`/`ffprobe`가 없으면 설치 명령을 알려주고(자동 설치는 안 함), API 키가 없으면 터미널에서
+직접 돌렸을 때 그 자리에서 물어봐서 `.env`에 저장합니다. **이 단계를 건너뛰어도 됩니다** — Claude
+Code에서 스킬을 처음 부를 때 빠진 게 있으면 Claude가 대화 중에 알아서 확인하고 처리해주는 보완
+절차가 있습니다(누락 방지용 안전망이지, 이게 주 경로는 아닙니다).
 
 **스크립트만 직접 실행** (Claude Code 없이):
 
 ```bash
-uv run python scripts/run.py videos/<이름>
+uv run python scripts/run.py <영상 폴더 절대경로>
 ```
 
 ## 사용법
 
-1. `videos/<이름>/` 폴더를 만들고 원본 영상을 그 안에 `raw.mp4`로 넣습니다(이름은 자유, 한글도
-   가능).
-2. Claude Code에서 "videos/<이름> 컷편집 해줘"라고 요청합니다(또는 위 명령을 직접 실행).
+1. **아무 위치에나** 영상 프로젝트 폴더를 만듭니다 — 이 스킬이 설치된 폴더 안일 필요 없습니다.
+   `<원하는 위치>/videos/<이름>/raw.mp4`로 원본 영상을 넣습니다(이름은 자유, 한글도 가능). API
+   키(`.env`)만 스킬 설치 폴더에 공용으로 남아있고, 영상 데이터는 원하는 곳에 둘 수 있습니다.
+2. Claude Code에서 "<그 절대경로> 컷편집 해줘"라고 요청합니다(또는 위 명령을 절대경로와 함께
+   직접 실행).
 3. 처리가 끝나면 브라우저가 자동으로 열리며 로컬 검토 화면(`http://127.0.0.1:8765`)이 뜹니다.
    - 취소선 = 이미 잘린 상태, 평범한 텍스트 = 유지. 왼쪽 사이드바의 "검토 필요" 큐에서 애매한
      항목만 살릴지 결정하면 됩니다.
