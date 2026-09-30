@@ -1,10 +1,19 @@
 """Shared helpers for the video-cut pipeline: paths, .env loading, transcript access."""
 from __future__ import annotations
+import getpass
 import json
 import os
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# 2026-09-30: 스킬을 설치한 다른 사용자를 위한 온보딩 - 키가 없으면 여기서 물어봐서 .env에
+# 저장한다. (키, 설명, 발급 페이지) 튜플 목록.
+REQUIRED_API_KEYS = [
+    ("ANTHROPIC_API_KEY", "Claude API 키 - NG 판별·분류·전체 검토에 씀", "https://console.anthropic.com/settings/keys"),
+    ("ELEVENLABS_API_KEY", "ElevenLabs API 키 - Scribe 전사에 씀", "https://elevenlabs.io/app/settings/api-keys"),
+]
 
 
 def load_env() -> None:
@@ -20,6 +29,33 @@ def load_env() -> None:
         k, v = k.strip(), v.strip().strip('"').strip("'")
         if k and k not in os.environ:
             os.environ[k] = v
+
+
+def ensure_api_keys() -> None:
+    """`load_env()`로 이미 있는 키는 그대로 쓰고, 없는 키만 대화식으로 물어봐서 `.env`에
+    저장한다 - 스킬을 처음 설치한 사람이 `ELEVENLABS_API_KEY not set` 같은 에러를 만나기 전에
+    자연스럽게 설정을 끝내도록 한다. 표준입력이 터미널이 아니면(백그라운드 실행 등) 물어볼 수
+    없으니 조용히 넘어가고, 이후 실제로 그 키가 필요한 단계에서 원래 하던 대로 명확한 에러를
+    낸다."""
+    load_env()
+    missing = [(k, desc, url) for k, desc, url in REQUIRED_API_KEYS if not os.environ.get(k)]
+    if not missing:
+        return
+    if not sys.stdin.isatty():
+        return
+
+    print("\n처음 실행하시는군요 - 필요한 API 키를 한 번만 물어볼게요. 저장되면 다음부터는 안 물어봅니다.\n")
+    env_path = PROJECT_ROOT / ".env"
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    for key, desc, url in missing:
+        print(f"- {key}: {desc}\n  발급: {url}")
+        value = ""
+        while not value:
+            value = getpass.getpass(f"  {key} 입력(화면에 안 보임): ").strip()
+        lines.append(f"{key}={value}")
+        os.environ[key] = value
+    env_path.write_text("\n".join(lines) + "\n")
+    print(f"\n{env_path}에 저장했습니다. 다음부터는 안 물어봅니다.\n")
 
 
 def video_dir(name_or_path: str | Path) -> Path:

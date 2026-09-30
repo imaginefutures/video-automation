@@ -14,9 +14,10 @@
   - **ng.json 역전파**: `draft_cuts.json`의 `sources`(각 병합 컷이 어느 ng 항목/화자블록 줄에서
     왔는지)를 거슬러 올라가, over_cut·outtake·시청자 jump/unclear를 실제 ng 항목의 flag까지
     반영한다. 이제 검토 화면에 뜬다(ng.json을 읽는 건 이미 server.py가 하니까).
-  - **재투입 반복** (문서 2.7, 최대 2회): missed_cut으로 새 후보가 생기면 assemble_draft.py ->
-    seam_refine.py를 다시 돌려 결과 텍스트가 바뀐 상태로 PD·시청자를 한 번 더 부른다. 아무것도
-    안 바뀌면 그 자리에서 멈춘다(텍스트가 같으면 다시 불러도 의미 있는 새 정보가 없다).
+  - **재투입, 정확히 1회** (2026-09-30 하향식 재설계로 단순화 - 예전엔 최대 2라운드 재투입이었으나
+    세션에 걸쳐 반복 실행하면 ng.json에 판단이 누적되는 문제를 겪어 "끝나면 한 번 더"로 단순화):
+    missed_cut으로 새 후보가 생기면 assemble_draft.py -> seam_refine.py를 1회만 다시 돌려
+    반영하고 종료한다 - PD·시청자를 다시 부르지 않는다.
   - **outtake**: `ng.json` 항목에 `outtake_suggested`/`outtake_reason`으로 남긴다.
     `server.py`의 `payload()`가 이 두 필드를 프론트엔드로 그대로 전달한다(2026-09-29 추가).
     `decisions.json`의 `outtakes`(별표) 리스트는 사용자가 직접 켜고 끄는 것이라 자동으로
@@ -132,6 +133,9 @@ class PDFinding(BaseModel):
     cut_id: Optional[int] = None      # over_cut/outtake: final_cuts의 cut_id
     wi_start: Optional[int] = None    # missed_cut: 원본 단어 id (반열림)
     wi_end: Optional[int] = None
+    final_attempt_wi_start: Optional[int] = None  # missed_cut 안에 실패한 시도가 여럿이고 그중
+    # 하나가 완성된 문장으로 끝났다면 그 시작 단어 id (classify_region.py와 같은 안전장치,
+    # 2026-09-30 BS167 실측 버그 - wi_end가 이 값을 넘으면 완성된 문장 앞부분까지 잘림)
     reason: str
     confidence: float
     severity: Literal["high", "medium", "low"]
@@ -155,6 +159,9 @@ missed_cut으로 다시 보고하지 마라** - 이미 처리 중이다.
   말버릇 반복. **반드시** wi_start/wi_end를 채워라 - 그 구간이 속한 줄 맨 앞의 [숫자-숫자] 표시를
   보고 실제 단어 위치로 답하라(대략 짐작하지 말고, 문제되는 단어들이 정확히 어디서 시작해서
   어디서 끝나는지 줄 안에서 세어라). wi_start/wi_end 없이는 이 finding을 적용할 수 없다.
+  **이 구간 안에 실패한 시도가 여럿이고 그중 하나가 완성된 문장으로 끝났다면**, 그 시작 단어 id를
+  final_attempt_wi_start에 채워라 - wi_end가 그 값을 넘으면 안 된다(완성된 문장 일부까지 자르면
+  안 되니까).
 - over_cut: CUT 표시된 구간인데, 그 안에 결과에서 사라지면 안 되는 정보(새 사실·수치·예시·조건)가
   있어서 과하게 잘린 것. **반드시** 그 ⟦CUT id=N⟧의 N을 cut_id에 그대로 채워라.
 - outtake: 재미있거나 웃긴 NG로, 엔딩 아웃테이크 코너에 쓸 만한 것. 마찬가지로 cut_id를 채워라.
@@ -253,16 +260,25 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
     final_by_id = {c["cut_id"]: c for c in final_cuts}
 
     # missed_cut -> 새 ng 후보 (항상 flag=restore - 검증 안 된 새 경로라 보수적으로)
+    # 2026-09-30: "이미 처리된 구간과 겹치면 버린다"는 가드를 시도했다가 되돌림 - ng_items가
+    # 이 시점엔 이미 문서 전체에 밀도 높게 깔려 있어서, 진짜 missed_cut까지도 "근처에 뭔가
+    # 있다"는 이유로 거의 다 버려짐(BS167 실측: 11건 전부 차단, 재현율 0.704→0.490으로 붕괴).
+    # 되돌림 - 중복 재판정 문제는 아직 미해결로 남음, 다음에는 "겹침"이 아니라 "완전히 포함"
+    # 같은 훨씬 좁은 기준으로 다시 시도해야 한다.
     new_ng_items = []
     for f in pd_findings:
         if f.type != "missed_cut" or f.wi_start is None or f.wi_end is None:
             continue
-        seg = [w for w in words if f.wi_start <= w["wi"] < f.wi_end]
+        wi_end = f.wi_end
+        if f.final_attempt_wi_start is not None and wi_end > f.final_attempt_wi_start > f.wi_start:
+            print(f"    [clamp] missed_cut wi_end {wi_end}->{f.final_attempt_wi_start} (완성된 시도 보호)")
+            wi_end = f.final_attempt_wi_start
+        seg = [w for w in words if f.wi_start <= w["wi"] < wi_end]
         if not seg:
             continue
         new_ng_items.append({
-            "raw_word_index_start": f.wi_start, "raw_word_index_end": f.wi_end,
-            "follow_word_index_start": f.wi_end, "follow_word_index_end": f.wi_end,
+            "raw_word_index_start": f.wi_start, "raw_word_index_end": wi_end,
+            "follow_word_index_start": wi_end, "follow_word_index_end": wi_end,
             "start": seg[0]["start"], "end": seg[-1]["end"],
             "duration": round(seg[-1]["end"] - seg[0]["start"], 3),
             "n_words": len(seg), "deleted_text": " ".join(w["text"] for w in seg),
@@ -320,7 +336,8 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
     write_json(ng_path, ng_items)
     write_json(final_path, {"cuts": final_cuts})
 
-    print(f"  적용: 새 컷 후보 {len(new_ng_items)}건, final_cuts flag 갱신 {flag_updates}건, "
+    print(f"  적용: 새 컷 후보 {len(new_ng_items)}건, "
+          f"final_cuts flag 갱신 {flag_updates}건, "
           f"ng.json 역전파 {ng_backprop}건(검토 화면에 반영됨), outtake 표시 {outtake_marks}건")
 
     return {
@@ -338,37 +355,37 @@ def rerun_assemble_and_seam(folder: Path) -> None:
         subprocess.run([sys.executable, str(HERE / script), str(folder)], check=True)
 
 
-def iterate(folder: Path, max_rounds: int = 2) -> Path:
+def iterate(folder: Path) -> Path:
+    """Stage 3 (하향식 재설계, 2026-09-30) - "끝나면 한 번 더", 정확히 1회. 예전엔 최대
+    2라운드까지 재투입(매 라운드 assemble+seam을 다시 돌려 재평가)했는데, 이 재투입 루프를
+    세션에 걸쳐 반복 실행하면 GLOBAL_REVIEW_MISSED_CUT이 ng.json에 계속 누적돼 A/B 비교가
+    오염되는 문제를 실제로 겪었다(docs/기획/06-검증과-측정.md 6.1절). PD+시청자 리뷰는
+    정확히 1회만 하고, 그 결과로 missed_cut이 나오면 assemble+seam을 1회만 더 돌려 반영한 뒤
+    종료한다(재리뷰 없음) - "컷편집이 완료되면 마지막에 한 번 더 전체를 검수한다"는 설계
+    그대로."""
     load_env()
     edit = edit_dir(folder)
     words = words_only(load_transcript(folder))
 
-    rounds = []
-    for r in range(1, max_rounds + 1):
-        print(f"=== 전체 루프 {r}/{max_rounds}라운드 ===")
-        result = one_round(folder, words, edit)
-        rounds.append(result)
-        if result["new_ng_items"] == 0:
-            print("  새로 반영할 컷 없음 - 결과 텍스트가 안 바뀌므로 재투입 종료")
-            break
-        if r == max_rounds:
-            print(f"  최대 라운드({max_rounds}) 도달 - 종료")
-            break
-        print("  missed_cut 반영 위해 assemble_draft -> seam_refine 재실행...")
+    print("=== 전체 루프 (1회 최종 통독) ===")
+    result = one_round(folder, words, edit)
+    if result["new_ng_items"] > 0:
+        print("  missed_cut 반영 위해 assemble_draft -> seam_refine 1회만 재실행...")
         rerun_assemble_and_seam(folder)
+    else:
+        print("  새로 반영할 컷 없음")
 
     out = edit / "global_review.json"
-    write_json(out, {"rounds": rounds, "n_rounds": len(rounds)})
-    print(f"wrote {out} ({len(rounds)}라운드)")
+    write_json(out, {"rounds": [result], "n_rounds": 1})
+    print(f"wrote {out}")
     return out
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder")
-    ap.add_argument("--max-rounds", type=int, default=2)
     args = ap.parse_args()
-    iterate(video_dir(args.folder), max_rounds=args.max_rounds)
+    iterate(video_dir(args.folder))
 
 
 if __name__ == "__main__":

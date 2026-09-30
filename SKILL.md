@@ -40,15 +40,18 @@ uv run python scripts/run.py videos/<이름> --no-llm # API 비용 없이 결정
 | 음향 분석 | `edit/prosody.json` | librosa로 단어별 피치·에너지 계산(로컬, API 비용 없음). NG 분류의 보조 근거로 쓰임 |
 | 음향 지도 | `edit/audio_map.json` | RMS 포락선·숨소리 구간(로컬, API 비용 없음). 컷 경계를 조용한 지점으로 옮기는 데 쓰임 |
 | 화자 블록 | `edit/speaker_blocks.json` | 대화 형태 구간 + 줄별 역할(지시/재시도/최종). **NG보다 먼저 실행** — 전체 맥락 검토가 이미 잡힌 구간을 건너뛰려면 먼저 있어야 함 |
-| NG | `edit/ng_candidates.json`(발음 실수 후보 포함 — 단어별 ASR 신뢰도(logprob) 하위 3%), `edit/ng.json`, `edit/context_review.json` | 후보 탐지(유사도 + 저확신 발음) → Claude 분류(A~F, 정적 few-shot 7개 + L2 사용자 사례 검색) → 최대 삭제 라우팅 → 전체 맥락 검토 |
+| NG | `edit/ng_candidates.json`(발음 실수 후보 — 단어별 ASR 신뢰도(logprob) 하위 3%), `edit/regions.json`(Stage 1), `edit/ng_classified.json`(Stage 2), `edit/ng.json` | 하향식 2단계(09-30): Stage 1이 원문 전체를 한 번에 읽고 의심 구간을 대략적으로 표시 → Stage 2가 각 구간을 확대해서 정확한 경계와 case(A~F)를 확정(정적 few-shot 9개 + L2 사용자 사례 검색) → 최대 삭제 라우팅. 겹치는 후보는 분류 전에 하나로 합침(`consolidate()`) |
 | 이음새 부분 루프 | `edit/draft_cuts.json`, `edit/seams.json`, `edit/final_cuts.json` | NG+화자블록의 모든 컷을 합쳐 대안(원안/축소/확장)마다 경계를 조용한 지점으로 스냅하고, 만든 모델과 다른 모델이 문법·중복·정보손실을 판정해 가장 많이 지우는 대안을 고름. G2(재전사 잔여음 검사)로 최종 선택을 한 번 더 확인. 바뀐 이음새의 이웃까지 최대 3라운드 재판정 (`self_critique.py` 대체) |
-| 전체 루프 | `edit/global_review.json` | 결과 전체를 PD(원본+컷+이유 다 봄, Opus)와 시청자(결과만 봄, Fable 5.1)가 각각 읽음. missed_cut은 새 후보로 추가, over_cut/시청자 지적은 `ng.json`까지 역전파(검토 화면에 뜸), outtake는 표시만. 최대 2라운드 재투입 |
+| 전체 루프 | `edit/global_review.json` | 결과 전체를 PD(원본+컷+이유 다 봄, Opus)와 시청자(결과만 봄, Fable 5.1)가 각각 읽음. missed_cut은 새 후보로 추가, over_cut/시청자 지적은 `ng.json`까지 역전파(검토 화면에 뜸), outtake는 표시만. 정확히 1회 통독(09-30 단순화 - 여러 라운드를 반복 실행하면 판단이 누적되는 문제를 겪어 "끝나면 한 번 더"로 고정) |
 | 무음 | `edit/pauses.json` | 쉼 문맥 분류(Claude, Haiku) → 목표치 트림 |
 | 확정 | `<이름>.fcpxml`, `preview.mp4`, `edit/decisions.json`, `edit/edl.json` | 서버가 직접 생성. 컷 경계는 조용한 지점으로 스냅(`audio_map.choose_boundary`), 확정 직전 자기검토(재전사로 잔여음/절단 의심 여부 확인, `seam_refine.g2_check`)를 거쳐 확정 화면에 표시 |
 
 ## 필요한 것
 
-- `.env` (프로젝트 루트): `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY`
+- `.env` (프로젝트 루트): `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY` — **직접 안 만들어도 된다**.
+  처음 `run.py`를 돌리면(`--serve` 제외) 없는 키만 대화식으로 물어봐서 자동으로 저장한다
+  (`common.ensure_api_keys()`, 09-30 추가). 표준입력이 터미널이 아니면(백그라운드 실행 등)
+  조용히 넘어가고 그 키가 실제로 필요한 단계에서 원래처럼 명확한 에러를 낸다
 - `ffmpeg`/`ffprobe`, `uv` (의존성은 `pyproject.toml`; `uv run`이 자동 설치)
 - 검토 화면은 표준 라이브러리 서버라 추가 설치 없음
 
@@ -61,7 +64,7 @@ uv run python scripts/run.py videos/<이름> --no-llm # API 비용 없이 결정
 - 문서 지도는 [`docs/README.md`](docs/README.md). 서비스 철학·원칙은 `docs/서비스-개요와-철학.md`, 결정 이력은 `docs/결정-이력.md`, 나중에 개발할 것은 `docs/백로그/`, 진행 중인 재설계(품질 루프)는 `docs/기획/`. 촬영 습관 안내는 `docs/촬영-가이드.md`. **PLAN.md는 폐기됐다** — 남아 있는 옛 코드 주석의 "PLAN.md X.Y" 참조는 `docs/archive/PLAN-2026-09-29-retired.md`에서 새 위치를 찾는다
 - 품질 루프는 백엔드(라우팅·경계 스냅·이음새 판정·전체 루프·발음 실수 탐지·L2 few-shot)만 구현됐다 (09-29). 경계 스냅(`audio_map.choose_boundary` — 조용한 지점 탐색, 실패 시 15ms 패딩 폴백)은 검토 화면의 `cut_spans()`에도 09-29에 직접 배선됐다(단, `edit/final_cuts.json`을 그대로 소비하는 게 아니라 같은 함수를 다시 호출 — 화면의 컷은 NG/수동/쉼 등 여러 출처가 시간 기준으로 자유롭게 섞이는 구조라 이음새 단위 파일과 그대로 맞지 않음). 이음새 루프의 **대안 선택**(축소/확장 + LLM 문법·중복·정보손실 판정)은 아직 화면에 배선되지 않았다 — 화면은 NG 항목의 원래 플래그 범위를 그대로 쓴다. missed_cut·over_cut·시청자 지적은 `ng.json` 역전파로 화면에 뜬다. outtake 제안(`outtake_suggested`/`outtake_reason`)은 09-29에 `payload()`가 프론트엔드로 전달하도록 배선했지만(별표 `outtakes` 자체는 사용자가 직접 켜는 목록이라 자동으로 채우지 않음 — "제안됨"과 "확정한 별"을 구분하려는 의도), 화면에 배지 등으로 표시하는 건 아직 안 됨. 확정 시에는 최종 경계마다 재전사로 잔여음/절단을 자체 검증하는 자기검토(`seam_refine.g2_check`)가 추가로 돈다 — 확정을 막지는 않고 확정 화면에 의심 지점을 표시. 검토 화면 자체의 개편(카드·배지 등)은 다른 세션에서 진행 예정
 - NG 케이스별 개인화(L1)는 `server.py`가 검토 화면을 도는 동안 실시간으로 배운다 — `~/.video-cut/prefs/<사용자>.json`의 `ng_case`에 케이스별 cut/keep 횟수를 세다가 충분하고(3건+) 한쪽으로 쏠리면(75%+) 승인 화면 없이 바로 다음 REVIEW 항목부터 적용한다. 별도 스크립트 실행 불필요
-- 사용자 결정은 확정 뒤 `scripts/learn_from_session.py <videos/이름>`으로 추가 학습시킨다(자동 파이프라인에는 아직 안 물려 있음 — 확정 시점이 정해져야 하는데 그건 server.py 몫). 사람 결정 3건 미만이면 LLM을 부르지 않고 건너뛴다. `~/.video-cut/cases/<사용자>.jsonl`(L2, few-shot에 바로 쓰임, 승인 불필요)에 쌓이고, `~/.video-cut/learning-log/<사용자>.md`에 사람이 읽는 요약이 남는다(기록용, 자동 판단에는 반영 안 됨)
+- 사용자가 확정(웹의 "확정" 버튼)하면 `server.py`가 `scripts/learn_from_session.py <videos/이름>`을 백그라운드로 자동 호출한다(09-30부터 - 이전엔 수동 실행이 필요했음). 사람 결정 3건 미만이면 LLM을 부르지 않고 건너뛴다. `~/.video-cut/cases/<사용자>.jsonl`(L2, few-shot에 바로 쓰임, 승인 불필요)에 쌓이고, `~/.video-cut/learning-log/<사용자>.md`에 사람이 읽는 요약이 남는다(기록용, 자동 판단에는 반영 안 됨)
 
 ## 설치
 

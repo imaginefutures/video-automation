@@ -932,6 +932,7 @@ class Session:
         self.decisions["confirmed_at"] = datetime.now().isoformat(timespec="seconds")
         self.save()
         self.start_render(edl_path)
+        self.start_learning()
         removed = sum(s["end"] - s["start"] for s in spans)
         previous = self._last_history_entry(exclude_video=self.name)
         rc = self.receipt(spans)
@@ -956,6 +957,21 @@ class Session:
                 self.render_status = {"state": "done", "path": str(out), "seconds": round(time.time() - self.render_status["started"])}
             except subprocess.CalledProcessError as e:
                 self.render_status = {"state": "error", "detail": (e.stderr or "")[-800:]}
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def start_learning(self) -> None:
+        """2026-09-30: `~/.video-cut/cases/`(few-shot L2 학습 데이터)는 classify_region.py가
+        실제로 읽어서 쓰지만(fewshot.retrieve), 채워주는 쪽인 learn_from_session.py가 지금까지
+        run.py/server.py 어디서도 자동 호출되지 않아 사람이 수동으로 돌려야만 늘었다 - "영상이
+        쌓일수록 똑똑해진다"는 설계 의도가 자동화돼 있지 않았다. render처럼 fire-and-forget으로
+        confirm() 응답을 지연시키지 않고 확정된 영상의 결정을 바로 학습에 반영한다."""
+        def run():
+            try:
+                subprocess.run([sys.executable, str(Path(__file__).parent / "learn_from_session.py"),
+                                str(self.folder)], check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError:
+                pass
 
         threading.Thread(target=run, daemon=True).start()
 

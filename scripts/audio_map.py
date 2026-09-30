@@ -184,6 +184,19 @@ def bisects_breath(amap: dict, start: float, end: float) -> bool:
     return False
 
 
+def breath_before(amap: dict | None, t: float, window_sec: float = 1.2) -> dict | None:
+    """2026-09-30: 지금까지 숨소리는 경계 안전성 체크(G3)에만 쓰였다 - "재시작 신호"로는 어디에도
+    안 들어갔다. 사람이 다시 말할 때 숨을 들이쉬고 시작하는 경우가 많다는 점을 classify_region.py의
+    보강 신호로 쓴다(prosody.py의 F0 리셋과 같은 위상 - 독립 신호로는 노이즈지만 "이미 의심되는
+    구간의 보강 신호"로는 유용할 가능성이 높다). t 직전 window_sec 안에 끝나는 숨소리 후보를 찾는다."""
+    if not amap:
+        return None
+    for b in amap.get("breaths", []):
+        if 0 <= t - b["end"] <= window_sec:
+            return b
+    return None
+
+
 # --------------------------------------------------------------------------- boundary choice
 #
 # Moved here from seam_refine.py (2026-09-29) so every caller that turns a word-index range

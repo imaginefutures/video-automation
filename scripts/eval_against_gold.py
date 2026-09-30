@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -50,18 +51,91 @@ FN_JUDGE_MODEL = "claude-sonnet-5"
 FN_JUDGE_BATCH = 20
 
 
+def _char_map(words: list[dict]) -> tuple[str, list[int]]:
+    """Concatenate every word's normalized text with no separator, plus a parallel array
+    mapping each character position back to its source word index - the shared building block
+    for character-level alignment (see diff_opcodes/gold_deleted_mask docstrings)."""
+    chars: list[str] = []
+    char_to_word: list[int] = []
+    for wi, w in enumerate(words):
+        t = norm(w["text"])
+        chars.append(t)
+        char_to_word.extend([wi] * len(t))
+    return "".join(chars), char_to_word
+
+
 def diff_opcodes(raw_words: list[dict], finished_words: list[dict]):
-    raw_norm = [norm(w["text"]) for w in raw_words]
-    fin_norm = [norm(w["text"]) for w in finished_words]
-    return difflib.SequenceMatcher(None, raw_norm, fin_norm, autojunk=False).get_opcodes()
+    """Word-range opcodes (i1,i2,j1,j2 in word indices - what finished_context_for's callers
+    expect), computed via character-level alignment internally: raw and finished come from two
+    INDEPENDENT Scribe runs on the same spoken audio, and Korean word-segmentation for compound
+    words/numerals isn't stable across runs ("하루 종일" vs "하루종일", "일 년" vs "1년") - a
+    plain word-token diff treats every such case as a phantom edit. Loose word-boundary mapping
+    here is fine (this feeds only the human-readable "what the finished video says nearby"
+    context in classify_fn_spans) - the scoring-critical mask is gold_deleted_mask, which does
+    its own precise per-word majority vote instead of trusting these boundaries."""
+    raw_chars, raw_c2w = _char_map(raw_words)
+    fin_chars, fin_c2w = _char_map(finished_words)
+    char_opcodes = difflib.SequenceMatcher(None, raw_chars, fin_chars, autojunk=False).get_opcodes()
+    word_opcodes = []
+    for tag, ci1, ci2, cj1, cj2 in char_opcodes:
+        i1 = raw_c2w[ci1] if ci1 < len(raw_c2w) else len(raw_words)
+        i2 = (raw_c2w[ci2 - 1] + 1) if ci2 > ci1 else i1
+        j1 = fin_c2w[cj1] if cj1 < len(fin_c2w) else len(finished_words)
+        j2 = (fin_c2w[cj2 - 1] + 1) if cj2 > cj1 else j1
+        word_opcodes.append((tag, i1, i2, j1, j2))
+    return word_opcodes
 
 
-def gold_deleted_mask(raw_words: list[dict], opcodes) -> list[bool]:
-    mask = [False] * len(raw_words)
-    for tag, i1, i2, j1, j2 in opcodes:
+def gold_deleted_mask(raw_words: list[dict], finished_words: list[dict]) -> list[bool]:
+    """Character-level alignment (see diff_opcodes), then each raw word counts as gold-deleted
+    only if a MAJORITY of its own characters fall in a delete/replace range - resolves the
+    ambiguity of a diff boundary landing mid-word (exactly the segmentation-mismatch case this
+    exists to fix) by majority vote instead of the old any-character-in-range rule, which used
+    to count purely cosmetic re-segmentation ("공감해 주고" vs "공감해주고") as a real deletion
+    and inflate FN (2026-09-30, found analyzing BS167's gold FN: 24/210 missed-NG words were
+    this, not real edits)."""
+    raw_chars, raw_c2w = _char_map(raw_words)
+    fin_chars, _ = _char_map(finished_words)
+    sm = difflib.SequenceMatcher(None, raw_chars, fin_chars, autojunk=False)
+    char_deleted = [False] * len(raw_chars)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
         if tag in ("delete", "replace"):
             for i in range(i1, i2):
-                mask[i] = True
+                char_deleted[i] = True
+
+    total_chars = Counter(raw_c2w)
+    deleted_chars = Counter(wi for wi, d in zip(raw_c2w, char_deleted) if d)
+    mask = [False] * len(raw_words)
+    for wi in range(len(raw_words)):
+        total = total_chars.get(wi, 0)
+        if total and deleted_chars.get(wi, 0) / total > 0.5:
+            mask[wi] = True
+    return _reorder_tolerant_recheck(raw_words, fin_chars, mask)
+
+
+REORDER_RECHECK_MIN_CHARS = 20  # 2026-09-30: BS183에서 발견 - difflib.SequenceMatcher는 순서
+# 보존 가정이라, 완성본이 원본 앞부분을 "훅"으로 끌어와 앞에 다시 배치하는 식의 순서 재배열
+# 편집을 "삭제"로 오판한다(실제로는 옮겨졌을 뿐, 완성본 어딘가에 그대로 있음). 위 선형 diff가
+# "삭제"로 표시한 연속 구간마다, 그 구간의 정규화된 텍스트가 완성본 전체(위치 무관)에 그대로
+# 있는지 한 번 더 확인해 있으면 삭제 판정을 취소한다. 20자(대략 5~7단어) 미만은 우연히 겹칠
+# 흔한 짧은 구절일 위험이 커서 재검사 대상에서 제외한다.
+
+def _reorder_tolerant_recheck(raw_words: list[dict], fin_chars: str, mask: list[bool]) -> list[bool]:
+    mask = list(mask)
+    n = len(mask)
+    i = 0
+    while i < n:
+        if not mask[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and mask[j]:
+            j += 1
+        run_text = "".join(norm(w["text"]) for w in raw_words[i:j])
+        if len(run_text) >= REORDER_RECHECK_MIN_CHARS and run_text in fin_chars:
+            for k in range(i, j):
+                mask[k] = False
+        i = j
     return mask
 
 
@@ -237,7 +311,7 @@ def evaluate(folder: Path, gold_raw_path: Path, gold_finished_path: Path,
                          f"{gold_raw_path} ({len(gold_raw)} words) - these must be the same source recording")
 
     opcodes = diff_opcodes(words, gold_fin)
-    gold_cut = gold_deleted_mask(words, opcodes)
+    gold_cut = gold_deleted_mask(words, gold_fin)
     final_path = edit_dir(folder) / "final_cuts.json"
     final_cuts = json.loads(final_path.read_text())["cuts"] if final_path.exists() else []
     auto_cut, auto_flagged = automated_cut_mask(len(words), final_cuts)

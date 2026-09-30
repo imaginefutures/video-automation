@@ -62,6 +62,18 @@ def from_speaker_blocks(blocks_doc: dict) -> list[dict]:
 
 
 def merge(items: list[dict]) -> list[dict]:
+    """2026-09-30: tried merging only on genuine overlap (`wi_start < wi_end`, not `<=`) to stop
+    unrelated adjacent candidates from being judged as one fused seam. Root-caused correctly (A/B:
+    unchanged input moved 11/2616 words of noise; +16 candidates moved ~211 words via this merge
+    policy) but the fix itself was net-negative when validated against gold on both videos:
+    BS145 precision 0.700->0.553 for +0.005 adjusted recall (severe), BS167 precision 0.618->0.591
+    for +0.036 adjusted recall (wash). Splitting touching candidates apart let each side of what
+    used to be one merged seam get its own independent expand/shrink judgment under the max-delete
+    policy's cut-leaning bias, compounding over-cuts instead of preventing them. Reverted to `<=`
+    (결정-이력.md 09-30, "병합 정책 완화 되돌림"). The underlying candidate-density sensitivity this
+    was meant to fix is still real and unaddressed - a future fix needs to change how seam_refine
+    judges a fused span (e.g. per-source independent judgment within one merged seam), not whether
+    touching candidates get fused."""
     items = sorted(items, key=lambda x: (x["wi_start"], x["wi_end"]))
     merged: list[dict] = []
     for it in items:
