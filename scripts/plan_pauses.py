@@ -143,7 +143,13 @@ def build_gaps(words: list[dict], amap: dict | None = None) -> list[dict]:
         # micro-gaps) reads continuous speech's own energy as "already started" almost
         # everywhere, the same 83%-false-positive failure mode docs/결정-이력.md 09-29 already
         # found with a flat dB threshold.
-        gap_end = true_onset(amap, b["start"]) if amap else b["start"]
+        # Clamp at a["end"]: true_onset() only knows the reported_t it's walking back from, not
+        # this gap's start, so when no quiet point exists before max_pull_sec it (or even
+        # ordinary continuous-speech energy right up to a["end"]) can walk past the previous
+        # word's own boundary, producing a gap_end before gap_start (negative duration) - seen on
+        # ~65% of real gaps in BS145/BS167 (2026-10-01 review). Floor it at a["end"] so duration
+        # is never negative; those gaps just get duration 0 (no trim headroom) instead of nonsense.
+        gap_end = max(a["end"], true_onset(amap, b["start"])) if amap else b["start"]
         dur = gap_end - a["end"]
         gaps.append({
             "id": len(gaps),
