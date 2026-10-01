@@ -188,7 +188,7 @@
      the sidebar to the window's right edge) left a large dead gap next to the sidebar for
      no reason - the reading column doesn't need to be full width, but it should still start
      close to the panel that acts on it. */
-  #transcript { max-width: 880px; margin: 0; padding: 28px 40px 260px 36px; }
+  #transcript { max-width: 880px; margin: 0; padding: 28px 40px 60px 36px; }
   /* Video floats over the top-right corner only - reserving right padding for the whole
      column would starve every line below it too, which is what made the text column too
      narrow. A one-time top spacer (sized in JS to the video's rendered height) clears the
@@ -326,13 +326,18 @@
   #helpPop .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: var(--ink); }
   #helpPop .row span:first-child { color: var(--muted); }
 
-  /* ---------------------------------------------------------------- persistent waveform bar */
-  /* 10-01(읽기→추적→듣기 3단계): 상시 파형 바 - Z 모달(position:fixed 팝업, 열고 닫기, 드래그
-     이동)을 완전히 대체한다. #scrollProgress가 #main 안에서 쓰는 것과 똑같은 sticky 트릭이라
-     좌표 계산이 따로 필요 없다(그 반대쪽 끝에 붙는다는 점만 다름). */
-  #waveformBar { position: sticky; bottom: 0; left: 0; right: 0; z-index: 9; background: var(--bg);
-    border-top: 1px solid var(--line); padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 8px;
-    box-shadow: 0 -8px 20px -16px rgba(0,0,0,0.25); }
+  /* ---------------------------------------------------------------- per-paragraph waveform strips */
+  /* 10-02(사용자 피드백 반영 - 재설계): "스크립트/파형/스크립트/파형"이 문단마다 반복되는
+     구조로 바꿨다 - 화면 하단에 고정된 바 하나가 아니라, 문단 하나 끝날 때마다 그 문단의
+     파형이 바로 아래 끼어들어 같이 스크롤된다(눈이 다른 곳을 찾아다닐 필요가 없음). 평소엔
+     정적 미리보기(잘림/잔음 색만), 그 문단 안의 글자를 선택하면 그 스트립만 편집 가능하게
+     바뀐다(핸들·버튼이 그 자리에 나타남). Z 모달을 대체했던 상시 바(10-01)를 다시 한번
+     대체 - 이번엔 "한 곳에 고정"이 아니라 "본문과 같이 흐르는" 구조로. */
+  .waveStrip { margin: 2px 0 14px; max-width: 880px; }
+  .waveStripCanvas { width: 100%; height: 44px; display: block; border-radius: 6px; background: var(--surface-2); cursor: text; }
+  .waveStrip.active .waveStripCanvas { height: 92px; cursor: ew-resize; box-shadow: 0 0 0 2px var(--accent-soft); }
+  .waveStripControls { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .waveStrip.active .waveStripControls { display: flex; }
   #waveStatus { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   #waveStatus .key { display: inline-flex; align-items: center; gap: 5px; }
   #waveStatus .sw { width: 18px; height: 10px; border-radius: 2px; display: inline-block; }
@@ -341,7 +346,6 @@
   #waveStatus .sw.sel { background: rgba(0,112,243,0.14); border: 1.5px solid var(--accent); }
   #waveStatus b { color: var(--ink); font-weight: 600; }
   .zoom-btns button:disabled { opacity: 0.35; cursor: default; filter: none; }
-  #waveCanvas { width: 100%; height: 92px; display: block; border-radius: 8px; background: var(--surface-2); cursor: text; }
   .zoom-handles { display: flex; flex-direction: column; gap: 6px; }
   .zoom-handle-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .zoom-handle-row label { width: 26px; color: var(--muted); }
@@ -427,32 +431,6 @@
       <div id="scrollProgressTicks"></div>
     </div>
     <div id="transcript"></div>
-    <div id="waveformBar">
-      <div id="waveStatus"></div>
-      <canvas id="waveCanvas"></canvas>
-      <div class="zoom-handles" id="waveHandles" hidden>
-        <div class="zoom-handle-row">
-          <label>시작</label>
-          <button class="nudge" data-h="hs" data-d="-0.01">−10ms</button>
-          <input type="number" id="waveHsInput" step="0.001">
-          <button class="nudge" data-h="hs" data-d="0.01">+10ms</button>
-        </div>
-        <div class="zoom-handle-row">
-          <label>끝</label>
-          <button class="nudge" data-h="he" data-d="-0.01">−10ms</button>
-          <input type="number" id="waveHeInput" step="0.001">
-          <button class="nudge" data-h="he" data-d="0.01">+10ms</button>
-        </div>
-      </div>
-      <div class="zoom-btns">
-        <button id="waveResetView">전체 보기</button>
-        <button id="wavePlayIn">▶ 선택된 부분만 듣기</button>
-        <button id="wavePlayOut">▶ 선택된 부분 빼고 듣기</button>
-        <button id="wavePlayLive" title="지금 화면에 보이는 구간을, 선택 범위와 상관없이 현재 편집(컷 결과) 그대로 재생">▶ 살아있는 부분만 듣기</button>
-        <button id="waveApplyCut" class="danger">이 범위 정밀 삭제</button>
-        <button id="waveApplyKeep" class="ok">이 범위 정밀 복원</button>
-      </div>
-    </div>
   </main>
 </div>
 
@@ -486,7 +464,7 @@
   <div class="row"><span>삭제 / 살리기 (명시적 지정)</span><span><kbd>C</kbd> / <kbd>V</kbd></span></div>
   <div class="row"><span>확정 잠금 (이제 안 봐도 됨)</span><span><kbd>⇧↵</kbd></span></div>
   <div class="row"><span>잠금 해제</span><span><kbd>U</kbd> · 더블클릭</span></div>
-  <div class="row"><span>잔음 의심 지점 이동 (파형 바)</span><span><kbd>N</kbd> / <kbd>⇧N</kbd></span></div>
+  <div class="row"><span>잔음 의심 지점 이동 (파형)</span><span><kbd>N</kbd> / <kbd>⇧N</kbd></span></div>
   <div class="row"><span>되돌리기 / 다시 실행</span><span><kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd></span></div>
   <div class="row"><span>삭제/살리기 전환(토글)</span><span><kbd>↵</kbd></span></div>
   <div class="row"><span>대안 선택 (앞만/전부/뒤만 살림)</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span></div>
@@ -607,7 +585,6 @@ async function load() {
   updatePlayInfo();
   renderReviewEstimate();
   maybeShowFirstRunHelp();
-  waveSyncToSelection();  // 10-01: 상시 파형 바 첫 렌더(선택 없으니 follow 모드로 시작)
 }
 // R1: 검토 화면 첫 진입 시 "검토 N건, 예상 M분" - 막막함을 없애는 게 목적이라 페이지 로드 시
 // 한 번만 보여준다(개별 결정마다 다시 계산하지 않음 - 카드 20초 가정은 어차피 근사치다).
@@ -789,16 +766,25 @@ function renderTranscript() {
   const root = $('#transcript'); root.innerHTML = '';
   const spacer = document.createElement('div'); spacer.id = 'topSpacer'; root.appendChild(spacer);
   let para = document.createElement('p'); para.className = 'para';
+  let paraFirstWi = null, paraLastWi = null;  // 10-02: 문단 하나가 끝날 때 그 범위로 파형 스트립을 만들기 위해 추적
+  const flushPara = () => {
+    root.appendChild(para);
+    if (paraFirstWi != null) createWaveStrip(root, paraFirstWi, paraLastWi);
+    para = document.createElement('p'); para.className = 'para';
+    paraFirstWi = paraLastWi = null;
+  };
   toks.forEach((t, ti) => {
     if (t.type === 'w') {
       const w = S.words[t.wi];
       if (t.wi > 0) {
         const prev = S.words[t.wi - 1]; const gap = w.s - prev.e;
-        if (gap >= 1.2 || (gap >= 0.5 && /[.?!]$/.test(prev.t))) { root.appendChild(para); para = document.createElement('p'); para.className = 'para'; }
+        if (gap >= 1.2 || (gap >= 0.5 && /[.?!]$/.test(prev.t))) flushPara();
       }
       const el = document.createElement('span');
       el.className = 'tok w'; el.dataset.t = ti; el.dataset.wi = w.wi; el.textContent = w.t + ' '; el.title = fmt(w.s);
       para.appendChild(el);
+      if (paraFirstWi == null) paraFirstWi = w.wi;
+      paraLastWi = w.wi;
     } else {
       const el = document.createElement('span');
       el.className = 'tok g'; el.dataset.t = ti; el.dataset.gid = t.gid;
@@ -811,11 +797,12 @@ function renderTranscript() {
       para.appendChild(el);
     }
   });
-  root.appendChild(para);
+  flushPara();
   applyStates();
   root.addEventListener('mouseup', onMouseUp);
   root.addEventListener('dblclick', onDblClick);
   sizeTopSpacer();
+  armWaveStripObserver();
 }
 function findTokIndex(wi) { return toks.findIndex((t) => t.type === 'w' && t.wi === wi); }
 
@@ -1034,7 +1021,7 @@ function applyStates() {
       const part = partSet.has(t.wi);
       el.className = 'tok w' + wordClass(t.wi) + (part ? ' partcut' : '') + (lockedSet.has(t.wi) ? ' locked' : '');
       paintPartial(el, partSet.get(t.wi));
-      el.title = fmt(t.s) + (part ? (partSet.get(t.wi).mode === 'cut' ? ' · 일부 정밀 삭제됨(빨간 줄)' : ' · 일부 정밀 복원됨(파란 밑줄)') + ' — 선택하면 하단 파형 바에서 확인' : '');
+      el.title = fmt(t.s) + (part ? (partSet.get(t.wi).mode === 'cut' ? ' · 일부 정밀 삭제됨(빨간 줄)' : ' · 일부 정밀 복원됨(파란 밑줄)') + ' — 선택하면 바로 아래 파형에서 확인' : '');
     } else {
       const v = gv.get(t.gid); const cut = gapCut(t.g);
       const ruleKeep = !['NORMAL_INTER', 'NORMAL_INTRA', 'ENUMERATION', 'QUOTE_TO_EXPLANATION'].includes(t.g.style);
@@ -1098,6 +1085,10 @@ function hideGtip() { $('#gtip').style.display = 'none'; }
 // ------------------------------------------------------------------ selection
 function onMouseUp(ev) {
   if (gdrag) return;
+  // 파형 스트립 위의 mouseup은 그 스트립 자신의 mousedown 핸들러(onStripMouseDown)가 이미
+  // 전담 처리한다(활성화/드래그선택) - 캔버스는 .tok가 아니라서 여기로도 bubble돼 올라오면
+  // 아래 "클릭한 게 .tok가 아니면 clearSel()" 분기가 방금 만든 활성 스트립을 지워버린다.
+  if (ev.target?.closest?.('.waveStrip')) return;
   setTimeout(() => {
     const s = window.getSelection();
     if (s && !s.isCollapsed) {
@@ -1201,7 +1192,7 @@ function select(x, y) {
     const elTop = target.getBoundingClientRect().top;
     $('#main').scrollBy({ top: elTop - popTop, behavior: 'smooth' });
   });
-  waveSyncToSelection();  // 10-01: 상시 파형 바를 이 선택 구간으로 바로 맞춘다(Z 키 불필요)
+  syncActiveStripToSelection();  // 10-02: 이 선택이 속한 문단의 스트립만 active로 전환
 }
 // The popup always lands in the same place - the empty column under the video - instead of
 // hunting for room next to whatever was clicked. Falls back to a corner on narrow viewports
@@ -1231,11 +1222,11 @@ function clearSel(hide = true) {
   document.querySelectorAll('.tok.sel').forEach((el) => el.classList.remove('sel'));
   sel = null; selReviewMatch = null; selExtendAnchorTi = null;
   // hide=false는 select() 내부에서 "새 선택을 세팅하기 직전" 초기화용으로만 쓰인다 - 그 직후
-  // select()가 끝에서 waveSyncToSelection()을 어차피 다시 부르므로, 여기서는 hide=true(진짜
-  // 선택 해제)일 때만 동기화해 낭비되는 fetch 한 번을 건너뛴다.
+  // select()가 끝에서 syncActiveStripToSelection()을 어차피 다시 부르므로, 여기서는
+  // hide=true(진짜 선택 해제)일 때만 동기화해 낭비되는 재전환을 건너뛴다.
   if (hide) {
     $('#pop').style.display = 'none'; document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active'));
-    waveSyncToSelection();
+    syncActiveStripToSelection();
   }
 }
 // A selection that exactly spans a pending 검토 필요 item's words (or a whole pending
@@ -1409,42 +1400,53 @@ document.addEventListener('click', (ev) => {
   $('#helpPop').classList.remove('show');
 });
 
-// ------------------------------------------------------------------ 상시 파형 바 (waveform)
+// ------------------------------------------------------------------ 문단별 파형 스트립 (waveform)
 // Text-boundary cuts can still leave a sliver of sound audible (ASR word timestamps carry
-// ~10-50ms jitter). This shows the real audio waveform for the area around a selection so the
-// exact cut point can be nudged past what word boundaries alone can express - the panel is
-// sized to sit inside #main only, never over the sidebar or the video (user requirement).
-// 10-01(읽기→추적→듣기 3단계): 상시 파형 바 - 예전 Z 모달(선택 먼저 → Z로 열기 → 파형)을
-// 완전히 대체한다. 이제 늘 떠 있고, select()/clearSel()이 끝에서 waveSyncToSelection()을 불러
-// 그 선택 구간으로 바로 맞춘다(키 입력 불필요). 선택이 없으면 마지막 커서 위치 주변을 그냥
-// 보여주기만 하고(hs/he 없음), 그 상태에서 파형 위를 드래그하면 거기서부터 새 범위를 만든다.
-let wave = { winStart: 0, winEnd: 0, origStart: 0, origEnd: 0, hs: null, he: null, active: null, peaks: [], wheelT: null };
-let waveFetchGen = 0;
-const WAVE_MIN_WIN = 0.06;  // below this, waveform pixels stop meaning anything useful
-const WAVE_PAD = 0.8;
-function waveSyncToSelection() {
-  if (sel) {
-    const r = selRange();
-    wave.origStart = Math.max(0, r.start - WAVE_PAD); wave.origEnd = Math.min(S.duration, r.end + WAVE_PAD);
-    wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
-    wave.hs = r.start; wave.he = r.end; wave.active = 'he';
-  } else {
-    const t = cursorTime || 0;
-    wave.origStart = Math.max(0, t - 5); wave.origEnd = Math.min(S.duration, t + 5);
-    wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
-    wave.hs = null; wave.he = null; wave.active = null;
-  }
-  drawWaveformBar(); renderWaveHandles(); fetchWaveformBar();
+// ~10-50ms jitter). This shows the real audio waveform so the exact cut point can be nudged
+// past what word boundaries alone can express.
+// 10-02(사용자 피드백): 선택에 따라 옮겨다니는 상시 바 1개 대신 - 본문 문단마다 그 문단 바로
+// 아래에 자기만의 파형 스트립을 영구히 박아둔다("스크립트/파형/스크립트/파형..." 구조, 절대
+// 숨지 않음). renderTranscript()가 문단을 flush할 때마다 createWaveStrip()을 불러 생성한다.
+// 평소엔 모든 스트립이 정적 미리보기(잘림/잔음의심 색칠)만 보여주다가, 그 문단 안의 텍스트를
+// 선택하거나 그 스트립을 직접 드래그하면 그 스트립 "하나만" active로 전환돼 핸들+버튼이
+// 생기고 드래그 편집이 가능해진다 - 동시에 active인 스트립은 하나뿐(새로 활성화되면 이전
+// 활성 스트립은 자동으로 비활성화되어 다시 정적 미리보기로 돌아감).
+let waveStrips = [];
+let activeStrip = null;
+function createWaveStrip(root, firstWi, lastWi) {
+  const start = Math.max(0, S.words[firstWi].s - 0.15);
+  const end = Math.min(S.duration, S.words[lastWi].e + 0.15);
+  const el = document.createElement('div'); el.className = 'waveStrip';
+  const canvas = document.createElement('canvas'); canvas.className = 'waveStripCanvas';
+  const controls = document.createElement('div'); controls.className = 'waveStripControls';
+  el.appendChild(canvas); el.appendChild(controls);
+  root.appendChild(el);
+  const strip = { el, canvas, controls, start, end, firstWi, lastWi, peaks: [], loaded: false, hs: null, he: null, isActive: false, activeHandle: null };
+  waveStrips.push(strip);
+  canvas.addEventListener('mousedown', (ev) => onStripMouseDown(strip, ev));
+  return strip;
 }
-async function fetchWaveformBar() {
-  const { winStart, winEnd } = wave;
-  const gen = ++waveFetchGen;
+// 전부 한꺼번에 /api/waveform(ffmpeg 디코드)을 부르면 느리니 - 화면 근처에 들어온 스트립만
+// 지연 로드한다(스크롤해서 다가오면 fetch, 영상이 길어 문단이 수십 개여도 첫 로드는 가볍게).
+let waveStripObserver = null;
+function armWaveStripObserver() {
+  if (waveStripObserver) waveStripObserver.disconnect();
+  waveStripObserver = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      const strip = waveStrips.find((s) => s.el === en.target);
+      if (strip && !strip.loaded) fetchStripPeaks(strip);
+    }
+  }, { root: $('#main'), rootMargin: '600px 0px' });
+  waveStrips.forEach((s) => waveStripObserver.observe(s.el));
+}
+async function fetchStripPeaks(strip) {
+  strip.loaded = true;  // 실패해도 재시도 안 함 - 파형은 부가 정보, 스크롤 중 중복 요청만 방지
   try {
-    const data = await (await fetch(`/api/waveform?start=${winStart}&end=${winEnd}`)).json();
-    if (gen !== waveFetchGen) return;  // 더 최근 요청에 밀림(스크롤/선택이 빠르게 바뀜)
-    wave.peaks = data.peaks || [];
-  } catch (e) { /* waveform is a nicety - keep the bar usable without it */ }
-  drawWaveformBar();
+    const data = await (await fetch(`/api/waveform?start=${strip.start}&end=${strip.end}`)).json();
+    strip.peaks = data.peaks || [];
+  } catch (e) { /* waveform is a nicety - keep the strip usable without it */ }
+  drawStrip(strip);
 }
 // Seconds of [a, b] that are currently cut (S.cut_spans is sorted and non-overlapping).
 function cutOverlap(a, b) {
@@ -1455,69 +1457,29 @@ function cutOverlap(a, b) {
   }
   return sum;
 }
-// What the two apply buttons would actually change for the current hs/he - the bar used to
-// paint the whole selection one red regardless, so "정밀 복원" gave no clue what (if anything)
-// it would bring back (UX audit H1). Buttons that would change nothing are disabled. hs/he가
-// 없으면(follow 모드, 아직 드래그로 범위를 안 만듦) 전부 비활성화하고 안내만 보여준다.
-function updateWaveStatus() {
-  const cutBtn = $('#waveApplyCut'), keepBtn = $('#waveApplyKeep'), inBtn = $('#wavePlayIn'), outBtn = $('#wavePlayOut');
-  if (wave.hs == null) {
-    $('#waveStatus').innerHTML = `<span>파형 위에서 드래그해서 범위를 선택하세요</span>
-      <span class="key"><span class="sw cut"></span>잘린 부분</span>
-      <span class="key"><span class="sw risk"></span>잔음 의심(<kbd>N</kbd>)</span>`;
-    cutBtn.disabled = keepBtn.disabled = inBtn.disabled = outBtn.disabled = true;
-    cutBtn.textContent = '정밀 삭제'; keepBtn.textContent = '정밀 복원';
-    $('#waveResetView').disabled = true;
-    return;
-  }
-  inBtn.disabled = outBtn.disabled = false;
-  const len = wave.he - wave.hs, cut = Math.min(len, cutOverlap(wave.hs, wave.he)), live = len - cut;
-  const noneCut = cut < 0.005, allCut = live < 0.005;
-  const state = noneCut ? '선택 범위는 지금 <b>모두 살아 있음</b>'
-    : allCut ? `선택 범위 <b>${len.toFixed(2)}초</b>가 <b>이미 전부 잘려 있음</b>`
-    : `선택 ${len.toFixed(2)}초 중 <b>${cut.toFixed(2)}초가 잘려 있음</b>`;
-  $('#waveStatus').innerHTML = `<span>${state}</span>
-    <span class="key"><span class="sw cut"></span>잘린 부분</span>
-    <span class="key"><span class="sw risk"></span>잔음 의심(<kbd>N</kbd>)</span>
-    <span class="key"><span class="sw sel"></span>선택 범위</span>`;
-  cutBtn.disabled = allCut; keepBtn.disabled = noneCut;
-  cutBtn.textContent = allCut ? '이미 잘림' : `정밀 삭제 (${live.toFixed(2)}초 더 자름)`;
-  keepBtn.textContent = noneCut ? '복원할 부분 없음' : `정밀 복원 (${cut.toFixed(2)}초 살림)`;
-  // Only undoes a wheel-zoom in/out on the waveform - with no such zoom applied yet (the
-  // bar's default state), the view IS already the full original window, so clicking this did
-  // nothing and looked broken. Disabling it when there's nothing to reset makes that visible.
-  $('#waveResetView').disabled = Math.abs(wave.winStart - wave.origStart) < 0.001 && Math.abs(wave.winEnd - wave.origEnd) < 0.001;
-}
-function drawWaveformBar() {
-  const cv = $('#waveCanvas'); const dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth || 300, h = 92;
+function drawStrip(strip) {
+  const cv = strip.canvas; const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth || 300, h = strip.isActive ? 92 : 44;
   cv.width = w * dpr; cv.height = h * dpr;
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-  const span = wave.winEnd - wave.winStart || 1;
-  const xOf = (t) => (t - wave.winStart) / span * w;
-  // A thin label band on top carries each word's text right over its own slice of the
-  // waveform below - so which word a given peak belongs to (and which word(s) the current
-  // blue hs/he selection covers) reads directly off the canvas.
-  const LABEL_H = 16;
+  const span = strip.end - strip.start || 1;
+  const xOf = (t) => (t - strip.start) / span * w;
+  // Active일 때만 글자 라벨 띠를 띄운다(비활성 스트립은 미리보기라 44px로 작아 라벨이 안 들어감).
+  const LABEL_H = strip.isActive ? 16 : 0;
   const waveTop = LABEL_H, waveH = h - LABEL_H, mid = waveTop + waveH / 2;
-  const peaks = wave.peaks;
-  if (peaks.length) {
-    const bw = w / peaks.length;
+  if (strip.peaks.length) {
+    const bw = w / strip.peaks.length;
     ctx.fillStyle = '#4d4d4d';
-    peaks.forEach((p, i) => {
+    strip.peaks.forEach((p, i) => {
       const y1 = mid - p[1] * (waveH / 2), y2 = mid - p[0] * (waveH / 2);
       ctx.fillRect(i * bw, y1, Math.max(1, bw - 0.4), Math.max(1, y2 - y1));
     });
-  } else {
-    ctx.fillStyle = '#666666'; ctx.font = '11px -apple-system,sans-serif';
-    ctx.fillText('파형 불러오는 중…', 8, mid);
   }
-  // 10-01 추가: audio_ok===false(가장 조용한 지점으로 스냅해도 여전히 시끄러움 - 잔음/절단
-  // 의심)인 구간은 주황으로, 나머지 잘린 구간은 기존 회색 해치로 - 2단계 "위험지점 추적"의
-  // 시각 신호. 이 데이터(cut_spans[i].audio_ok)는 이미 서버가 공짜로 계산해 보내고 있었는데
-  // 화면에 한 번도 안 그려지고 있었다(audio_map.choose_boundary 기반, API 비용 없음).
+  // audio_ok===false(가장 조용한 지점으로 스냅해도 여전히 시끄러움 - 잔음/절단 의심)인 구간은
+  // 주황으로, 나머지 잘린 구간은 회색 해치로 - 2단계 "위험지점 추적"의 시각 신호. 이 데이터
+  // (cut_spans[i].audio_ok)는 서버가 공짜로 계산해 보내는 것(audio_map.choose_boundary 기반).
   for (const sp of S.cut_spans) {
-    if (sp.end <= wave.winStart || sp.start >= wave.winEnd) continue;
+    if (sp.end <= strip.start || sp.start >= strip.end) continue;
     const a = Math.max(0, xOf(sp.start)), b = Math.min(w, xOf(sp.end));
     const risky = sp.audio_ok === false;
     ctx.save(); ctx.beginPath(); ctx.rect(a, waveTop, b - a, waveH); ctx.clip();
@@ -1525,214 +1487,253 @@ function drawWaveformBar() {
     ctx.strokeStyle = risky ? 'rgba(171,87,10,0.45)' : 'rgba(0,0,0,0.16)'; ctx.lineWidth = 1;
     for (let x = a - waveH; x < b; x += 6) { ctx.beginPath(); ctx.moveTo(x, h); ctx.lineTo(x + waveH, waveTop); ctx.stroke(); }
     ctx.restore();
-    if (b - a > 30) { ctx.fillStyle = risky ? '#ab570a' : '#666666'; ctx.font = '10px -apple-system,sans-serif'; ctx.textBaseline = 'alphabetic'; ctx.fillText(risky ? '잔음 의심' : '잘림', a + 4, h - 5); }
   }
-  if (wave.hs != null) {
-    const x1 = xOf(wave.hs), x2 = xOf(wave.he);
+  if (strip.hs != null) {
+    const x1 = xOf(strip.hs), x2 = xOf(strip.he);
     ctx.fillStyle = 'rgba(0,112,243,0.10)'; ctx.fillRect(x1, 0, x2 - x1, h);
     ctx.strokeStyle = '#0070f3';
-    [[x1, wave.active === 'hs'], [x2, wave.active === 'he']].forEach(([x, active]) => {
-      ctx.lineWidth = active ? 3 : 1.5;
+    [[x1, strip.activeHandle === 'hs'], [x2, strip.activeHandle === 'he']].forEach(([x, isActiveHandle]) => {
+      ctx.lineWidth = isActiveHandle ? 3 : 1.5;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
     });
   }
-  const words = (S.words || []).filter((wd) => wd.s < wave.winEnd && wd.e > wave.winStart);
-  ctx.textBaseline = 'middle';
-  words.forEach((wd) => {
-    const wx1 = xOf(Math.max(wd.s, wave.winStart)), wx2 = xOf(Math.min(wd.e, wave.winEnd));
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(wx1, 0); ctx.lineTo(wx1, h); ctx.stroke();
-    const inSel = wave.hs != null && wd.s >= wave.hs - 0.001 && wd.e <= wave.he + 0.001;
-    ctx.fillStyle = inSel ? '#0070f3' : '#8f8f8f';
-    ctx.font = inSel ? 'bold 10px -apple-system,sans-serif' : '10px -apple-system,sans-serif';
-    const colW = wx2 - wx1;
-    let label = wd.t;
-    while (label.length > 1 && ctx.measureText(label).width > colW - 2) label = label.slice(0, -1);
-    if (label !== wd.t && label.length > 0) label = label.slice(0, -1) + '…';
-    ctx.save();
-    ctx.beginPath(); ctx.rect(wx1, 0, Math.max(0, colW), LABEL_H); ctx.clip();
-    ctx.fillText(label, wx1 + 2, LABEL_H / 2);
-    if (wordClass(wd.wi)) {  // cut word: strike its label too
-      const lw = ctx.measureText(label).width;
-      ctx.fillRect(wx1 + 2, LABEL_H / 2, lw, 1);
-    }
-    ctx.restore();
+  if (strip.isActive) {
+    const words = (S.words || []).filter((wd) => wd.s < strip.end && wd.e > strip.start);
+    ctx.textBaseline = 'middle';
+    words.forEach((wd) => {
+      const wx1 = xOf(Math.max(wd.s, strip.start)), wx2 = xOf(Math.min(wd.e, strip.end));
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(wx1, 0); ctx.lineTo(wx1, h); ctx.stroke();
+      const inSel = strip.hs != null && wd.s >= strip.hs - 0.001 && wd.e <= strip.he + 0.001;
+      ctx.fillStyle = inSel ? '#0070f3' : '#8f8f8f';
+      ctx.font = inSel ? 'bold 10px -apple-system,sans-serif' : '10px -apple-system,sans-serif';
+      const colW = wx2 - wx1;
+      let label = wd.t;
+      while (label.length > 1 && ctx.measureText(label).width > colW - 2) label = label.slice(0, -1);
+      if (label !== wd.t && label.length > 0) label = label.slice(0, -1) + '…';
+      ctx.save();
+      ctx.beginPath(); ctx.rect(wx1, 0, Math.max(0, colW), LABEL_H); ctx.clip();
+      ctx.fillText(label, wx1 + 2, LABEL_H / 2);
+      if (wordClass(wd.wi)) {  // cut word: strike its label too
+        const lw = ctx.measureText(label).width;
+        ctx.fillRect(wx1 + 2, LABEL_H / 2, lw, 1);
+      }
+      ctx.restore();
+    });
+  }
+  if (strip.isActive) updateStripStatus(strip);
+}
+function renderStripHandleInputs(strip) {
+  const hsI = strip.controls.querySelector('.waveHsInput'), heI = strip.controls.querySelector('.waveHeInput');
+  if (!hsI) return;
+  hsI.value = strip.hs.toFixed(3); heI.value = strip.he.toFixed(3);
+  hsI.classList.toggle('active', strip.activeHandle === 'hs');
+  heI.classList.toggle('active', strip.activeHandle === 'he');
+}
+// What the two apply buttons would actually change for the current hs/he - buttons that would
+// change nothing are disabled (bare painting the whole selection one color gave no clue what,
+// if anything, "정밀 복원" would bring back).
+function updateStripStatus(strip) {
+  const box = strip.controls.querySelector('#waveStatus'); if (!box) return;
+  const cutBtn = strip.controls.querySelector('.waveApplyCut'), keepBtn = strip.controls.querySelector('.waveApplyKeep');
+  const len = strip.he - strip.hs, cut = Math.min(len, cutOverlap(strip.hs, strip.he)), live = len - cut;
+  const noneCut = cut < 0.005, allCut = live < 0.005;
+  const state = noneCut ? '선택 범위는 지금 <b>모두 살아 있음</b>'
+    : allCut ? `선택 범위 <b>${len.toFixed(2)}초</b>가 <b>이미 전부 잘려 있음</b>`
+    : `선택 ${len.toFixed(2)}초 중 <b>${cut.toFixed(2)}초가 잘려 있음</b>`;
+  box.innerHTML = `<span>${state}</span>
+    <span class="key"><span class="sw cut"></span>잘린 부분</span>
+    <span class="key"><span class="sw risk"></span>잔음 의심(<kbd>N</kbd>)</span>
+    <span class="key"><span class="sw sel"></span>선택 범위</span>`;
+  cutBtn.disabled = allCut; keepBtn.disabled = noneCut;
+  cutBtn.textContent = allCut ? '이미 잘림' : `정밀 삭제 (${live.toFixed(2)}초 더 자름)`;
+  keepBtn.textContent = noneCut ? '복원할 부분 없음' : `정밀 복원 (${cut.toFixed(2)}초 살림)`;
+}
+// Active 전환 시에만 핸들/버튼 DOM을 만든다(비활성 스트립은 미리보기만이라 DOM이 가벼움).
+function renderStripControls(strip) {
+  strip.controls.innerHTML = `
+    <div id="waveStatus"></div>
+    <div class="zoom-handles">
+      <div class="zoom-handle-row">
+        <label>시작</label>
+        <button class="nudge" data-h="hs" data-d="-0.01">−10ms</button>
+        <input type="number" class="waveHsInput" step="0.001">
+        <button class="nudge" data-h="hs" data-d="0.01">+10ms</button>
+      </div>
+      <div class="zoom-handle-row">
+        <label>끝</label>
+        <button class="nudge" data-h="he" data-d="-0.01">−10ms</button>
+        <input type="number" class="waveHeInput" step="0.001">
+        <button class="nudge" data-h="he" data-d="0.01">+10ms</button>
+      </div>
+    </div>
+    <div class="zoom-btns">
+      <button class="wavePlayIn">▶ 선택된 부분만 듣기</button>
+      <button class="wavePlayOut">▶ 선택된 부분 빼고 듣기</button>
+      <button class="wavePlayLive" title="지금 화면에 보이는 구간을, 선택 범위와 상관없이 현재 편집(컷 결과) 그대로 재생">▶ 살아있는 부분만 듣기</button>
+      <button class="waveApplyCut danger">정밀 삭제</button>
+      <button class="waveApplyKeep ok">정밀 복원</button>
+    </div>`;
+  const q = (sel) => strip.controls.querySelector(sel);
+  q('.waveHsInput').addEventListener('change', (e) => { strip.activeHandle = 'hs'; setStripHandle(strip, 'hs', parseFloat(e.target.value)); previewStripEdit(strip); });
+  q('.waveHeInput').addEventListener('change', (e) => { strip.activeHandle = 'he'; setStripHandle(strip, 'he', parseFloat(e.target.value)); previewStripEdit(strip); });
+  q('.waveHsInput').addEventListener('focus', () => { strip.activeHandle = 'hs'; drawStrip(strip); renderStripHandleInputs(strip); });
+  q('.waveHeInput').addEventListener('focus', () => { strip.activeHandle = 'he'; drawStrip(strip); renderStripHandleInputs(strip); });
+  strip.controls.querySelectorAll('.nudge').forEach((btn) => btn.addEventListener('click', () => {
+    strip.activeHandle = btn.dataset.h;
+    setStripHandle(strip, btn.dataset.h, strip[btn.dataset.h] + parseFloat(btn.dataset.d));
+    previewStripEdit(strip);
+  }));
+  q('.wavePlayIn').addEventListener('click', () => playRange(strip.hs, strip.he, { skip: false }));
+  q('.wavePlayOut').addEventListener('click', () => playRange(strip.start, strip.end, { skip: true, extra: [{ start: strip.hs, end: strip.he }] }));
+  q('.wavePlayLive').addEventListener('click', () => playRange(strip.start, strip.end, { skip: true }));
+  q('.waveApplyCut').addEventListener('click', async () => {
+    const n = (strip.he - strip.hs) - cutOverlap(strip.hs, strip.he);
+    if (!(await decide({ type: 'range', op: 'cut', start: strip.hs, end: strip.he }))) return;
+    toast(`${n.toFixed(2)}초 정밀 삭제 (⌘Z로 되돌리기)`);
+    drawStrip(strip);
   });
-  updateWaveStatus();
+  q('.waveApplyKeep').addEventListener('click', async () => {
+    const n = cutOverlap(strip.hs, strip.he);
+    if (!(await decide({ type: 'range', op: 'keep', start: strip.hs, end: strip.he }))) return;
+    toast(`${n.toFixed(2)}초 정밀 복원 (⌘Z로 되돌리기)`);
+    drawStrip(strip);
+  });
+  renderStripHandleInputs(strip);
+  updateStripStatus(strip);
 }
-function renderWaveHandles() {
-  const hsI = $('#waveHsInput'), heI = $('#waveHeInput');
-  $('#waveHandles').hidden = wave.hs == null;
-  if (wave.hs == null) return;
-  hsI.value = wave.hs.toFixed(3); heI.value = wave.he.toFixed(3);
-  hsI.classList.toggle('active', wave.active === 'hs');
-  heI.classList.toggle('active', wave.active === 'he');
+function activateStrip(strip, hs, he) {
+  if (activeStrip && activeStrip !== strip) deactivateStrip(activeStrip);
+  activeStrip = strip;
+  strip.isActive = true; strip.hs = hs; strip.he = he; strip.activeHandle = 'he';
+  strip.el.classList.add('active');
+  renderStripControls(strip);
+  drawStrip(strip);
+  if (!strip.loaded) fetchStripPeaks(strip);
+  strip.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
-// 10-01 추가: 드래그 중 근처(±150ms) 가장 조용한 지점을 찾아 60ms 안으로 들어오면 자석처럼
-// 붙인다 - 자동 컷이 이미 쓰는 조용한 지점 스냅(audio_map.choose_boundary)을 사람이 손으로
-// 조정할 때도 받을 수 있게 하는 것. 이미 받아둔 peaks(민/맥스 버킷)만 보므로 새 서버 호출 없음.
-function nearestQuietPoint(t, windowSec = 0.15) {
-  if (!wave.peaks.length) return null;
-  const span = wave.winEnd - wave.winStart;
-  const bucketSec = span / wave.peaks.length;
-  const i0 = Math.round((t - wave.winStart) / bucketSec);
+function deactivateStrip(strip) {
+  strip.isActive = false; strip.hs = null; strip.he = null; strip.activeHandle = null;
+  strip.el.classList.remove('active');
+  strip.controls.innerHTML = '';
+  drawStrip(strip);
+}
+// select()/clearSel()이 끝에서 이걸 불러 - 선택이 그 문단의 스트립을 active로, 선택 해제는
+// 지금 active인 스트립을 다시 정적 미리보기로 되돌린다(다른 스트립은 항상 그대로 보임).
+function stripForTok(ti) {
+  const el = document.querySelector(`.tok[data-t="${ti}"]`);
+  const para = el && el.closest('.para');
+  const stripEl = para && para.nextElementSibling;
+  return waveStrips.find((s) => s.el === stripEl) || null;
+}
+function syncActiveStripToSelection() {
+  if (sel) {
+    const strip = stripForTok(sel.b) || stripForTok(sel.a);
+    if (!strip) return;
+    const r = selRange();
+    activateStrip(strip, Math.max(strip.start, r.start), Math.min(strip.end, r.end));
+  } else if (activeStrip) {
+    deactivateStrip(activeStrip); activeStrip = null;
+  }
+}
+// 드래그 중 근처(±150ms) 가장 조용한 지점을 찾아 60ms 안으로 들어오면 자석처럼 붙인다 - 자동
+// 컷이 이미 쓰는 조용한 지점 스냅(audio_map.choose_boundary)을 사람이 손으로 조정할 때도.
+function nearestQuietPointInStrip(strip, t, windowSec = 0.15) {
+  if (!strip.peaks.length) return null;
+  const span = strip.end - strip.start;
+  const bucketSec = span / strip.peaks.length;
+  const i0 = Math.round((t - strip.start) / bucketSec);
   const radius = Math.max(1, Math.round(windowSec / bucketSec));
   let best = -1, bestAmp = Infinity;
-  for (let i = Math.max(0, i0 - radius); i <= Math.min(wave.peaks.length - 1, i0 + radius); i++) {
-    const [mn, mx] = wave.peaks[i];
+  for (let i = Math.max(0, i0 - radius); i <= Math.min(strip.peaks.length - 1, i0 + radius); i++) {
+    const [mn, mx] = strip.peaks[i];
     const amp = Math.max(Math.abs(mn), Math.abs(mx));
     if (amp < bestAmp) { bestAmp = amp; best = i; }
   }
-  return best < 0 ? null : wave.winStart + (best + 0.5) * bucketSec;
+  return best < 0 ? null : strip.start + (best + 0.5) * bucketSec;
 }
-// A handle can only move within [0, duration] and must not cross the other handle; if the
-// new value would fall outside the current (possibly zoomed-in) view, the view pans just
-// enough to keep it visible instead of the handle silently vanishing off-canvas.
-function setHandle(which, t, { snap = true } = {}) {
+function setStripHandle(strip, which, t, { snap = true } = {}) {
   if (snap) {
-    const q = nearestQuietPoint(t, 0.15);
+    const q = nearestQuietPointInStrip(strip, t, 0.15);
     if (q != null && Math.abs(q - t) < 0.06) t = q;
   }
-  t = Math.max(0, Math.min(S.duration, t));
-  if (which === 'hs') wave.hs = Math.min(t, wave.he - 0.005);
-  else wave.he = Math.max(t, wave.hs + 0.005);
-  const v = wave[which];
-  const span = wave.winEnd - wave.winStart;
-  if (v < wave.winStart) { wave.winStart = Math.max(0, v - span * 0.1); wave.winEnd = wave.winStart + span; fetchWaveformBar(); }
-  else if (v > wave.winEnd) { wave.winEnd = Math.min(S.duration, v + span * 0.1); wave.winStart = wave.winEnd - span; fetchWaveformBar(); }
-  drawWaveformBar(); renderWaveHandles();
+  t = Math.max(strip.start, Math.min(strip.end, t));
+  if (which === 'hs') strip.hs = Math.min(t, strip.he - 0.005);
+  else strip.he = Math.max(t, strip.hs + 0.005);
+  drawStrip(strip); renderStripHandleInputs(strip); updateStripStatus(strip);
 }
-// 10-01 추가: 조정을 "놓는" 순간(드래그 끝/넛지 클릭/숫자 입력) 그 경계 앞뒤를 자동으로 짧게
-// 들려준다 - "조정→버튼 눌러 듣기→다시 조정" 반복에서 버튼 클릭을 없앤 것(사용자 지적: 정밀
-// 조정-다시듣기가 반복적으로 일어남). 드래그 중(mousemove)에는 안 부른다 - 계속 재생 호출이
-// 겹치면 오히려 거슬림, 손을 뗐을 때 한 번만.
-function previewHandleEdit() {
-  if (wave.active === 'hs') playRange(Math.max(0, wave.hs - 0.4), wave.hs + 0.4, { skip: false });
-  else playRange(wave.he - 0.4, Math.min(S.duration, wave.he + 0.4), { skip: false });
+// 조정을 "놓는" 순간(드래그 끝/넛지 클릭/숫자 입력) 그 경계 앞뒤를 자동으로 짧게 들려준다 -
+// "조정→버튼 눌러 듣기→다시 조정" 반복에서 버튼 클릭을 없앤 것.
+function previewStripEdit(strip) {
+  if (strip.activeHandle === 'hs') playRange(Math.max(strip.start, strip.hs - 0.4), strip.hs + 0.4, { skip: false });
+  else playRange(strip.he - 0.4, Math.min(strip.end, strip.he + 0.4), { skip: false });
 }
-$('#waveCanvas').addEventListener('mousedown', (ev) => {
-  const rect = ev.currentTarget.getBoundingClientRect(); const w = rect.width; const span = wave.winEnd - wave.winStart;
-  const xOf = (t) => (t - wave.winStart) / span * w;
-  const tOf = (x) => wave.winStart + Math.max(0, Math.min(w, x)) / w * span;
+function onStripMouseDown(strip, ev) {
+  const rect = strip.canvas.getBoundingClientRect(); const w = rect.width; const span = strip.end - strip.start;
+  const xOf = (t) => (t - strip.start) / span * w;
+  const tOf = (x) => strip.start + Math.max(0, Math.min(w, x)) / w * span;
   const mx = ev.clientX - rect.left;
-  const distHs = wave.hs != null ? Math.abs(mx - xOf(wave.hs)) : Infinity;
-  const distHe = wave.he != null ? Math.abs(mx - xOf(wave.he)) : Infinity;
-  if (Math.min(distHs, distHe) < 14) {  // 기존 경계 중 하나에 가까움 - 그 경계를 조정
+  const distHs = strip.hs != null ? Math.abs(mx - xOf(strip.hs)) : Infinity;
+  const distHe = strip.he != null ? Math.abs(mx - xOf(strip.he)) : Infinity;
+  if (strip.isActive && Math.min(distHs, distHe) < 14) {  // 기존 경계 중 하나에 가까움 - 조정
     const handle = distHs < distHe ? 'hs' : 'he';
-    wave.active = handle;
-    const move = (e2) => setHandle(handle, tOf(e2.clientX - rect.left));
+    strip.activeHandle = handle;
+    const move = (e2) => setStripHandle(strip, handle, tOf(e2.clientX - rect.left));
     move(ev);
     const up = () => {
       window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
-      previewHandleEdit(); logAction('wave_drag', { hs: round3(wave.hs), he: round3(wave.he) });
+      previewStripEdit(strip); renderStripHandleInputs(strip);
+      logAction('wave_drag', { hs: round3(strip.hs), he: round3(strip.he) });
     };
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up, { once: true });
     return;
   }
-  // 10-01 추가: 기존 핸들과 무관하게 이 지점부터 새 범위를 드래그로 만든다(사용자 요청 핵심 -
-  // 단어를 먼저 클릭하지 않아도 파형 위에서 바로 범위를 만들어 삭제/살리기).
+  // 비활성(정적 미리보기) 상태거나, 활성이어도 핸들과 먼 곳 - 이 지점부터 새 범위를 만든다.
   const startT = tOf(mx);
-  wave.hs = startT; wave.he = startT; wave.active = 'he';
-  let dragged = false;
+  let hs = startT, he = startT, dragged = false;
   const move = (e2) => {
     dragged = true;
     const t = tOf(e2.clientX - rect.left);
-    if (t < startT) { wave.hs = t; wave.he = startT; wave.active = 'hs'; }
-    else { wave.hs = startT; wave.he = t; wave.active = 'he'; }
-    drawWaveformBar(); renderWaveHandles();
+    if (t < startT) { hs = t; he = startT; } else { hs = startT; he = t; }
+    strip.hs = hs; strip.he = he;
+    drawStrip(strip);
   };
   const up = () => {
     window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
-    if (!dragged || wave.he - wave.hs < 0.02) {  // 실수로 짧게 클릭 - 새 범위 취소
-      wave.hs = null; wave.he = null; drawWaveformBar(); renderWaveHandles(); return;
+    if (!dragged || he - hs < 0.02) {  // 실수로 짧게 클릭 - 기존 active 선택은 그대로 둔다
+      if (!strip.isActive) { strip.hs = null; strip.he = null; drawStrip(strip); }
+      return;
     }
-    // clearSel()은 본문 텍스트 선택을 지우려고 부르는 건데, clearSel()이 내부에서
-    // waveSyncToSelection()도 다시 불러서(sel이 null이니 follow 모드로) 방금 만든 이
-    // wave.hs/he를 지워버린다 - 그래서 호출 전에 백업해뒀다가 그대로 복원한다.
-    const finalHs = wave.hs, finalHe = wave.he, finalActive = wave.active;
-    clearSel();
-    wave.hs = finalHs; wave.he = finalHe; wave.active = finalActive;
-    drawWaveformBar(); renderWaveHandles(); updateWaveStatus();
-    previewHandleEdit();
-    logAction('wave_select', { hs: round3(wave.hs), he: round3(wave.he) });
+    clearSel();  // 본문 텍스트 선택(다른 문단일 수도 있음)을 지운다 - 이 스트립의 hs/he는 안 건드림
+    activateStrip(strip, hs, he);
+    previewStripEdit(strip);
+    logAction('wave_select', { hs: round3(hs), he: round3(he) });
   };
   window.addEventListener('mousemove', move); window.addEventListener('mouseup', up, { once: true });
-});
-// Wheel-zoom on the waveform itself: this is the main answer to "the waveform alone isn't
-// precise enough" - zooming in shrinks the time window, so the SAME pixel width covers far
-// fewer milliseconds and dragging becomes proportionally more precise.
-$('#waveCanvas').addEventListener('wheel', (ev) => {
-  ev.preventDefault();
-  const rect = ev.currentTarget.getBoundingClientRect();
-  const span = wave.winEnd - wave.winStart;
-  const cursorT = wave.winStart + Math.max(0, Math.min(rect.width, ev.clientX - rect.left)) / rect.width * span;
-  const factor = ev.deltaY < 0 ? 0.7 : 1 / 0.7;
-  let newSpan = Math.max(WAVE_MIN_WIN, Math.min(Math.max(wave.origEnd - wave.origStart, 10), span * factor));
-  let newStart = cursorT - (cursorT - wave.winStart) * (newSpan / span);
-  newStart = Math.max(0, Math.min(S.duration - newSpan, newStart));
-  wave.winStart = newStart; wave.winEnd = newStart + newSpan;
-  drawWaveformBar();
-  clearTimeout(wave.wheelT); wave.wheelT = setTimeout(fetchWaveformBar, 120);
-}, { passive: false });
-$('#waveResetView').addEventListener('click', () => {
-  wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
-  drawWaveformBar(); fetchWaveformBar();
-});
-document.querySelectorAll('.zoom-handle-row .nudge').forEach((btn) => btn.addEventListener('click', () => {
-  if (wave.hs == null) return;
-  const h = btn.dataset.h; wave.active = h;
-  setHandle(h, wave[h] + parseFloat(btn.dataset.d));
-  previewHandleEdit();
-}));
-$('#waveHsInput').addEventListener('change', (e) => { wave.active = 'hs'; setHandle('hs', parseFloat(e.target.value)); previewHandleEdit(); });
-$('#waveHeInput').addEventListener('change', (e) => { wave.active = 'he'; setHandle('he', parseFloat(e.target.value)); previewHandleEdit(); });
-$('#waveHsInput').addEventListener('focus', () => { wave.active = 'hs'; drawWaveformBar(); renderWaveHandles(); });
-$('#waveHeInput').addEventListener('focus', () => { wave.active = 'he'; drawWaveformBar(); renderWaveHandles(); });
-$('#wavePlayIn').addEventListener('click', () => { if (wave.hs != null) playRange(wave.hs, wave.he, { skip: false }); });
-$('#wavePlayOut').addEventListener('click', () => {
-  if (wave.hs == null) return;
-  playRange(wave.winStart, wave.winEnd, { skip: true, extra: [{ start: wave.hs, end: wave.he }] });
-});
-// Independent of hs/he - previews the current edit exactly as it'll actually sound in this
-// area (existing cut_spans only), regardless of whatever boundary is currently being nudged.
-$('#wavePlayLive').addEventListener('click', () => {
-  playRange(wave.winStart, wave.winEnd, { skip: true });
-});
-// Applying stays on the bar rather than closing anything - precise work is rarely one cut: the
-// natural next move is to nudge the same boundary again or restore a sliver you just went
-// too far on, and re-picking the range each time was real friction.
-$('#waveApplyCut').addEventListener('click', async () => {
-  if (wave.hs == null) return;
-  const n = (wave.he - wave.hs) - cutOverlap(wave.hs, wave.he);
-  // decide() already toasts its own '실패: ...' and leaves S untouched on failure - if we kept
-  // going here regardless, this success toast would overwrite that error message and
-  // drawWaveformBar would repaint the same (unchanged) state, making a real failure look like success.
-  if (!(await decide({ type: 'range', op: 'cut', start: wave.hs, end: wave.he }))) return;
-  toast(`${n.toFixed(2)}초 정밀 삭제 (⌘Z로 되돌리기)`);
-  drawWaveformBar();
-});
-$('#waveApplyKeep').addEventListener('click', async () => {
-  if (wave.hs == null) return;
-  const n = cutOverlap(wave.hs, wave.he);
-  if (!(await decide({ type: 'range', op: 'keep', start: wave.hs, end: wave.he }))) return;
-  toast(`${n.toFixed(2)}초 정밀 복원 (⌘Z로 되돌리기)`);
-  drawWaveformBar();
-});
-// 10-01(2단계 "위험지점 추적"): audio_ok===false인 cut_spans만 순서대로 건너뛰며 - 본문 선택과
-// 무관하게 파형 자체를 그 지점으로 옮긴다(단어 경계와 안 맞을 수 있어 sel을 쓰지 않음).
+}
+function stripNear(t) {
+  if (!waveStrips.length) return null;
+  let best = waveStrips[0], bestD = Infinity;
+  for (const s of waveStrips) {
+    const d = t < s.start ? s.start - t : t > s.end ? t - s.end : 0;
+    if (d < bestD) { bestD = d; best = s; if (d === 0) break; }
+  }
+  return best;
+}
+// 10-01(2단계 "위험지점 추적"): audio_ok===false인 cut_spans만 순서대로 건너뛰며, 그 지점이
+// 속한 문단의 스트립을 active로 전환하고 자동재생(이 단계부터는 귀로 확인하는 단계).
 function jumpToAudioRisk(dir) {
   const risky = S.cut_spans.filter((sp) => sp.audio_ok === false).sort((a, b) => a.start - b.start);
   if (!risky.length) { toast('잔음 의심 구간이 없습니다'); return; }
-  const cur = wave.hs != null ? wave.hs : (cursorTime || -1);
+  const cur = activeStrip?.hs != null ? activeStrip.hs : (cursorTime || -1);
   let span;
   if (dir > 0) span = risky.find((s) => s.start > cur + 0.01) || risky[0];
   else { const rev = [...risky].reverse(); span = rev.find((s) => s.start < cur - 0.01) || rev[0]; }
   clearSel();
-  wave.origStart = Math.max(0, span.start - WAVE_PAD); wave.origEnd = Math.min(S.duration, span.end + WAVE_PAD);
-  wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
-  wave.hs = span.start; wave.he = span.end; wave.active = 'he';
-  drawWaveformBar(); renderWaveHandles(); fetchWaveformBar();
-  playRange(wave.hs, wave.he, { skip: false });  // 이 단계부터는 귀로 확인하는 단계라 자동재생
+  const strip = stripNear(span.start);
+  if (!strip) { toast('해당 구간의 스트립을 찾지 못했습니다'); return; }
+  activateStrip(strip, Math.max(strip.start, span.start), Math.min(strip.end, span.end));
+  playRange(strip.hs, strip.he, { skip: false });
 }
 
 // ------------------------------------------------------------------ pending navigation
