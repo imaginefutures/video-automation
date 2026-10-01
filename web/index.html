@@ -125,7 +125,6 @@
   .review-card.st-auto .rc-type, .review-card.st-skipped .rc-type,
   .review-card.st-pattern .rc-type { color: var(--muted); }
   .review-card .rc-status { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
-  .review-card .rc-outtake { font-size: 10.5px; color: var(--proposal-line); margin-bottom: 3px; }
   .review-card .rc-text { color: var(--ink); line-height: 1.4;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .review-card .rc-actions { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
@@ -135,7 +134,6 @@
   .review-card .rc-actions button:hover { filter: brightness(1.06); }
   #reviewProgress { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
   #reviewEstimate { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
-  #reviewPersonalized { font-size: 11px; color: var(--muted); margin: -2px 16px 8px; }
 
   /* accordion: one compact line up near the title/confirm button - most sessions never need
      to touch the tuning inputs, so the header alone (name + live summary) is all that shows */
@@ -358,6 +356,10 @@
       <div class="actions">
         <button id="btnConfirm" class="primary">확정</button>
       </div>
+      <button id="btnRedetect" style="width:100%;margin-top:6px;background:none;border:1px solid var(--line-strong);color:var(--muted);padding:6px;border-radius:var(--r-sm);font-size:12px"
+              title="NG 탐지~전체 루프를 지금 코드/모델로 처음부터 다시 돈다 - 트랜스크립트·화자블록·무음은 그대로. API 비용 발생. 사람이 이미 결정한 항목은 겹침 기준으로 자동 재배치되고, 안 겹치는 항목만 다시 검토 대상으로 남는다">
+        모델 업데이트 후 다시 분석
+      </button>
       <div id="pauseAccordion">
         <button id="pauseHead" aria-expanded="false" aria-controls="pausePanel">
           <span class="pz-title">무음 리듬 · <span id="pzHeadSub">–</span></span>
@@ -374,7 +376,6 @@
     <div id="sidebarScroll">
       <div id="suggestionPanel"></div>
       <div id="reviewPanel"></div>
-      <div id="reviewPersonalized"></div>
     </div>
   </aside>
 
@@ -410,7 +411,6 @@
     <button id="popJoin" title="이음새 듣기: 자르기 전/후 경계를 1.5초씩 이어서 재생 - 잘라낸 부분이 티 안 나게 자연스럽게 이어지는지 확인용">▶ 이음새 <kbd>X</kbd></button>
     <button id="popToggle"><kbd>↵</kbd></button>
     <button id="popZoom" title="소리 파형을 보며 경계를 미세 조정">🔍 정밀 조정 <kbd>Z</kbd></button>
-    <button id="popStar" title="이 NG를 영상 끝 '비하인드/아웃테이크' 코너에 다시 쓸 후보로 표시 (웃음 포인트 등 - 본편에서는 그대로 삭제됨)">☆ 엔딩용 후보</button>
     <button id="popReport" class="danger" title="자동으로 잘못 잘렸습니다 - 즉시 복원하고, 같은 유형을 앞으로 더 보수적으로 판단하도록 기록합니다">⚠ 잘못 잘렸음</button>
   </div>
 </div>
@@ -900,7 +900,7 @@ function applyStates() {
       el.title = fmt(t.s) + (part ? (partSet.get(t.wi).mode === 'cut' ? ' · 일부 정밀 삭제됨(빨간 줄)' : ' · 일부 정밀 복원됨(파란 밑줄)') + ' — 선택 후 Z로 확인' : '');
     } else {
       const v = gv.get(t.gid); const cut = gapCut(t.g);
-      const ruleKeep = !['NORMAL', 'ENUMERATION', 'QUOTE_TO_EXPLANATION'].includes(t.g.style);
+      const ruleKeep = !['NORMAL_INTER', 'NORMAL_INTRA', 'ENUMERATION', 'QUOTE_TO_EXPLANATION'].includes(t.g.style);
       el.className = 'tok g' + (cut ? ' cut' : v.user ? ' user' : ruleKeep ? ' rule' : '');
       const ratio = v.usable > 0 ? Math.min(1, v.keep / v.usable) : 1;
       el.querySelector('.fill').style.width = `${Math.round(ratio * 100)}%`;
@@ -1003,8 +1003,8 @@ function select(x, y) {
   $('#popHint').textContent = `${words.length}단어${nGaps ? ` · 쉼 ${nGaps}개` : ''} · ${fmt(range.start)}–${fmt(range.end)} · ${(range.end - range.start).toFixed(1)}초`
     + (nPart ? ` · 일부 정밀 편집됨 — Z로 확인` : '');
   // A selection that exactly matches a 검토 필요 item's words (word-for-word, or a whole
-  // block) resolves THAT item's own decision (feeds personalization, updates its status in
-  // the sidebar) instead of a generic manual override - see applySel(). 건너뛰기/검토 완료/★
+  // block) resolves THAT item's own decision (updates its status in the sidebar) instead of
+  // a generic manual override - see applySel(). 건너뛰기/검토 완료/★
   // live on the sidebar card itself (renderReviewPanel) since they're decisions, not edits -
   // this popup only holds tools that touch content (듣기/이음새/정밀 조정) plus the generic
   // 삭제/살리기 toggle, which doubles as the fast path for a matched review item too. ★ stays
@@ -1032,10 +1032,6 @@ function select(x, y) {
   const toggleBtn = $('#popToggle');
   toggleBtn.innerHTML = `${allCut ? '살리기' : '삭제'} <kbd>↵</kbd>`;
   toggleBtn.className = allCut ? 'ok' : 'danger';
-  const starHere = item && item.route !== 'REVIEW';  // REVIEW items star from their own card
-  $('#popStar').style.display = starHere ? '' : 'none';
-  if (starHere) $('#popStar').textContent = S.decisions.outtakes.includes(`ng:${item.i}`) ? '★ 엔딩용 후보' : '☆ 엔딩용 후보';
-  $('#popStar').dataset.ref = starHere ? `ng:${item.i}` : '';
   // 백로그/R3-신뢰-장치.md 오삭제 신고: 지금 선택이 정확히 NG 항목 하나와 겹치고 현재 잘린
   // 상태일 때만 의미가 있다 - 신고는 ng 인덱스 단위 결정이라 일반 수동 선택에는 못 붙인다.
   const reportHere = item && allCut;
@@ -1083,8 +1079,8 @@ function clearSel(hide = true) {
   if (hide) { $('#pop').style.display = 'none'; document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active')); }
 }
 // A selection that exactly spans a pending 검토 필요 item's words (or a whole pending
-// block) resolves THAT item via its own decision type - which also feeds personalization
-// and drops it from the sidebar - instead of a generic manual override that wouldn't.
+// block) resolves THAT item via its own decision type - which drops it from the sidebar -
+// instead of a generic manual override that wouldn't.
 function matchedReview(words) {
   if (!words.length) return null;
   const wiStart = words[0].wi, wiEnd = words[words.length - 1].wi;
@@ -1145,15 +1141,6 @@ function playSelJoin() { if (sel) { const r = selRange(); playRange(Math.max(0, 
 $('#popToggle').addEventListener('click', toggleSel);
 $('#popPlay').addEventListener('click', playSel);
 $('#popJoin').addEventListener('click', playSelJoin);
-$('#popStar').addEventListener('click', async (e) => {
-  const ref = e.target.dataset.ref; if (!ref) return;
-  const on = !S.decisions.outtakes.includes(ref);
-  if (!(await decide({ type: 'outtake', ref, on }))) return;
-  e.target.textContent = on ? '★ 엔딩용 후보' : '☆ 엔딩용 후보';
-  // 이 삭제 자체는 그대로 유지된다 - 본편에서는 계속 잘려나가고, 별표는 그 잘린 조각을
-  // "나중에 엔딩 비하인드 코너로 재활용할 후보"로만 따로 표시해두는 것 (318행 설계 참고).
-  toast(on ? '엔딩 코너 후보로 표시했습니다 (본편에서는 계속 삭제됨)' : '엔딩 코너 후보에서 뺐습니다');
-});
 $('#popReport').addEventListener('click', async (e) => {
   const i = e.target.dataset.i; if (i === '' || i == null) return;
   clearSel();
@@ -1638,7 +1625,7 @@ function renderPauseRow() {
   const counts = {}; for (const g of S.pause.gaps) counts[g.style] = (counts[g.style] || 0) + 1;
   el.innerHTML = `
     <div id="pzToggle"><input type="checkbox" id="pzOn" ${p.enabled ? 'checked' : ''}><label for="pzOn">쉼 다듬기 적용</label></div>
-    ${['NORMAL', 'ENUMERATION', 'QUOTE_TO_EXPLANATION'].map((k) => `
+    ${['NORMAL_INTER', 'NORMAL_INTRA', 'ENUMERATION', 'QUOTE_TO_EXPLANATION'].map((k) => `
       <div class="pause-row"><label for="pz-${k}">${styleKo(k)}<span class="n">${counts[k] || 0}곳</span></label><input type="number" id="pz-${k}" step="0.05" min="0" data-style="${k}" value="${p.targets[k] ?? ''}">s</div>`).join('')}
     <button id="pzResetAll">직접 조정한 쉼을 전부 추천값으로</button>`;
   syncPauseTabIndex();
@@ -1669,12 +1656,10 @@ $('#pauseHead').addEventListener('click', () => {
 // The queue of every case the algorithm itself routed to REVIEW (NG items) plus every
 // speaker-block retake - shown in full, decided or not, as an audit trail rather than a
 // todo list that empties into silence. None of these get their own in-text highlight - they
-// render as kept-for-now (see wordClass) and live here instead. Whichever way an item is
-// resolved is also this user's ground truth: the server folds it into
-// ~/.video-cut/prefs/<user>.json (keyed by the LLM's case tag, e.g. A/B/E self-repair
-// patterns) and applies it as the default on the NEXT video - so as a personal skill, this
-// panel is also literally how the algorithm learns a given editor's taste, and shrinks the
-// more it's used.
+// render as kept-for-now (see wordClass) and live here instead. 2026-10-01: this panel no
+// longer feeds a per-user personalized default into the next video (removed - see server.py
+// "(removed) personalization", docs/채택하지-않은-것.md) - resolving an item here only affects
+// this video.
 const CASE_KO = { A: '정정 재시작', B: '재진술', C: '강조 반복', D: '정상 나열', E: '조사·어미 수정', F: '미완성 전환', OTHER: '기타', FILLER: '필러' };
 function ngTypeLabel(n) { return CASE_KO[n.clf?.case] || '검토 필요'; }
 function ngStatus(n) {
@@ -1682,7 +1667,6 @@ function ngStatus(n) {
   // 'skipped' is a tag on top of whatever action currently applies, not a third action - a
   // skip never changes action/by (see server apply()), so check it first and independently.
   if (dec.skipped) return 'skipped';
-  if (dec.by === 'personalized') return 'auto';
   if (dec.by === 'pattern_suggestion') return 'pattern';
   // Server-side, an NG item always owns its own words regardless of any covering speaker
   // block (09-29 unification) - so every item here is independently decidable, never "already
@@ -1698,7 +1682,7 @@ function blockStatus(b) {
   if (!bd.decided) return 'pending';
   return bd.approved ? 'done_cut' : 'done_keep';
 }
-const STATUS_KO = { pending: '○ 삭제됨 · 검토 대기', done_cut: '✓ 삭제로 확정', done_keep: '✓ 살리기로 확정', skipped: '— 건너뜀', auto: '✓ 자동(학습됨)', pattern: '✓ 패턴 적용됨' };
+const STATUS_KO = { pending: '○ 삭제됨 · 검토 대기', done_cut: '✓ 삭제로 확정', done_keep: '✓ 살리기로 확정', skipped: '— 건너뜀', pattern: '✓ 패턴 적용됨' };
 function reviewNgItems() { return (S.ng || []).filter((n) => n.route === 'REVIEW'); }
 function reviewBlocks() { return S.blocks || []; }
 // Clicking a review card's body highlights the words it's about in the transcript, the same
@@ -1726,18 +1710,9 @@ function reviewCard(typeLabel, status, text, [wa, wb], kind, ref, onOpen) {
   const head = document.createElement('div'); head.className = 'rc-head';
   head.innerHTML = `<span class="rc-type">${esc(typeLabel)}</span><span class="rc-status">${STATUS_KO[status]}</span>`;
   card.appendChild(head);
-  if (kind === 'ng' && ref.outtake_suggested) {  // global_review.py's PD pass suggested this NG for
-    const ob = document.createElement('div'); ob.className = 'rc-outtake';  // the ending outtake corner
-    ob.title = ref.outtake_reason || '';
-    ob.textContent = `★ 엔딩용 후보로 제안됨${ref.outtake_reason ? ' — ' + ref.outtake_reason : ''}`;
-    card.appendChild(ob);
-  }
   const t = document.createElement('div'); t.className = 'rc-text'; t.textContent = text; card.appendChild(t);
-  // 건너뛰기/검토 완료/★: every decision this card can make, right here - none of them need an
-  // exact-range reselect in the popup. 건너뛰기/검토 완료 only apply before a decision exists
-  // (pending/skipped); ★ (ng items only - a block has no single outtake clip) stays available
-  // whatever the status, same as it did in the popup, since realizing a moment was funny often
-  // happens after you've already decided cut/keep on it.
+  // 건너뛰기/검토 완료: every decision this card can make, right here - none of them need an
+  // exact-range reselect in the popup. Both only apply before a decision exists (pending/skipped).
   const actions = document.createElement('div'); actions.className = 'rc-actions';
   if (status === 'pending') {
     const skipBtn = document.createElement('button');
@@ -1753,27 +1728,13 @@ function reviewCard(typeLabel, status, text, [wa, wb], kind, ref, onOpen) {
   if (status === 'pending' || status === 'skipped') {
     const doneBtn = document.createElement('button'); doneBtn.className = 'ok';
     doneBtn.textContent = '✓ 검토 완료';
-    doneBtn.title = '지금 상태(기본 삭제 그대로든, 정밀 조정으로 일부만 손봤든) 그대로 확정 - 개인화에 쌓임';
+    doneBtn.title = '지금 상태(기본 삭제 그대로든, 정밀 조정으로 일부만 손봤든) 그대로 확정';
     doneBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await reviewAction({ kind, ref }, 'confirm');
       toast('검토 완료');
     });
     actions.appendChild(doneBtn);
-  }
-  if (kind === 'ng') {
-    const outtakeRef = `ng:${ref.i}`;
-    const starred = S.decisions.outtakes.includes(outtakeRef);
-    const starBtn = document.createElement('button');
-    starBtn.textContent = starred ? '★ 엔딩용 후보' : '☆ 엔딩용 후보';
-    starBtn.title = "이 NG를 영상 끝 '비하인드/아웃테이크' 코너에 다시 쓸 후보로 표시 (웃음 포인트 등 - 본편에서는 그대로 삭제됨)";
-    starBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const on = !S.decisions.outtakes.includes(outtakeRef);
-      if (!(await decide({ type: 'outtake', ref: outtakeRef, on }))) return;
-      toast(on ? '엔딩 코너 후보로 표시했습니다 (본편에서는 계속 삭제됨)' : '엔딩 코너 후보에서 뺐습니다');
-    });
-    actions.appendChild(starBtn);
   }
   if (actions.childNodes.length) card.appendChild(actions);
   card.addEventListener('click', () => {
@@ -1833,8 +1794,6 @@ function renderReviewPanel() {
   }
   activeNg.forEach((n) => panel.appendChild(makeReviewCard(n)));
   activeBlocks.forEach((b) => panel.appendChild(makeBlockCard(b)));
-  const personalized = doneNg.filter((n) => ngStatus(n) === 'auto').length;
-  $('#reviewPersonalized').textContent = personalized ? `학습된 취향으로 ${personalized}건 자동 처리됨` : '';
   renderScrollTicks();
 }
 
@@ -1919,6 +1878,27 @@ $('#btnConfirm').addEventListener('click', async () => {
   };
   poll();
 });
+// 모델 업데이트 후 다시 분석: NG 탐지~전체 루프를 처음부터 다시 돈다(트랜스크립트·화자블록·무음은
+// 그대로) - 사용자가 직접 눌러야만 실행된다(API 비용 발생, 계획과 실행 분리 원칙). 서버가 기존
+// 결정을 word-index 겹침으로 재배치해서 돌려주므로(server.py Session._reconcile_ng), 여기서는
+// decide()/applySuggestion()과 동일하게 받은 상태를 그대로 반영만 한다.
+$('#btnRedetect').addEventListener('click', async () => {
+  const ok = await confirmModal('NG 탐지~전체 루프를 지금 코드/모델로 처음부터 다시 돕니다. API 비용이 발생하고 영상 길이에 따라 몇 분 걸릴 수 있습니다. 이미 결정한 항목은 겹치는 만큼 자동으로 반영되지만, 새 분석과 크게 안 겹치는 항목은 다시 검토해야 합니다. 계속할까요?');
+  if (!ok) return;
+  showModal('<p>새 모델로 다시 분석하는 중… (영상 길이·분량에 따라 몇 분 걸릴 수 있습니다)</p>');
+  const r = await (await fetch('/api/redetect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+  if (!r.ok) { showModal(`<p>실패: ${esc(r.error)}</p><button onclick="hideModal()">닫기</button>`); return; }
+  S.cut_spans = r.cut_spans; S.word_states = r.word_states; S.decisions = r.decisions;
+  S.can_undo = r.can_undo; S.can_redo = r.can_redo;
+  S.suggestions = r.suggestions; S.review_estimate = r.review_estimate;
+  setGapView(r.gap_view);
+  applyStates(); updateStats(); renderReviewPanel(); renderSuggestions(); renderReviewEstimate();
+  const est = r.review_estimate || {};
+  showModal(`<h2>다시 분석 완료</h2>
+    <p>검토 대상 ${est.pending ?? 0}건 (예상 ${Math.max(1, Math.round((est.estimated_sec || 0) / 60))}분) - 기존 결정은 겹치는 항목에 자동 반영됐습니다.</p>
+    ${r.backup ? `<p style="color:var(--muted);font-size:12px">이전 분석 결과 백업: <code>${esc(r.backup)}</code></p>` : ''}
+    <button onclick="hideModal()">닫기</button>`);
+});
 function showModal(html) {
   const modal = $('#modal');
   if (modal.style.display !== 'flex') $('#modalPanel').style.cssText = '';  // reopening fresh: forget any drag, re-center
@@ -1974,7 +1954,7 @@ function fmt(t) { const m = Math.floor(t / 60), s = Math.floor(t % 60); return `
 // tenths even past a minute: a sub-second precise cut should still move the 편집 후 길이 number
 function fmtDur(t) { const d = Math.round(t * 10) / 10; return d >= 60 ? `${Math.floor(d / 60)}분 ${(d % 60).toFixed(1)}초` : `${d.toFixed(1)}초`; }
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function styleKo(k) { return { NORMAL: '일반', ENUMERATION: '나열', QUOTE_TO_EXPLANATION: '인용→설명', TRANSITION: '전환', QUESTION_TO_ANSWER: '질문→답', SPEAKER_CHANGE: '화자 전환' }[k] || k; }
+function styleKo(k) { return { NORMAL_INTER: '문장 간', NORMAL_INTRA: '문장 내', ENUMERATION: '나열', QUOTE_TO_EXPLANATION: '인용→설명', TRANSITION: '전환', QUESTION_TO_ANSWER: '질문→답', SPEAKER_CHANGE: '화자 전환' }[k] || k; }
 
 load();
 </script>

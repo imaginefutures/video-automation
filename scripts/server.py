@@ -32,35 +32,29 @@ from plan_pauses import PRESETS, PROTECT_SEC, recommended_keep, trim_for_keep, u
 from pattern_suggest import check as check_pattern, MIN_TRIGGER as PATTERN_MIN_TRIGGER
 from transcript_search import search as search_transcript
 import audio_map as am
+import migrate
+import redetect
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-# ----------------------------------------------------------------------------- personalization
+# ----------------------------------------------------------------------------- (removed) personalization
 #
-# This tool is meant to ship as a personal skill: the cut algorithm's REVIEW-route guesses
-# (case A/B/E self-repair patterns the LLM itself flagged as uncertain) get better for a given
-# user the more they confirm/reject in the sidebar's "검토 필요" panel. That ground truth is
-# per-user (two editors can disagree on the same NG pattern) and lives outside any single
-# video's decisions.json so it carries over to the next video - a "정답지" the algorithm reads
-# on every new session, not just a log of what happened in this one.
-PREFS_MIN_SAMPLES = 3    # don't let one early click lock in a personal default
+# 2026-10-01: cross-video per-user auto-apply (prefs.json 기반 _pref_action_for_case/_record_pref)
+# 전면 폐기 - docs/채택하지-않은-것.md, docs/기획/04-지식-층과-학습.md 참고. 사용자의 모든
+# 복원/추가삭제를 "개인 취향"으로 똑같이 취급했는데, 실제로는 상당수가 엔진이 보편적으로 틀린
+# 것(접속사 삼킴 버그 사례)이라 구분이 안 됐다 - 보편적 버그가 개인 계정 통계에 조용히 흡수돼
+# 묻히는 결함. 사용자 피드백은 이제 구조적 의심 탐지(docs/남은-개발.md)로만 쓴다 - 자동 라우팅은
+# 바꾸지 않는다.
 UNDO_LIMIT = 200  # decision snapshots kept for ⌘Z (each is a few KB)
-PREFS_MIN_RATIO = 0.75   # how one-sided the user's history must be before we trust it
 
 
 def user_id() -> str:
     return os.environ.get("VIDEO_CUT_USER") or getpass.getuser()
 
 
-def prefs_path() -> Path:
-    d = Path.home() / ".video-cut" / "prefs"
-    d.mkdir(parents=True, exist_ok=True)
-    return d / f"{user_id()}.json"
-
-
 def history_path() -> Path:
     """백로그/R1-결과-영수증.md: 확정마다 한 줄씩 쌓이는 채널 전체 기록 - 영상을 넘어서므로
-    prefs.json처럼 사용자 홈에 둔다."""
+    사용자 홈(~/.video-cut/)에 둔다."""
     d = Path.home() / ".video-cut"
     d.mkdir(parents=True, exist_ok=True)
     return d / "history.jsonl"
@@ -91,8 +85,7 @@ class Session:
         self.gaps = pauses["gaps"]
         blocks = self._load("speaker_blocks.json", {"blocks": []})
         self.blocks = blocks["blocks"]
-        self.prefs_path = prefs_path()
-        self.prefs = json.loads(self.prefs_path.read_text()) if self.prefs_path.exists() else {"ng_case": {}}
+        self.structural_suspects = self._load("structural_suspects.json", {"tags": {}})
         self.decisions = self._merge_defaults(self._load("decisions.json", None))
         self.redo_stack: list[dict] = []  # popped overrides, replayable via "redo_override" - not persisted
         # Whole-decision snapshots so ⌘Z undoes the LAST decision of any kind (NG/block/range/
@@ -117,32 +110,37 @@ class Session:
         # like before.
         self.amap = am.load_audio_map(folder)
 
-    # ---- personalization (per-user, cross-video "정답지")
+    # ---- structural suspect detection (개인화 대체, docs/기획/04-지식-층과-학습.md 3장)
 
-    def _pref_action_for_case(self, case: str | None) -> str | None:
-        """The user's own past cut/keep call for this NG case (A/B/E/...), once there's
-        enough of it to trust - None leaves the item for the review panel as usual."""
-        if not case:
-            return None
-        counts = self.prefs.get("ng_case", {}).get(case)
-        if not counts:
-            return None
-        total = counts.get("cut", 0) + counts.get("keep", 0)
-        if total < PREFS_MIN_SAMPLES:
-            return None
-        cut_ratio = counts.get("cut", 0) / total
-        if cut_ratio >= PREFS_MIN_RATIO:
-            return "cut"
-        if cut_ratio <= 1 - PREFS_MIN_RATIO:
-            return "keep"
-        return None  # user is genuinely split on this case - keep asking
-
-    def _record_pref(self, case: str | None, action: str) -> None:
-        if not case or action not in ("cut", "keep"):
+    def _record_structural_signal(self, i: int, action: str) -> None:
+        """route_candidates.py/structural_tags.py가 이 NG 후보에 붙여둔 구조적 태그별로 사용자
+        결정 방향(cut/keep)을 누적한다. 2회 이상 쌓였는데 전부 같은 방향이면 "버그일 수 있음"으로
+        영수증에만 보여준다(receipt() 참고) - 이 집계는 어떤 경우에도 자동 라우팅을 바꾸지 않는다.
+        개인화(_pref_action_for_case, 2026-10-01 제거)와의 결정적 차이: 여기서 쌓이는 건 사용자
+        정답지가 아니라 "개발자가 봐야 할 패턴 후보"일 뿐이다."""
+        if action not in ("cut", "keep") or not (0 <= i < len(self.ng)):
             return
-        bucket = self.prefs.setdefault("ng_case", {}).setdefault(case, {"cut": 0, "keep": 0})
-        bucket[action] = bucket.get(action, 0) + 1
-        self.prefs_path.write_text(json.dumps(self.prefs, ensure_ascii=False, indent=2))
+        tags = self.ng[i].get("structural_tags") or []
+        if not tags:
+            return
+        for tag in tags:
+            bucket = self.structural_suspects["tags"].setdefault(tag, {"cut": 0, "keep": 0})
+            bucket[action] = bucket.get(action, 0) + 1
+        write_json(self.structural_suspects_path(), self.structural_suspects)
+
+    def structural_suspects_path(self) -> Path:
+        return self.edit / "structural_suspects.json"
+
+    def flagged_structural_suspects(self) -> list[dict]:
+        """2회 이상 쌓였고 전부 같은 방향인 태그만 - 하나라도 반대 방향이 섞이면 그냥 케이스별로
+        갈리는 정상 판단이지 버그 의심이 아니다(04 문서 3.2)."""
+        out = []
+        for tag, counts in self.structural_suspects.get("tags", {}).items():
+            cut, keep = counts.get("cut", 0), counts.get("keep", 0)
+            total = cut + keep
+            if total >= 2 and min(cut, keep) == 0:
+                out.append({"tag": tag, "direction": "keep" if keep else "cut", "count": total})
+        return out
 
     # ---- live pattern-generalization suggestions (PLAN.md 사용자 프로세스 LLM 적용 #2)
 
@@ -198,7 +196,8 @@ class Session:
             for i in sug["candidate_ids"]:
                 si = str(i)
                 if d["ng"].get(si, {}).get("by") != "user":  # don't clobber a decision made meanwhile
-                    d["ng"][si] = {"action": sug["action"], "by": "pattern_suggestion", "rule": sug["rule_text"]}
+                    d["ng"][si] = {"action": sug["action"], "by": "pattern_suggestion",
+                                   "rule": sug["rule_text"], "skipped": False, "wi": self._ng_wi(i)}
             self.log("suggestion_accept", **sug)
             self.save()
         else:
@@ -244,13 +243,134 @@ class Session:
         if dec.get("skipped"):
             return "skipped"
         by = dec.get("by")
-        if by == "personalized":
-            return "auto"
         if by == "pattern_suggestion":
             return "pattern"
         if by not in ("user", "gold"):  # 'gold' = 정답지 대조로 확정된 결정 (09-29, 결정-이력 참고)
             return "pending"
         return "done_cut" if dec.get("action") == "cut" else "done_keep"
+
+    # ---- stable identity (survives a detect/route rerun, unlike array index/sequential id)
+    #
+    # transcript.json's word index never changes once written (transcribe.py skips re-running
+    # if the file exists), so it's the one coordinate that still means the same thing after NG
+    # detection, speaker-block detection or pause planning gets rerun with updated logic and
+    # produces a different count/order of candidates. See _reconcile_ng/_reconcile_blocks.
+
+    def _ng_wi(self, i: int) -> list[int]:
+        item = self.ng[i]
+        return [item["raw_word_index_start"], item["raw_word_index_end"]]
+
+    def _block_wi(self, b: dict) -> list[int]:
+        return [b["wi_start"], b["wi_end"]]
+
+    def _gap_key(self, g: dict) -> str:
+        """plan_pauses.py already uses this same (prev_wi, next_wi) pair internally to reuse
+        LLM style labels across reruns (previous_labels()) - decisions.json should key gaps
+        the same way instead of the positional g['id'], which shifts if build_gaps() finds a
+        different number of gaps (SHOW_MIN/LLM_MIN tuning, audio_map changes, ...)."""
+        return f"{g['prev_wi']}-{g['next_wi']}"
+
+    def _reconcile_ng(self, saved: dict) -> None:
+        """Re-anchor human ng decisions by word-index overlap when route_candidates.py/
+        detect_filler_candidates.py has been rerun from scratch and ng.json's array no longer
+        lines up with what this decisions.json last saw (see docstring above). A decision
+        still at an index whose stored 'wi' matches the current item there is left alone -
+        the common case, since within one run new items are only ever appended
+        (detect_filler_candidates.py/global_review.py), never inserted/reordered."""
+        saved_ng = saved.get("ng")
+        if not saved_ng:
+            return
+        for k, v in saved_ng.items():
+            i = int(k)
+            if "wi" not in v and i < len(self.ng):
+                v["wi"] = self._ng_wi(i)  # one-time migration - safe only up to the next rerun
+        rerun_happened = any(
+            int(k) >= len(self.ng) or tuple(v["wi"]) != tuple(self._ng_wi(int(k)))
+            for k, v in saved_ng.items() if v.get("wi")
+        ) or any(int(k) >= len(self.ng) for k in saved_ng)
+        if not rerun_happened:
+            return
+        carried = [v for v in saved_ng.values()
+                   if v.get("wi") and v.get("by") in ("user", "pattern_suggestion", "gold")]
+        reconciled: dict[str, dict] = {}
+        for i, item in enumerate(self.ng):
+            cur_s, cur_e = item["raw_word_index_start"], item["raw_word_index_end"]
+            best, best_ratio = None, 0.0
+            for v in carried:
+                s, e = v["wi"]
+                inter = max(0, min(cur_e, e) - max(cur_s, s))
+                ratio = inter / max(1, cur_e - cur_s)
+                if ratio > best_ratio:
+                    best, best_ratio = v, ratio
+            if best and best_ratio >= 0.5:  # at least half of the new candidate was already judged
+                reconciled[str(i)] = {**best, "wi": [cur_s, cur_e]}
+        saved["ng"] = reconciled
+
+    def _reconcile_blocks(self, saved: dict) -> None:
+        """Same re-anchoring as _reconcile_ng, for detect_speaker_blocks.py reruns - block ids
+        are assigned sequentially (id = len(blocks)) and shift the same way. wi_start/wi_end
+        here are both inclusive (unlike ng's exclusive raw_word_index_end), see
+        detect_speaker_blocks.py."""
+        saved_blocks = saved.get("blocks")
+        if not saved_blocks:
+            return
+        by_id = {b["id"]: b for b in self.blocks}
+        for k, v in saved_blocks.items():
+            bid = int(k)
+            if "wi" not in v and bid in by_id:
+                v["wi"] = self._block_wi(by_id[bid])
+        rerun_happened = any(
+            int(k) not in by_id or tuple(v["wi"]) != tuple(self._block_wi(by_id[int(k)]))
+            for k, v in saved_blocks.items() if v.get("wi")
+        ) or any(int(k) not in by_id for k in saved_blocks)
+        if not rerun_happened:
+            return
+        carried = [v for v in saved_blocks.values() if v.get("wi") and v.get("decided")]
+        reconciled: dict[str, dict] = {}
+        for b in self.blocks:
+            cur_s, cur_e = b["wi_start"], b["wi_end"]
+            best, best_ratio = None, 0.0
+            for v in carried:
+                s, e = v["wi"]
+                inter = max(0, min(cur_e, e) - max(cur_s, s) + 1)
+                ratio = inter / max(1, cur_e - cur_s + 1)
+                if ratio > best_ratio:
+                    best, best_ratio = v, ratio
+            if best and best_ratio >= 0.5:
+                # the carried decision's per-line calls are keyed by the OLD block's line ids -
+                # a line this block didn't have before falls back to the current proposal
+                # instead of silently defaulting to "keep" (최대 삭제 원칙).
+                lines = dict(best.get("lines", {}))
+                for ln in b["lines"]:
+                    lines.setdefault(str(ln["id"]), ln.get("proposed", "delete"))
+                reconciled[str(b["id"])] = {**best, "wi": [cur_s, cur_e], "lines": lines}
+        saved["blocks"] = reconciled
+
+    def _migrate_gap_keys(self, gaps_dict: dict) -> None:
+        """A decisions.json saved before gaps were keyed by (prev_wi,next_wi) used the
+        positional g['id'] instead - rewrite to the stable form so pause-rhythm edits survive
+        a plan_pauses.py rerun. A lone gap id (unlike ng/blocks) carries no other field to
+        verify identity against, so this can only catch the unambiguous case: if the gap list
+        shrank, any legacy id past the new end is unambiguously stale and dropped rather than
+        guessed at. A rerun that changes gap COMPOSITION without shrinking the total count
+        (e.g. SHOW_MIN tuning that drops one gap and reveals another elsewhere) can still
+        silently migrate a decision onto the wrong gap - this is a known residual limitation,
+        lower-stakes than ng/blocks since the worst case is a silence trim landing on an
+        adjacent pause rather than a wrong keep/cut call."""
+        legacy = [k for k in gaps_dict if k.lstrip("-").isdigit()]
+        if legacy and max(int(k) for k in legacy) >= len(self.gaps):
+            for k in legacy:
+                del gaps_dict[k]
+            return
+        migrated = {}
+        for g in self.gaps:
+            stable, legacy_key = self._gap_key(g), str(g["id"])
+            if stable in gaps_dict:
+                migrated[stable] = gaps_dict[stable]
+            elif legacy_key in gaps_dict:
+                migrated[stable] = gaps_dict[legacy_key]
+        gaps_dict.clear()
+        gaps_dict.update(migrated)
 
     def _block_status(self, b: dict) -> str:
         bd = self.decisions["blocks"].get(str(b["id"]))
@@ -274,30 +394,29 @@ class Session:
     def _default_decisions(self) -> dict:
         ng = {}
         for i, item in enumerate(self.ng):
+            wi = self._ng_wi(i)
             clf = item.get("llm_classification") or {}
             disp = self._display_route(item)
             if disp == "AUTO_SAFE":
-                ng[str(i)] = {"action": "cut", "by": "auto", "skipped": False}
+                ng[str(i)] = {"action": "cut", "by": "auto", "skipped": False, "wi": wi}
                 continue
-            # REVIEW (route=CUT, flag=restore): the algorithm itself isn't sure. Before asking
-            # the user (again), check whether THIS user has already told us, often enough, what
-            # they do with this case - if so, apply it and skip the review queue. Otherwise it
-            # starts CUT (서비스-개요와-철학.md 원칙 4, 09-29 decision): the queue then only asks
-            # "restore this?", so the user's job is to rescue good speech, not hunt for NGs.
+            # REVIEW (route=CUT, flag=restore): the algorithm itself isn't sure. It starts CUT
+            # (서비스-개요와-철학.md 원칙 4, 09-29 decision): the queue then only asks "restore
+            # this?", so the user's job is to rescue good speech, not hunt for NGs. 2026-10-01:
+            # no longer checks a per-user personalized default here - see "(removed)
+            # personalization" above.
             if disp == "REVIEW":
-                personal = self._pref_action_for_case(clf.get("case"))
-                ng[str(i)] = ({"action": personal, "by": "personalized"} if personal
-                              else {"action": "cut", "by": "auto"}) | {"skipped": False}
+                ng[str(i)] = {"action": "cut", "by": "auto", "skipped": False, "wi": wi}
             else:
-                ng[str(i)] = {"action": "keep", "by": "auto", "skipped": False}
+                ng[str(i)] = {"action": "keep", "by": "auto", "skipped": False, "wi": wi}
         # speaker blocks follow the same rule: the proposed deletion starts applied
-        blocks = {str(b["id"]): {"approved": True, "decided": False, "skipped": False,
+        blocks = {str(b["id"]): {"approved": True, "decided": False, "skipped": False, "wi": self._block_wi(b),
                                  "lines": {str(ln["id"]): ln.get("proposed", "delete") for ln in b["lines"]}}
                   for b in self.blocks}
         return {"ng": ng,
                 "pause": {"enabled": True, "targets": {k: v["target"] for k, v in self.pause_presets.items()},
                           "gaps": {}},
-                "blocks": blocks, "overrides": [], "outtakes": [], "reported_bad_cuts": [],
+                "blocks": blocks, "overrides": [], "reported_bad_cuts": [],
                 "history": [], "confirmed_at": None}
 
     def _merge_defaults(self, saved: dict | None) -> dict:
@@ -306,9 +425,12 @@ class Session:
         defaults = self._default_decisions()
         if not saved:
             return defaults
+        self._reconcile_ng(saved)
+        self._reconcile_blocks(saved)
         for k, v in defaults["ng"].items():
             nd = saved.setdefault("ng", {}).setdefault(k, v)
             nd.setdefault("skipped", False)
+            nd.setdefault("wi", v["wi"])
             # a REVIEW item still on the untouched 'auto' default follows the CURRENT default
             # (cut since 09-29) - older sessions saved it as keep; anything the user decided stays
             if nd.get("by") == "auto" and self._display_route(self.ng[int(k)]) == "REVIEW":
@@ -317,15 +439,18 @@ class Session:
             bd = saved.setdefault("blocks", {}).setdefault(k, v)
             bd.setdefault("decided", False)
             bd.setdefault("skipped", False)
+            bd.setdefault("wi", v["wi"])
             if not bd["decided"]:  # same for a block nobody has decided yet
                 bd["approved"] = v["approved"]
         saved.setdefault("pause", defaults["pause"])
         for k, v in defaults["pause"]["targets"].items():
             saved["pause"].setdefault("targets", {}).setdefault(k, v)
         saved["pause"].setdefault("gaps", {})
+        self._migrate_gap_keys(saved["pause"]["gaps"])
         saved["pause"].setdefault("enabled", True)
-        for k in ("overrides", "outtakes", "reported_bad_cuts", "history"):
+        for k in ("overrides", "reported_bad_cuts", "history"):
             saved.setdefault(k, [])
+        saved.pop("outtakes", None)  # 기능 제거(엔딩용 후보 별표) - 남아있던 값은 그냥 버림
         for m in saved.pop("manual_cuts", []):  # pre-overrides format
             saved["overrides"].append({"op": "cut", "wi_start": m["wi_start"], "wi_end": m["wi_end"]})
         saved.setdefault("confirmed_at", None)
@@ -339,7 +464,7 @@ class Session:
 
     def gap_keep(self, g: dict) -> float:
         """Seconds actually kept: the user's value if they dragged the gauge, else the recommendation."""
-        v = self.decisions["pause"]["gaps"].get(str(g["id"]))
+        v = self.decisions["pause"]["gaps"].get(self._gap_key(g))
         if isinstance(v, (int, float)):
             return float(v)
         if v == "keep":  # legacy string: keep the whole pause
@@ -352,7 +477,7 @@ class Session:
         for g in self.gaps:
             us, ue = usable_range(g["gap_start"], g["gap_end"])
             out.append({"id": g["id"], "usable": round(max(0.0, ue - us), 3), "rec": self.gap_rec(g),
-                        "keep": self.gap_keep(g), "user": isinstance(self.decisions["pause"]["gaps"].get(str(g["id"])), (int, float))})
+                        "keep": self.gap_keep(g), "user": isinstance(self.decisions["pause"]["gaps"].get(self._gap_key(g)), (int, float))})
         return out
 
     def cut_spans(self) -> list[dict]:
@@ -432,7 +557,7 @@ class Session:
             dec = d["ng"].get(str(i), {})
             if dec.get("action") == "cut":
                 tag = "cut:ng"
-            elif self._display_route(item) == "REVIEW" and dec.get("by") not in ("user", "personalized", "pattern_suggestion"):
+            elif self._display_route(item) == "REVIEW" and dec.get("by") not in ("user", "pattern_suggestion"):
                 tag = "review"
             else:
                 tag = "keep"
@@ -480,9 +605,7 @@ class Session:
             "ng": [{"i": i, "start": it["start"], "end": it["end"], "wi_start": it["raw_word_index_start"],
                     "wi_end": it["raw_word_index_end"], "label": it["label"], "route": self._display_route(it),
                     "route_reason": it.get("route_reason", ""), "text": it.get("deleted_text", ""),
-                    "clf": it.get("llm_classification"),
-                    "outtake_suggested": bool(it.get("outtake_suggested")),
-                    "outtake_reason": it.get("outtake_reason", "")} for i, it in enumerate(self.ng)],
+                    "clf": it.get("llm_classification")} for i, it in enumerate(self.ng)],
             "pause": {"presets": self.pause_presets, "gaps": self.gaps, "protect_sec": PROTECT_SEC,
                       "view": self.gap_view()},
             "pad_sec": BOUNDARY_PAD_SEC,
@@ -525,8 +648,6 @@ class Session:
             return {"label": "쉼 조정", "at": g["gap_start"] if g else None}
         if t in ("pause_target", "pause_enabled"):
             return {"label": "무음 리듬 설정", "at": None}
-        if t == "outtake":
-            return {"label": "엔딩용 후보 표시", "at": None}
         if t == "report_bad_cut":
             item = self.ng[int(msg["i"])] if 0 <= int(msg["i"]) < len(self.ng) else {}
             return {"label": "오삭제 신고", "at": item.get("start")}
@@ -586,14 +707,14 @@ class Session:
                 d["ng"][str(i)]["skipped"] = False
                 if 0 <= i < len(self.ng):
                     clf = self.ng[i].get("llm_classification") or {}
-                    self._record_pref(clf.get("case"), d["ng"][str(i)].get("action"))
                     self._maybe_suggest_pattern(clf.get("case"), d["ng"][str(i)].get("action"))
+                    self._record_structural_signal(i, d["ng"][str(i)].get("action"))
             else:
-                d["ng"][str(i)] = {"action": action, "by": "user", "skipped": False}
+                d["ng"][str(i)] = {"action": action, "by": "user", "skipped": False, "wi": self._ng_wi(i)}
                 if 0 <= i < len(self.ng):
                     clf = self.ng[i].get("llm_classification") or {}
-                    self._record_pref(clf.get("case"), action)
                     self._maybe_suggest_pattern(clf.get("case"), action)
+                    self._record_structural_signal(i, action)
         elif t == "pause_enabled":
             d["pause"]["enabled"] = bool(msg["enabled"])
         elif t == "pause_target":
@@ -629,12 +750,15 @@ class Session:
             d["overrides"].append(self._build_range_override(op, start, end, msg.get("wi_start"), msg.get("wi_end"), pruned))
         elif t == "pause_gap":
             # keep_sec = seconds of the pause to keep (0 = delete it); null = back to the recommendation
-            gid = str(msg["gap_id"])
+            gap = next((g for g in self.gaps if g["id"] == int(msg["gap_id"])), None)
+            if not gap:
+                raise ValueError("bad gap id")
+            key = self._gap_key(gap)
             v = msg.get("keep_sec")
             if v is None:
-                d["pause"]["gaps"].pop(gid, None)
+                d["pause"]["gaps"].pop(key, None)
             else:
-                d["pause"]["gaps"][gid] = round(max(0.0, float(v)), 3)
+                d["pause"]["gaps"][key] = round(max(0.0, float(v)), 3)
         elif t == "undo_override":
             if d["overrides"]:
                 ov = d["overrides"].pop()
@@ -649,12 +773,6 @@ class Session:
                 pruned = self._prune_contained(prev["start"], prev["end"])
                 d["overrides"].append(self._build_range_override(prev["op"], prev["start"], prev["end"],
                                                                    prev.get("wi_start"), prev.get("wi_end"), pruned))
-        elif t == "outtake":
-            ref = msg["ref"]
-            if msg.get("on") and ref not in d["outtakes"]:
-                d["outtakes"].append(ref)
-            elif not msg.get("on") and ref in d["outtakes"]:
-                d["outtakes"].remove(ref)
         elif t == "report_bad_cut":
             # 백로그/R3-신뢰-장치.md: 자동으로 잘못 잘렸다는 신고 - 복원 + 그 케이스를 한 단계
             # 보수적으로(평범한 살리기의 2배 가중 - 실수를 적극적으로 고친 신호라서) + 나중에
@@ -665,13 +783,13 @@ class Session:
             item = self.ng[i]
             clf = item.get("llm_classification") or {}
             case = clf.get("case")
-            d["ng"][str(i)] = {"action": "keep", "by": "user", "skipped": False}
+            d["ng"][str(i)] = {"action": "keep", "by": "user", "skipped": False, "wi": self._ng_wi(i)}
             record = {"video": self.name, "ref": f"ng:{i}", "case": case, "label": item.get("label"),
                       "text": item.get("deleted_text", ""), "route_reason": item.get("route_reason", ""),
                       "at": datetime.now().isoformat(timespec="seconds")}
             d["reported_bad_cuts"].append(record)
-            self._record_pref(case, "keep")
-            self._record_pref(case, "keep")
+            self._record_structural_signal(i, "keep")
+            self._record_structural_signal(i, "keep")  # 2배 가중 - 위 주석 참고
             try:
                 with open(bad_cut_reports_path(), "a") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -732,7 +850,7 @@ class Session:
             for i, item in enumerate(self.ng):
                 if ws <= item["raw_word_index_start"] and item["raw_word_index_end"] - 1 <= we:
                     ov["prev"]["ng"][str(i)] = d["ng"].get(str(i))
-                    d["ng"][str(i)] = {"action": op, "by": "user"}
+                    d["ng"][str(i)] = {"action": op, "by": "user", "skipped": False, "wi": self._ng_wi(i)}
             for b in self.blocks:
                 bd = d["blocks"][str(b["id"])]
                 for ln in b["lines"]:
@@ -744,8 +862,9 @@ class Session:
             for g in self.gaps:
                 if start <= g["gap_start"] + 0.03 and g["gap_end"] - 0.03 <= end:
                     us, ue = usable_range(g["gap_start"], g["gap_end"])
-                    ov["prev"]["gaps"][str(g["id"])] = d["pause"]["gaps"].get(str(g["id"]))
-                    d["pause"]["gaps"][str(g["id"])] = round(max(0.0, ue - us), 3)
+                    key = self._gap_key(g)
+                    ov["prev"]["gaps"][key] = d["pause"]["gaps"].get(key)
+                    d["pause"]["gaps"][key] = round(max(0.0, ue - us), 3)
         return ov
 
     def _revert_override(self, ov: dict) -> None:
@@ -885,6 +1004,9 @@ class Session:
             "flagged": flagged, "restored": restored,
             "reported_bad_cuts": len(d.get("reported_bad_cuts", [])),
             "review_sec": review_sec, "seam_flag_rate": seam_flag_rate, "decided_by": by_counts,
+            # 2026-10-01: 개인화를 대체하는 구조적 의심 탐지(기획/04 3장) - 자동 라우팅엔 영향 없고
+            # 영수증에만 보임. 빈 리스트가 정상(의심 패턴이 없다는 뜻).
+            "structural_suspects": self.flagged_structural_suspects(),
         }
 
     def _last_history_entry(self, exclude_video: str | None = None) -> dict | None:
@@ -932,7 +1054,6 @@ class Session:
         self.decisions["confirmed_at"] = datetime.now().isoformat(timespec="seconds")
         self.save()
         self.start_render(edl_path)
-        self.start_learning()
         removed = sum(s["end"] - s["start"] for s in spans)
         previous = self._last_history_entry(exclude_video=self.name)
         rc = self.receipt(spans)
@@ -959,22 +1080,6 @@ class Session:
                 self.render_status = {"state": "error", "detail": (e.stderr or "")[-800:]}
 
         threading.Thread(target=run, daemon=True).start()
-
-    def start_learning(self) -> None:
-        """2026-09-30: `~/.video-cut/cases/`(few-shot L2 학습 데이터)는 classify_region.py가
-        실제로 읽어서 쓰지만(fewshot.retrieve), 채워주는 쪽인 learn_from_session.py가 지금까지
-        run.py/server.py 어디서도 자동 호출되지 않아 사람이 수동으로 돌려야만 늘었다 - "영상이
-        쌓일수록 똑똑해진다"는 설계 의도가 자동화돼 있지 않았다. render처럼 fire-and-forget으로
-        confirm() 응답을 지연시키지 않고 확정된 영상의 결정을 바로 학습에 반영한다."""
-        def run():
-            try:
-                subprocess.run([sys.executable, str(Path(__file__).parent / "learn_from_session.py"),
-                                str(self.folder)], check=True, capture_output=True, text=True)
-            except subprocess.CalledProcessError:
-                pass
-
-        threading.Thread(target=run, daemon=True).start()
-
 
 def _merge_audio_ok(a: bool | None, b: bool | None) -> bool | None:
     """None means 'not audio-checked' (no audio_map, or a pause/manual span that never goes
@@ -1085,6 +1190,21 @@ class Handler(BaseHTTPRequestHandler):
                 with self.session.lock:
                     result = self.session.confirm()
                 return self._json({"ok": True, **result})
+            if self.path == "/api/redetect":
+                # 새 모델로 다시 분석 - 사용자가 버튼으로 직접 트리거(계획과 실행 분리 원칙,
+                # 자동으로는 절대 안 돎). edit/ng.json 등을 백업 후 처음부터 다시 만들고
+                # Session을 새로 만든다 - Session.__init__의 _reconcile_ng()/_reconcile_blocks()가
+                # 사람 결정(by=user/pattern_suggestion/gold)을 word-index 겹침으로 재배치한다.
+                folder = self.session.folder
+                with self.session.lock:
+                    backup_dir = redetect.redetect(folder, no_llm=bool(body.get("no_llm")))
+                    Handler.session = Session(folder)
+                return self._json({"ok": True, "backup": str(backup_dir) if backup_dir else None,
+                                   "cut_spans": self.session.cut_spans(), "word_states": self.session.word_states(),
+                                   "decisions": self.session.decisions, "gap_view": self.session.gap_view(),
+                                   "can_undo": self.session.can_undo(), "can_redo": self.session.can_redo(),
+                                   "review_estimate": self.session._review_estimate(),
+                                   "suggestions": self.session.suggestions})
             if self.path == "/api/log":
                 action = body.pop("action", "ui")
                 self.session.log(action, **body)
@@ -1138,6 +1258,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(folder: Path, port: int = 8765, open_browser: bool = True) -> None:
+    for msg in migrate.migrate_project(folder):  # run.py도 호출하지만, server.py 단독 실행 대비
+        print(f"[migrate] {msg}")
     Handler.session = Session(folder)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
