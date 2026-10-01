@@ -44,12 +44,39 @@ from pydantic import BaseModel
 from common import (load_env, video_dir, edit_dir, load_transcript, words_only, write_json, source_media, norm,
                     trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs)
 import audio_map as am
+from plan_pauses import PRESETS
 from transcribe import call_scribe
 
 CONTEXT_PAD_WORDS = 12
 JUDGE_BATCH = 20
 G2_WORDS_EACH_SIDE = 4          # 재전사 검사에 쓸 경계 앞뒤 단어 수
 G2_WORD_COUNT_TOLERANCE = 1     # 기대 단어 수 대비 이 이상 차이나면 잔여음/절단 의심
+
+# 2026-10-01 (docs/기획/02-품질-루프.md 2.5절, 남은-개발.md "부분 루프 점수 시스템"): 선택은
+# 여전히 "가장 많이 지우는 대안" 우선이다(02 문서 2.6절 2번, 최대 삭제 방침) - 점수는 삭제량이
+# 같은 대안끼리 묶였을 때만 쓰는 타이브레이커다. 그러니 이 점수 시스템은 접속사 삼킴류의 "한
+# 단어 더 지우면 clean으로 통과하는" 문제 자체는 못 막는다 - 그건 route_candidates.py의 즉시
+# 안전망(flag)과 info_lost 기반 flag 상향(아래 select_alt)이 담당한다. 이 점수가 실제로 효과를
+# 내는 지점은 "삭제량이 같은 여러 대안 중 더 자연스러운 쪽 고르기"(예: 확장 1단어 vs 흡수 1단어가
+# 똑같이 1단어를 추가로 지울 때, 음향·리듬이 더 매끄러운 쪽)와 진동 감지 시 "어느 쪽에 고정할지"다.
+ACOUSTIC_WEIGHT = 0.4
+CONTENT_WEIGHT = 0.4   # clean 필터(C1~C3 전부 통과)를 통과한 대안에만 이미 적용됨 - 늘 0.4
+RHYTHM_WEIGHT = 0.2
+RHYTHM_TARGET_SEC = PRESETS["NORMAL_INTER"]["target"]   # 0.25s - 문맥별 목표치(무음-리듬.md)가
+# 아직 이음새 단위로 안 들어와 있어 일반 문맥 목표로 근사한다. 진짜 문맥별 목표는 "무음-리듬
+# 재설계"(남은-개발.md)가 끝나야 가능.
+RHYTHM_FALLOFF_SEC = 0.5        # 목표치에서 이만큼 벗어나면 리듬 점수 0
+
+# 02 문서 2.3절 "잔여 조각 흡수" - 컷 바로 옆의 추임새·비전사 소리·2음절 이하 조각까지 포함하는
+# 대안. 단순 expand_*(한 단어만 확장)와 달리 조건을 만족하는 한 여러 단어를 연속으로 삼킨다.
+ABSORB_FILLER_VOCAB = {"음", "어", "아", "그", "저", "뭐", "그니까", "이제"}
+ABSORB_MAX_SYLLABLES = 2
+ABSORB_MAX_WORDS = 3            # 무한정 삼키지 않도록 상한
+
+
+def _is_absorbable(text: str) -> bool:
+    t = norm(text)
+    return t in ABSORB_FILLER_VOCAB or len(t) <= ABSORB_MAX_SYLLABLES
 
 # 경계 계산(quiet-snap vs flat pad, G1/G3 겸용)은 audio_map.choose_boundary로 이동 (2026-09-29) -
 # server.py의 cut_spans()도 같은 구현을 쓴다.
@@ -58,7 +85,27 @@ choose_boundary = am.choose_boundary
 
 # --------------------------------------------------------------------------------- 대안 생성
 
-def gen_alternatives(wi_s: int, wi_e: int, prev_end: int, next_start: int) -> list[tuple[str, int, int]]:
+def _absorb_start(wi_s: int, prev_end: int, words: list[dict]) -> int:
+    """wi_s 바로 앞쪽으로, 흡수 가능한(필러·짧은 조각) 단어가 연속되는 한 경계를 당긴다."""
+    i = wi_s
+    consumed = 0
+    while i - 1 >= prev_end and consumed < ABSORB_MAX_WORDS and _is_absorbable(words[i - 1]["text"]):
+        i -= 1
+        consumed += 1
+    return i
+
+
+def _absorb_end(wi_e: int, next_start: int, words: list[dict]) -> int:
+    i = wi_e
+    consumed = 0
+    while i < next_start and consumed < ABSORB_MAX_WORDS and _is_absorbable(words[i]["text"]):
+        i += 1
+        consumed += 1
+    return i
+
+
+def gen_alternatives(wi_s: int, wi_e: int, prev_end: int, next_start: int,
+                     words: list[dict] | None = None) -> list[tuple[str, int, int]]:
     alts = [("original", wi_s, wi_e)]
     if wi_s + 1 < wi_e:
         alts.append(("shrink_start", wi_s + 1, wi_e))
@@ -68,6 +115,13 @@ def gen_alternatives(wi_s: int, wi_e: int, prev_end: int, next_start: int) -> li
         alts.append(("expand_start", wi_s - 1, wi_e))
     if wi_e + 1 <= next_start:
         alts.append(("expand_end", wi_s, wi_e + 1))
+    if words is not None:
+        absorbed_s = _absorb_start(wi_s, prev_end, words)
+        if absorbed_s < wi_s:
+            alts.append(("absorb_start", absorbed_s, wi_e))
+        absorbed_e = _absorb_end(wi_e, next_start, words)
+        if absorbed_e > wi_e:
+            alts.append(("absorb_end", wi_s, absorbed_e))
     return alts
 
 
@@ -246,7 +300,7 @@ def evaluate_seam(amap, words, duration, wi_s, wi_e, prev_end, next_start, made_
     """이 이음새의 모든 대안을 만들고 경계를 계산한다. 판정 대상(judge_items)과 대안 목록을
     반환 - 실제 judge 호출은 여러 이음새를 모아 배치로 하므로 여기선 준비만 한다."""
     alts = []
-    for name, a_s, a_e in gen_alternatives(wi_s, wi_e, prev_end, next_start):
+    for name, a_s, a_e in gen_alternatives(wi_s, wi_e, prev_end, next_start, words):
         b = choose_boundary(amap, words, a_s, a_e, duration)
         alts.append({"alt": name, "wi_start": a_s, "wi_end": a_e, **b,
                      "packet": build_packet(words, a_s, a_e)})
@@ -255,8 +309,43 @@ def evaluate_seam(amap, words, duration, wi_s, wi_e, prev_end, next_start, made_
     return alts, judge_items
 
 
+def acoustic_continuity_score(alt: dict) -> float:
+    """0~1. audio_ok=False(조용한 지점을 못 찾음)면 0 - 이런 대안은 애초에 clean 후보에서
+    빠지지만(select_alt), 점수 함수 자체는 방어적으로 둔다. quiet_snap(실제 무음 지점을 찾음)이
+    flat pad(안전하게 돌아간 추정치)보다 낫다고 본다."""
+    if not alt.get("audio_ok"):
+        return 0.0
+    return 1.0 if alt.get("method") == "quiet_snap" else 0.7
+
+
+def rhythm_score(alt: dict, words: list[dict]) -> float:
+    """0~1. 이 대안을 택했을 때 결과물에 남는 이음새 쉼(컷 양옆에서 남는 두 조각의 합)이
+    일반 문맥 목표치(RHYTHM_TARGET_SEC)에 가까울수록 높다. 문맥별(나열/인용 등) 목표는
+    무음-리듬.md 재설계 전까지는 반영 안 됨 - 일반 목표로 근사."""
+    a_s, a_e = alt["wi_start"], alt["wi_end"]
+    pause = 0.0
+    has_ref = False
+    if a_s > 0:
+        pause += max(0.0, alt["start"] - words[a_s - 1]["end"])
+        has_ref = True
+    if a_e < len(words):
+        pause += max(0.0, words[a_e]["start"] - alt["end"])
+        has_ref = True
+    if not has_ref:
+        return 1.0  # 영상 맨 앞/끝 - 비교할 이웃이 없음, 감점하지 않음
+    return max(0.0, 1.0 - abs(pause - RHYTHM_TARGET_SEC) / RHYTHM_FALLOFF_SEC)
+
+
+def composite_score(alt: dict, words: list[dict]) -> float:
+    """02 문서 2.5절 가중합 - 문장 연결(C1~C3)은 clean 필터를 통과한 대안에 한해 늘 만점(0.4)이다
+    (실패하면애초에 clean에 안 들어옴)."""
+    return (CONTENT_WEIGHT
+            + ACOUSTIC_WEIGHT * acoustic_continuity_score(alt)
+            + RHYTHM_WEIGHT * rhythm_score(alt, words))
+
+
 def select_alt(alts: list[dict], judgments: dict[tuple[int, str], AltJudgment], cut_id: int,
-               base_flag: str | None, base_reason: str | None) -> tuple[dict, str | None, str | None]:
+               base_flag: str | None, base_reason: str | None, words: list[dict]) -> tuple[dict, str | None, str | None]:
     clean, dirty = [], []
     for a in alts:
         j = judgments.get((cut_id, a["alt"]))
@@ -273,7 +362,8 @@ def select_alt(alts: list[dict], judgments: dict[tuple[int, str], AltJudgment], 
 
     reasons = [base_reason] if base_reason else []
     if clean:
-        chosen = max(clean, key=lambda a: a["wi_end"] - a["wi_start"])
+        # 02 문서 2.6절 2번: 가장 많이 지우는 대안이 우선, 삭제량이 같으면 점수(2.5절)로 고른다.
+        chosen = max(clean, key=lambda a: (a["wi_end"] - a["wi_start"], composite_score(a, words)))
         flag = base_flag
         j = chosen["_judgment"]
         if j.info_lost != "none":
@@ -318,12 +408,16 @@ def refine(folder: Path, max_rounds: int = 3) -> Path:
     client = anthropic.Anthropic()
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
 
-    # 이음새별 현재 상태 (라운드 사이 유지)
+    # 이음새별 현재 상태 (라운드 사이 유지). `seen`은 02 문서 2.7절 진동 감지용 - 이 이음새가
+    # 지금까지 거쳐온 (wi_start, wi_end) 조합을 전부 기록해, 전에 봤던 조합으로 되돌아오면(A->B->A)
+    # 진동으로 보고 점수 높은 쪽에 고정한다.
     state = {c["id"]: {"wi_start": c["wi_start"], "wi_end": c["wi_end"], "made_by": c["made_by"],
                        "flag": c.get("flag"), "flag_reason": c.get("flag_reason"),
-                       "chosen_alt": "original", "boundary": None}
+                       "chosen_alt": "original", "boundary": None,
+                       "seen": {(c["wi_start"], c["wi_end"])}}
              for c in cuts}
     to_process = {c["id"] for c in cuts}  # 첫 라운드는 전부
+    locked: set[int] = set()  # 진동 감지로 고정돼 더 이상 재검사 안 하는 이음새
 
     for r in range(1, max_rounds + 1):
         if not to_process:
@@ -355,20 +449,45 @@ def refine(folder: Path, max_rounds: int = 3) -> Path:
         for cid in to_process:
             prev_wi = (state[cid]["wi_start"], state[cid]["wi_end"], state[cid]["flag"])
             chosen, flag, reason = select_alt(all_alts[cid], judgments, cid,
-                                              state[cid]["flag"], None)
+                                              state[cid]["flag"], None, words)
+            new_key = (chosen["wi_start"], chosen["wi_end"])
+
+            if new_key in state[cid]["seen"] and new_key != prev_wi[:2]:
+                # 진동: 전에 거쳐간 조합으로 되돌아옴. 지금 고른 것과 "직전 라운드 상태"(=이번
+                # 라운드의 original 대안) 중 점수 높은 쪽으로 고정하고 더 안 건드린다.
+                original_alt = next((a for a in all_alts[cid] if a["alt"] == "original"), None)
+                prev_score = composite_score(original_alt, words) if original_alt and original_alt.get("_judgment") else -1
+                new_score = composite_score(chosen, words)
+                final = chosen if new_score >= prev_score or original_alt is None else original_alt
+                final_reason = (f"대안 사이를 오가는 진동 감지 - 점수 높은 쪽({final['alt']})으로 고정"
+                               + (f"; {reason}" if reason else ""))
+                j = final.get("_judgment")
+                state[cid].update({"wi_start": final["wi_start"], "wi_end": final["wi_end"],
+                                   "flag": "restore", "flag_reason": final_reason, "chosen_alt": final["alt"],
+                                   "boundary": {"start": final["start"], "end": final["end"],
+                                               "method": final["method"], "audio_ok": final["audio_ok"]},
+                                   "judgment": j.model_dump() if j else None})
+                locked.add(cid)
+                if (state[cid]["wi_start"], state[cid]["wi_end"], state[cid]["flag"]) != prev_wi:
+                    changed.add(cid)
+                continue
+
             j = chosen.get("_judgment")
             state[cid].update({"wi_start": chosen["wi_start"], "wi_end": chosen["wi_end"],
                                "flag": flag, "flag_reason": reason, "chosen_alt": chosen["alt"],
                                "boundary": {"start": chosen["start"], "end": chosen["end"],
                                            "method": chosen["method"], "audio_ok": chosen["audio_ok"]},
                                "judgment": j.model_dump() if j else None})
+            state[cid]["seen"].add(new_key)
             if (state[cid]["wi_start"], state[cid]["wi_end"], state[cid]["flag"]) != prev_wi:
                 changed.add(cid)
 
-        print(f"  라운드 {r}: {len(changed)}개 이음새 변경")
+        print(f"  라운드 {r}: {len(changed)}개 이음새 변경"
+              + (f" ({len(locked)}개 진동 고정)" if locked else ""))
         if r == max_rounds or not changed:
             break
-        # 바뀐 이음새의 바로 이웃(문맥이 달라졌을 수 있음)만 다음 라운드 대상
+        # 바뀐 이음새의 바로 이웃(문맥이 달라졌을 수 있음)만 다음 라운드 대상 - 진동으로 고정된
+        # 건 이웃이 다시 바뀌어도 더 이상 재검사하지 않는다(그래야 진동이 끝난다).
         to_process = set()
         for cid in changed:
             idx = cuts.index(cuts_by_id[cid])
@@ -377,6 +496,7 @@ def refine(folder: Path, max_rounds: int = 3) -> Path:
             if idx + 1 < len(cuts):
                 to_process.add(cuts[idx + 1]["id"])
         to_process -= changed  # 자기 자신은 이미 이번 라운드에 반영됨
+        to_process -= locked
 
     # G2: 최종 선택에 대해서만, 한 번에
     selections = [{"id": cid, "start": s["boundary"]["start"], "end": s["boundary"]["end"],
