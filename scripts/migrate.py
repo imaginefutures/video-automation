@@ -87,7 +87,20 @@ def _migrate_dir(dir_: Path, current: dict[str, int], backup_on_fail: bool) -> l
         path = dir_ / name
         if not path.exists():
             continue
-        have = manifest.get(name, 0)
+        if name not in manifest:
+            # 10-01 버그 수정: 매니페스트가 "생긴 뒤"에도 그 파일이 common.write_json()으로
+            # 다시 써진 적이 없으면(이 버전 체계 도입 전부터 있던 파일) 매니페스트에 이름이
+            # 아예 없다 - 이걸 이전 코드가 manifest.get(name, 0)으로 "v0=구버전"과 똑같이
+            # 취급해서 멀쩡한 transcript.json/decisions.json(검토 진행 상태 포함) 등을
+            # .backup/으로 옮겨버리는 사고가 났다(BS167, 10-01). 매니페스트가 아예 없는
+            # 폴더의 부트스트랩(위 if not manifest_path.exists() 분기)과 같은 가정으로 -
+            # "기록이 없다"는 "명시적으로 구버전"이 아니라 "한 번도 안 건드려서 모른다"는
+            # 뜻이므로 호환으로 간주하고 매니페스트에 현재 버전으로 채워 넣는다. 진짜 구버전
+            # (매니페스트에 더 낮은 숫자로 명시적으로 기록된 경우)만 아래 변환/백업 경로를 탄다.
+            manifest[name] = want
+            changed = True
+            continue
+        have = manifest[name]
         if have >= want:
             continue
         migrated = False
