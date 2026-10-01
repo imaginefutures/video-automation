@@ -65,7 +65,7 @@ uv run --directory <스킬 절대경로> python scripts/setup.py <프로젝트 �
 | 화자 블록 | `edit/speaker_blocks.json` | 대화 형태 구간 + 줄별 역할(지시/재시도/최종). **NG보다 먼저 실행** — 전체 맥락 검토가 이미 잡힌 구간을 건너뛰려면 먼저 있어야 함 |
 | NG | `edit/ng_candidates.json`(발음 실수 후보 — 단어별 ASR 신뢰도(logprob) 하위 3%), `edit/regions.json`(Stage 1), `edit/ng_classified.json`(Stage 2), `edit/ng.json` | 하향식 2단계(09-30): Stage 1이 원문 전체를 한 번에 읽고 의심 구간을 대략적으로 표시 → Stage 2가 각 구간을 확대해서 정확한 경계와 case(A~F)를 확정(정적 few-shot 9개 + L2 사용자 사례 검색) → 최대 삭제 라우팅. 겹치는 후보는 분류 전에 하나로 합침(`consolidate()`) |
 | 이음새 부분 루프 | `edit/draft_cuts.json`, `edit/seams.json`, `edit/final_cuts.json` | NG+화자블록의 모든 컷을 합쳐 대안(원안/축소/확장)마다 경계를 조용한 지점으로 스냅하고, 만든 모델과 다른 모델이 문법·중복·정보손실을 판정해 가장 많이 지우는 대안을 고름. G2(재전사 잔여음 검사)로 최종 선택을 한 번 더 확인. 바뀐 이음새의 이웃까지 최대 3라운드 재판정 (`self_critique.py` 대체) |
-| 전체 루프 | `edit/global_review.json` | 결과 전체를 PD(원본+컷+이유 다 봄, Opus)와 시청자(결과만 봄, Fable 5.1)가 각각 읽음. missed_cut은 새 후보로 추가, over_cut/시청자 지적은 `ng.json`까지 역전파(검토 화면에 뜸), outtake는 표시만. 정확히 1회 통독(09-30 단순화 - 여러 라운드를 반복 실행하면 판단이 누적되는 문제를 겪어 "끝나면 한 번 더"로 고정) |
+| 전체 루프 | `edit/global_review.json` | 결과 전체를 PD(원본+컷+이유 다 봄, Opus)와 시청자(결과만 봄, Fable 5.1)가 각각 읽음. missed_cut은 새 후보로 추가, over_cut/시청자 지적은 `ng.json`까지 역전파(검토 화면에 뜸). 정확히 1회 통독(09-30 단순화 - 여러 라운드를 반복 실행하면 판단이 누적되는 문제를 겪어 "끝나면 한 번 더"로 고정) |
 | 무음 | `edit/pauses.json` | 쉼 문맥 분류(Claude, Haiku) → 목표치 트림 |
 | 확정 | `<이름>.fcpxml`, `preview.mp4`, `edit/decisions.json`, `edit/edl.json` | 서버가 직접 생성. 컷 경계는 조용한 지점으로 스냅(`audio_map.choose_boundary`), 확정 직전 자기검토(재전사로 잔여음/절단 의심 여부 확인, `seam_refine.g2_check`)를 거쳐 확정 화면에 표시 |
 
@@ -107,16 +107,55 @@ uv run --directory <스킬 절대경로> python scripts/setup.py <프로젝트 �
 - 최대 삭제가 기본이다: 근거가 있으면 자동으로 자르고, 애매한 것도 잘라 둔 채 검토 큐에 복원 후보로 올린다. 사용자는 무엇을 지울지가 아니라 무엇을 살릴지만 결정한다 (`docs/서비스-개요와-철학.md` 원칙 2, 09-29 결정). 확정 전 미검토 건수를 반드시 알린다
 - 기존 기능을 대체하는 변경이면, 옛 진입 경로(스크립트·CLI 플래그·화면 요소·문서 절차)를 `scripts/`·`web/`·`docs/`·`SKILL.md` 전체에서 코드 검색으로 찾아 같은 작업 안에서 함께 정리한다 — "나중에" 후속 작업으로 미루지 않는다 (`docs/서비스-개요와-철학.md` 원칙 3, 09-29 결정)
 - 문서 지도는 [`docs/README.md`](docs/README.md). 서비스 철학·원칙은 `docs/서비스-개요와-철학.md`, 결정 이력은 `docs/결정-이력.md`, 나중에 개발할 것은 `docs/백로그/`, 진행 중인 재설계(품질 루프)는 `docs/기획/`. 촬영 습관 안내는 `docs/촬영-가이드.md`. **PLAN.md는 폐기됐다** — 남아 있는 옛 코드 주석의 "PLAN.md X.Y" 참조는 `docs/archive/PLAN-2026-09-29-retired.md`에서 새 위치를 찾는다
-- 품질 루프는 백엔드(라우팅·경계 스냅·이음새 판정·전체 루프·발음 실수 탐지·L2 few-shot)만 구현됐다 (09-29). 경계 스냅(`audio_map.choose_boundary` — 조용한 지점 탐색, 실패 시 15ms 패딩 폴백)은 검토 화면의 `cut_spans()`에도 09-29에 직접 배선됐다(단, `edit/final_cuts.json`을 그대로 소비하는 게 아니라 같은 함수를 다시 호출 — 화면의 컷은 NG/수동/쉼 등 여러 출처가 시간 기준으로 자유롭게 섞이는 구조라 이음새 단위 파일과 그대로 맞지 않음). 이음새 루프의 **대안 선택**(축소/확장 + LLM 문법·중복·정보손실 판정)은 아직 화면에 배선되지 않았다 — 화면은 NG 항목의 원래 플래그 범위를 그대로 쓴다. missed_cut·over_cut·시청자 지적은 `ng.json` 역전파로 화면에 뜬다. outtake 제안(`outtake_suggested`/`outtake_reason`)은 09-29에 `payload()`가 프론트엔드로 전달하도록 배선했지만(별표 `outtakes` 자체는 사용자가 직접 켜는 목록이라 자동으로 채우지 않음 — "제안됨"과 "확정한 별"을 구분하려는 의도), 화면에 배지 등으로 표시하는 건 아직 안 됨. 확정 시에는 최종 경계마다 재전사로 잔여음/절단을 자체 검증하는 자기검토(`seam_refine.g2_check`)가 추가로 돈다 — 확정을 막지는 않고 확정 화면에 의심 지점을 표시. 검토 화면 자체의 개편(카드·배지 등)은 다른 세션에서 진행 예정
+- "video-cut 업데이트해줘"처럼 업데이트를 요청받으면 위 "설치와 업데이트" 절 그대로 `claude plugin update video-cut` 실행 → 재시작 안내 → `setup.py` 재호출 → 아무 영상이나 하나로 `run.py`를 한 번 돌려 `[migrate]` 출력을 사용자에게 전달한다. 스키마가 바뀌는 변경을 짤 때는(`edit/*.json`의 필드 구조를 바꾸는 모든 변경) `scripts/common.py`의 `SCHEMA_VERSIONS`에서 그 파일 버전을 올리고 `scripts/migrate.py`의 `MIGRATIONS`에 변환 함수를 추가한다 — 안 하면 기존 사용자의 그 캐시 파일이 다음 실행 때 통째로 백업·재생성 대상이 된다(설계: [`docs/업데이트와-마이그레이션.md`](docs/업데이트와-마이그레이션.md))
+- "모델 업데이트 후 다시 분석" 버튼(검토 화면)은 `redetect.py`로 NG~전체 루프만 재실행하고 끝 — 트랜스크립트·화자블록·무음은 그대로 둔다. 이 기능을 건드리는 변경을 할 때는 `run.py`의 `run_ng_pipeline()`과 `redetect.py`가 같은 함수를 호출하는 구조를 유지한다(한쪽만 고치면 "다시 분석"이 일반 처리와 다른 결과를 내는 사고로 이어짐)
+- 품질 루프는 백엔드(라우팅·경계 스냅·이음새 판정·전체 루프·발음 실수 탐지·L2 few-shot)만 구현됐다 (09-29). 경계 스냅(`audio_map.choose_boundary` — 조용한 지점 탐색, 실패 시 15ms 패딩 폴백)은 검토 화면의 `cut_spans()`에도 09-29에 직접 배선됐다(단, `edit/final_cuts.json`을 그대로 소비하는 게 아니라 같은 함수를 다시 호출 — 화면의 컷은 NG/수동/쉼 등 여러 출처가 시간 기준으로 자유롭게 섞이는 구조라 이음새 단위 파일과 그대로 맞지 않음). 이음새 루프의 **대안 선택**(축소/확장 + LLM 문법·중복·정보손실 판정)은 아직 화면에 배선되지 않았다 — 화면은 NG 항목의 원래 플래그 범위를 그대로 쓴다. missed_cut·over_cut·시청자 지적은 `ng.json` 역전파로 화면에 뜬다. (엔딩용 후보/outtake 표시 기능은 10-01에 제거됨 — PD가 "웃긴 NG"를 찾아 별표 제안하던 것과 사용자가 직접 켜는 별표 큐 전부.) 확정 시에는 최종 경계마다 재전사로 잔여음/절단을 자체 검증하는 자기검토(`seam_refine.g2_check`)가 추가로 돈다 — 확정을 막지는 않고 확정 화면에 의심 지점을 표시. 검토 화면 자체의 개편(카드·배지 등)은 다른 세션에서 진행 예정
 - NG 케이스별 개인화(L1)는 `server.py`가 검토 화면을 도는 동안 실시간으로 배운다 — `~/.video-cut/prefs/<사용자>.json`의 `ng_case`에 케이스별 cut/keep 횟수를 세다가 충분하고(3건+) 한쪽으로 쏠리면(75%+) 승인 화면 없이 바로 다음 REVIEW 항목부터 적용한다. 별도 스크립트 실행 불필요
 - 사용자가 확정(웹의 "확정" 버튼)하면 `server.py`가 `scripts/learn_from_session.py <videos/이름>`을 백그라운드로 자동 호출한다(09-30부터 - 이전엔 수동 실행이 필요했음). 사람 결정 3건 미만이면 LLM을 부르지 않고 건너뛴다. `~/.video-cut/cases/<사용자>.jsonl`(L2, few-shot에 바로 쓰임, 승인 불필요)에 쌓이고, `~/.video-cut/learning-log/<사용자>.md`에 사람이 읽는 요약이 남는다(기록용, 자동 판단에는 반영 안 됨)
 
-## 설치
+## 설치와 업데이트
 
-`cd`+`$(pwd)` 대신 클론 위치를 절대경로로 직접 써서 심볼릭 링크를 만든다(위 "실행"과 같은 이유 -
-`cd`를 쓰면 이후 호출의 작업 디렉터리가 거기 남는다):
+정식 경로는 `claude plugin` CLI다(`.claude-plugin/marketplace.json`·`plugin.json` 참고) —
+수동 `git clone`+`ln -sfn`은 CLI를 못 쓸 때만 쓰는 대안이고, 그 경우 업데이트도 그 클론 위치에서
+직접 `git pull`해야 한다(아래 "대안" 참고).
+
+```bash
+claude plugin marketplace add imaginefutures/video-automation
+claude plugin install video-cut@video-automation
+```
+
+**업데이트**("video-cut 업데이트해줘"/"업데이트 확인해줘" 요청 시 에이전트가 할 일):
+
+```bash
+claude plugin update video-cut
+```
+
+실행 후 재시작이 있어야 새 버전이 적용된다(명령 출력에 안내됨). 그 다음 **`scripts/setup.py <프로젝트
+폴더 절대경로>`를 한 번 더 호출한다** — 업데이트가 새 시스템 바이너리 의존성이나 새 API 키를
+요구할 수도 있는데, 그 확인은 `setup.py`에만 있고 `run.py`/`server.py`는 하지 않는다(API 키만
+예외로 `run.py`도 매번 확인함). 이미 다 있으면 "확인됨"만 찍히고 끝나니 매번 불러도 비용 없음.
+그 다음 아무 영상 폴더로든 `scripts/run.py`나 `scripts/server.py`를 한 번 돌리면 — 이게 처음
+하는 일이 바로 그 폴더의 `edit/*.json`을 지금 코드 버전과 비교하는 것이다(`scripts/migrate.py`,
+자세한 설계는 [`docs/업데이트와-마이그레이션.md`](docs/업데이트와-마이그레이션.md)). 호환 안 되는
+산출물이 있으면 지우지 않고 `edit/.backup/`로 옮긴 뒤 "재생성이 필요합니다"를 출력한다 — 이 출력을
+그대로 사용자에게 전달한다. 전역 학습 데이터(`~/.video-cut/`)는 `scripts/setup.py`가 환경설정 때
+같이 확인한다.
+
+이건 **데이터 스키마**(파일 구조) 호환성만 본다 — 모델 자체가 업데이트됐거나 탐지 로직의 판단
+품질이 달라진 경우(구조는 그대로라 `migrate.py`는 아무것도 안 함)는 검토 화면의 "모델 업데이트
+후 다시 분석" 버튼으로 **사용자가 원할 때 직접** 재분석하게 한다 — 자동으로는 절대 안 돈다(API
+비용 발생, `docs/서비스-개요와-철학.md` 원칙 3). 누르면 NG 탐지~전체 루프만 처음부터 다시 돌고
+(`scripts/redetect.py`), 사람이 이미 결정한 항목은 `server.py`의 `Session._reconcile_ng()`가
+word-index 겹침으로 자동 재배치한다(50% 미만 겹치면 새 REVIEW로 남음) — 자세한 설계는
+[`docs/업데이트와-마이그레이션.md`](docs/업데이트와-마이그레이션.md) 8절.
+
+**대안 (CLI를 못 쓸 때)**: `cd`+`$(pwd)` 대신 클론 위치를 절대경로로 직접 써서 심볼릭 링크를
+만든다(위 "실행"과 같은 이유 — `cd`를 쓰면 이후 호출의 작업 디렉터리가 거기 남는다):
 
 ```bash
 git clone https://github.com/imaginefutures/video-automation.git <설치할 절대경로>
 ln -sfn <설치할 절대경로> ~/.claude/skills/video-cut
 ```
+
+업데이트는 그 절대경로에서 `git pull`. 마이그레이션 동작은 설치 경로와 무관하게 동일하다 — 코드와
+데이터 버전을 비교할 뿐이라, 코드가 어떻게 갱신됐는지는 상관없다.
