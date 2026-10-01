@@ -179,28 +179,34 @@ def pd_review(pd_view: str, folder: Path) -> list[PDFinding]:
 # PDFinding/PDReview 스키마를 그대로 재사용 - 결과가 missed_cut이면 기존 missed_cut 처리
 # 경로(new_ng_items)에 그대로 합류시킬 수 있다.
 REPETITION_RECHECK_SYSTEM = """\
-너는 같은 채널의 전담 편집자다. 시청자 평가가 아래 결과물의 특정 구간들을 "방금 들은 말을 또
-듣는 느낌"이라고 지적했다 - PD(너)는 전체 검토에서 이 구간들을 놓쳤었다. 각 구간이 실제로
+너는 같은 채널의 전담 편집자다. 시청자 평가가 아래 결과물의 특정 구간에서 "방금 들은 말을 또
+듣는 느낌"이라고 지적했다 - PD(너)는 전체 검토에서 이걸 놓쳤었다. 시청자가 지적한 부분이 실제로
 지웠어야 할 불필요한 재진술(missed_cut)인지, 의도된 강조·교육적 재진술이라 살려야 하는지
 다시 판단하라.
 
-지워야 한다고 판단되면 missed_cut finding 하나로 보고하라 - wi_start/wi_end는 주어진
-"[구간, 단어 N-M]" 표시 그대로 채워라(반드시). 살려야 한다고 판단되면 그 구간에 대해 아무
-finding도 내지 마라 - 이건 재질의 전용이니 다른 missed_cut/over_cut은 보고하지 마라.
+**중요**: "지적된 구간"은 컷과 컷 사이의 전체 구간이라 여러 문장에 걸쳐 꽤 길 수 있다 - 그중
+실제로 중복되는 부분(보통 한두 문장)만 정확히 짚어야 한다. 구간 전체를 그대로 삭제 범위로
+답하지 마라. 단어마다 "id:단어" 형태로 번호가 붙어 있으니, 실제 반복이 시작하고 끝나는 지점의
+id를 세어서 wi_start/wi_end에 정확히 채워라(반열림 - wi_end는 포함 안 됨).
+
+지워야 한다고 판단되면 missed_cut finding 하나로 보고하라. 살려야 한다고 판단되면 그 구간에
+대해 아무 finding도 내지 마라 - 이건 재질의 전용이니 다른 missed_cut/over_cut은 보고하지 마라.
 """
 
 
 def recheck_repetitions(words: list[dict], repetition_vfs: list["ViewerFinding"],
                         seg_by_id: dict[int, dict], folder: Path) -> list[PDFinding]:
     blocks = []
+    seg_ranges: list[tuple[int, int]] = []
     for vf in repetition_vfs:
         seg = seg_by_id.get(vf.segment_id)
         if not seg:
             continue
         before = " ".join(w["text"] for w in words[max(0, seg["wi_start"] - 40):seg["wi_start"]])
-        text = " ".join(w["text"] for w in seg["words"])
+        tagged = " ".join(f"{w['wi']}:{w['text']}" for w in seg["words"])
         blocks.append(f"[구간, 단어 {seg['wi_start']}-{seg['wi_end']}]\n앞 맥락: …{before}\n"
-                      f"지적된 구간: {text}\n시청자 지적: {vf.reason}")
+                      f"지적된 구간(단어 id 포함): {tagged}\n시청자 지적: {vf.reason}")
+        seg_ranges.append((seg["wi_start"], seg["wi_end"]))
     if not blocks:
         return []
     import anthropic
@@ -209,7 +215,20 @@ def recheck_repetitions(words: list[dict], repetition_vfs: list["ViewerFinding"]
                                  messages=[{"role": "user", "content": "\n\n".join(blocks)}],
                                  output_format=PDReview, **thinking_kwargs(PD_MODEL))
     log_llm_usage(folder, "global_review_repetition_recheck", PD_MODEL, resp.usage)
-    return resp.parsed_output.findings
+    # 안전망: 10-01 BS167 실측 - "구간 그대로 채워라"는 예전 지시가 92단어짜리 세그먼트 전체를
+    # 삭제시켜 정밀도를 0.70대->0.54로 떨어뜨린 실제 버그였다. 프롬프트를 고쳤어도(위) 모델이
+    # 그래도 구간 경계를 벗어난 큰 범위를 답하면 - 추측해서 자르느니 그냥 버린다(놓치는 게
+    # 조용히 과하게 자르는 것보다 안전, 최대 삭제 방침과도 안 어긋남 - 다음 영상에서 다시 걸릴
+    # 기회가 있다).
+    out = []
+    for f in resp.parsed_output.findings:
+        if f.wi_start is None or f.wi_end is None:
+            continue
+        if not any(s <= f.wi_start and f.wi_end <= e for s, e in seg_ranges):
+            print(f"  [skip] repetition recheck이 구간 밖/과도한 범위를 답함(wi {f.wi_start}-{f.wi_end}) - 버림")
+            continue
+        out.append(f)
+    return out
 
 
 # --------------------------------------------------------------------------------- viewer
