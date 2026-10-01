@@ -312,8 +312,13 @@ def main() -> None:
     client = anthropic.Anthropic()
     video_name = folder.name
 
-    prompts, windows = [], []
+    # 2026-10-01: L2 사용자 사례 few-shot을 껐다가(개인화 폐기 방침) BS167 gold 재검증에서 재현율이
+    # 0.704~0.764 -> 0.515로 폭락(정밀도도 0.748->0.699)하는 걸 실측 - 노이즈 범위(±0.04, 06
+    # 검증 문서)를 한참 벗어나는 진짜 회귀라 되돌렸다. "개인화(사용자별로 다르게 적용)"와 "few-shot
+    # 예시 자체가 재현율에 기여"는 별개 문제였다 - 이 예시들을 사용자별 저장소가 아니라 공유
+    # 저장소로 재설계하는 건 남은 과제로 남긴다(docs/남은-개발.md, docs/미결-사항.md).
     n_with_fewshot = 0
+    prompts, windows = [], []
     for r in regions:
         seg = words[r["wi_start"]:r["wi_end"]]
         query_text = r.get("deleted_text") or " ".join(w["text"] for w in seg)

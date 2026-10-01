@@ -28,6 +28,16 @@ import argparse
 import json
 from pathlib import Path
 
+from common import load_transcript, words_only, norm
+
+# 2026-10-01: 사용자가 기존 테스트 영상 여러 편에서 반복 확인한 패턴 - 삭제 구간(wi_end) 바로
+# 다음에 접속사로 시작하는 새 문장이 오면, 그 접속사까지 삭제 범위에 같이 먹히는 경우가 있었다.
+# classify_region.py의 final_attempt_wi_start 클램프와 같은 "경계가 실제보다 넘어간다" 버그
+# 종류지만, 그건 재시도 사슬 전용이라 "삭제 뒤에 전혀 다른 새 문장이 이어지는" 이 구조에는 안
+# 걸린다(docs/미결-사항.md). 근본 수정(부분 루프의 확장 대안+정보손실 교차판정, docs/남은-개발.md)
+# 전까지의 즉시 안전망 - 신뢰도와 무관하게 항상 flag해서 "경고 없는 복원"만은 막는다.
+CONNECTIVE_VOCAB = {"그래서", "근데", "그러니까", "그런데", "그리고", "그러면", "그럼", "하지만", "그치만", "아무튼"}
+
 CUT_CONFIDENCE_MIN = 0.75      # action=CUT needs at least this confidence to apply with no flag
 KEEP_CONFIDENCE_MIN = 0.55     # action=KEEP needs at least this to apply with no flag. 2026-09-30:
                                # lowered back from 0.80 (which the 09-29 design note raised on a priori
@@ -45,7 +55,19 @@ MIXED_SPAN_DUR_MAX = 5.0       # seconds: longer CUT spans risk containing real 
 SAFE_CUT_CASES = {"A", "B", "E"}  # cases the taxonomy treats as genuine self-repair
 
 
-def route_one(run: dict) -> dict:
+def boundary_swallows_connective(run: dict, words: list[dict] | None) -> bool:
+    """True if the first kept word right after this cut's wi_end is a sentence-initial
+    connective - a structural signal that the boundary may have overreached into the start
+    of a different, surviving sentence rather than the deleted material itself."""
+    if not words:
+        return False
+    wi_end = run.get("raw_word_index_end")
+    if wi_end is None or not (0 <= wi_end < len(words)):
+        return False
+    return norm(words[wi_end]["text"]) in CONNECTIVE_VOCAB
+
+
+def route_one(run: dict, words: list[dict] | None = None) -> dict:
     label = run["label"]
     clf = run.get("llm_classification")
 
@@ -93,6 +115,8 @@ def route_one(run: dict) -> dict:
             # 시절의 원칙("넓은 회수망이라 항상 복원 후보로")을 그대로 적용: 신뢰도와 무관하게 항상
             # flag.
             problems.append("전체 맥락 LLM 스캔이 찾은 구간 - 신뢰도와 무관하게 항상 복원 후보로")
+        if boundary_swallows_connective(run, words):
+            problems.append("삭제 범위 바로 뒤가 접속사로 시작 - 다음 문장의 시작일 수 있어 항상 복원 후보로")
         if problems:
             return {"route": "CUT", "flag": "restore", "route_reason": "; ".join(problems) + " - 복원 후보로 자름"}
         return {"route": "CUT", "flag": None, "route_reason": f"CUT, case={case}, 신뢰도 {conf:.2f} - 그대로 적용"}
@@ -107,9 +131,16 @@ def main() -> None:
     args = ap.parse_args()
 
     runs = json.loads(args.classified.read_text())
+    words: list[dict] | None = None
+    try:
+        folder = args.classified.resolve().parent.parent  # edit/ng_classified.json -> videos/<name>
+        words = words_only(load_transcript(folder))
+    except (FileNotFoundError, KeyError):
+        print("  [warn] transcript.json을 못 찾음 - 접속사 경계 안전망 건너뜀")
+
     routed = []
     for run in runs:
-        decision = route_one(run)
+        decision = route_one(run, words)
         routed.append({**run, **decision})
 
     counts: dict[str, int] = {}
