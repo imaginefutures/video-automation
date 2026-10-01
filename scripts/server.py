@@ -1454,7 +1454,7 @@ def _pipeline_status(folder: Path) -> dict:
     run.py's `step()` and docstring there. Missing/unreadable file just means "processing
     hasn't written a status yet" (e.g. still in clean_media/transcribe), not an error."""
     p = folder / "edit" / "pipeline_status.json"
-    default = {"stage": "처리 준비 중", "done": 0, "total": 0, "state": "running", "error": None}
+    default = {"stage": "처리 준비 중", "done": 0, "total": 0, "state": "running", "error": None, "stages": []}
     if not p.exists():
         return default
     try:
@@ -1463,7 +1463,7 @@ def _pipeline_status(folder: Path) -> dict:
         return default
     return {"stage": data.get("stage", default["stage"]), "done": data.get("done", 0),
             "total": data.get("total", 0), "state": data.get("state", "running"),
-            "error": data.get("error")}
+            "error": data.get("error"), "stages": data.get("stages", [])}
 
 
 def _session_watcher(folder: Path, interval: float = 1.0) -> None:

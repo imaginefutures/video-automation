@@ -62,12 +62,42 @@ import migrate  # noqa: E402
 # ----------------------------------------------------------------------------- R2: 처리 중 진행 화면
 # (백로그/R2-시작-마찰-제거.md) - step()이 매 단계 끝에 edit/pipeline_status.json을 써서,
 # 아직 transcript.json이 없어 Session을 못 만드는 server.py가 /api/status로 이 파일을 읽어
-# 진행률을 보여줄 수 있게 한다. _PIPELINE_TOTAL_STEPS는 전체 파이프라인(LLM 포함, 캐시 없음)의
-# step() 호출 지점 개수를 어림잡은 것 - --no-llm이나 캐시로 일부가 스킵되면 done이 total에 못
-# 미치고 끝날 수 있는데, 어차피 사람이 보는 진행률 표시일 뿐 run.py 자신은 이 파일을 다시
-# 읽지 않으므로 상관없다.
-_PIPELINE_TOTAL_STEPS = 13
+# 진행률을 보여줄 수 있게 한다.
+#
+# PIPELINE_STAGES: 웹 진행 화면에 체크리스트로 보여줄 사용자 단위 8단계 - 아래 step() 호출들
+# (내부적으로는 14번 호출됨)을 사람이 읽기 좋게 묶은 것(사용자 제공 문구 기반, 10-01). 각
+# 튜플의 두 번째 숫자는 그 단계에 속한 step() 호출 횟수 - **파이프라인에 단계를 추가/삭제/
+# 재배치하면 이 숫자와 순서를 반드시 같이 맞춘다.** 안 맞으면 체크리스트가 마지막 단계 전에
+# 다 끝난 것처럼 보이거나, 다 끝났는데 마지막 항목이 계속 "진행 중"으로 남는다 - 숫자 합이
+# 실제 step() 호출 횟수와 같은지(`grep -c 'step(' scripts/run.py`류로) 바꾼 뒤 확인할 것.
+PIPELINE_STAGES: list[tuple[str, int]] = [
+    ("정리", 1),             # clean_media (tmcd 트랙 제거)
+    ("전사", 1),             # transcribe (ElevenLabs Scribe)
+    ("음향 분석", 2),         # prosody(피치·에너지) + audio_map(RMS·숨소리 지도)
+    ("화자 블록", 1),         # detect_speaker_blocks (카메라 밖 대화 구간)
+    ("NG 탐지", 5),           # 발음 실수 후보, Stage 1(전체 스캔), Stage 2(구간 분류), NG route, filler
+    ("이음새 부분 루프", 2),   # assemble_draft(컷 초안) + seam_refine(경계 정밀 조정)
+    ("전체 루프", 1),         # global_review (PD + 시청자 두 관점)
+    ("무음 리듬", 1),         # plan_pauses
+]
+_PIPELINE_TOTAL_STEPS = sum(n for _, n in PIPELINE_STAGES)
 _pipeline_done = 0
+
+
+def _stage_breakdown(done: int) -> list[dict]:
+    """PIPELINE_STAGES를 현재까지 끝난 step() 횟수(done)에 맞춰 done/active 표시가 달린
+    목록으로 펼친다 - 웹 진행 화면이 이 배열을 그대로 체크리스트로 그린다. 캐시로 일부
+    step()이 통째로 스킵된 재실행에서는(이미 처리된 폴더를 다시 돌리는 드문 경우) 그 구간의
+    done 카운트가 실제보다 적게 잡혀 체크리스트가 보수적으로(완료를 더 늦게) 보일 수 있다 -
+    새로 올린 영상(캐시 없음)에서는 step()이 정확히 선언 순서대로 한 번씩만 돌아 완벽히
+    맞는다."""
+    out = []
+    cursor = 0
+    for label, count in PIPELINE_STAGES:
+        start = cursor
+        cursor += count
+        out.append({"label": label, "done": done >= cursor, "active": start <= done < cursor})
+    return out
 
 
 def _write_pipeline_status(folder: Path, stage: str, state: str, error: str | None = None) -> None:
@@ -75,7 +105,7 @@ def _write_pipeline_status(folder: Path, stage: str, state: str, error: str | No
     try:
         write_json(edit_dir(folder) / "pipeline_status.json",
                    {"stage": stage, "done": _pipeline_done, "total": _PIPELINE_TOTAL_STEPS,
-                    "state": state, "error": error})
+                    "state": state, "error": error, "stages": _stage_breakdown(_pipeline_done)})
     except OSError:
         pass
 
@@ -179,20 +209,20 @@ def run_ng_pipeline(folder: Path, edit: Path, no_llm: bool = False) -> None:
     `main()`은 `ng.json` 없을 때만 부르고, `redetect.py`(새 모델로 재분석)는 기존 산출물을
     백업해 지운 뒤 매번 이 함수를 그대로 재사용한다 - 두 경로가 서로 다른 스텝 목록으로
     갈라지지 않게 하려고 로직을 여기 한 곳에만 둔다."""
-    step("4/7 pronunciation candidates", [str(HERE / "detect_pronunciation_candidates.py"), str(folder)], folder)
-    step("4/7 Stage 1 (전체를 넓게)", [str(HERE / "detect_regions.py"), str(folder),
+    step("NG 탐지 - 발음 실수 후보", [str(HERE / "detect_pronunciation_candidates.py"), str(folder)], folder)
+    step("NG 탐지 - 1단계 전체 스캔", [str(HERE / "detect_regions.py"), str(folder),
                                     *(["--no-llm"] if no_llm else [])], folder, llm_fallback=True)
-    step("4/7 Stage 2 (부분을 좁게)", [str(HERE / "classify_region.py"), str(folder),
+    step("NG 탐지 - 2단계 구간 분류", [str(HERE / "classify_region.py"), str(folder),
                                     *(["--no-llm"] if no_llm else [])], folder, llm_fallback=True)
-    step("4/7 NG route", [str(HERE / "route_candidates.py"), str(edit / "ng_classified.json"),
-                          "--out", str(edit / "ng.json")], folder)
-    step("4/7 filler", [str(HERE / "detect_filler_candidates.py"), str(folder)], folder)  # deterministic, always runs
+    step("NG 탐지 - 최종 판정", [str(HERE / "route_candidates.py"), str(edit / "ng_classified.json"),
+                               "--out", str(edit / "ng.json")], folder)
+    step("NG 탐지 - 간투사", [str(HERE / "detect_filler_candidates.py"), str(folder)], folder)  # deterministic, always runs
     if not no_llm:
-        step("4/7 assemble draft", [str(HERE / "assemble_draft.py"), str(folder)], folder)
-        step("4/7 seam refine", [str(HERE / "seam_refine.py"), str(folder)], folder)
+        step("이음새 부분 루프 - 컷 초안 조립", [str(HERE / "assemble_draft.py"), str(folder)], folder)
+        step("이음새 부분 루프 - 경계 정밀 조정", [str(HERE / "seam_refine.py"), str(folder)], folder)
         # global_review.py가 내부적으로 1회 재투입(missed_cut 반영 -> assemble_draft.py/
         # seam_refine.py를 한 번만 다시 부름)까지 다 하므로 여기선 한 번만 호출
-        step("4/7 global review", [str(HERE / "global_review.py"), str(folder)], folder)
+        step("전체 루프 - PD·시청자 평가", [str(HERE / "global_review.py"), str(folder)], folder)
 
 
 def notify(title: str, message: str) -> None:
@@ -260,35 +290,35 @@ def main() -> None:
         raise
     clean = edit / "clean.mp4"
     if not clean.exists():
-        step("0/5 clean media", [str(HERE / "clean_media.py"), str(raw), "--out", str(clean)], folder)
+        step("정리", [str(HERE / "clean_media.py"), str(raw), "--out", str(clean)], folder)
     else:
-        print("0/5 clean media: cached")
+        print("정리: cached")
 
-    step("1/5 transcribe", [str(HERE / "transcribe.py"), str(folder)], folder)
+    step("전사", [str(HERE / "transcribe.py"), str(folder)], folder)
 
     if not args.no_llm and not (edit / "prosody.json").exists():
-        step("2/7 prosody", [str(HERE / "prosody.py"), str(folder)], folder)
+        step("음향 분석 - 피치·에너지", [str(HERE / "prosody.py"), str(folder)], folder)
     elif not args.no_llm:
-        print("2/7 prosody: cached")
+        print("음향 분석 - 피치·에너지: cached")
 
     if not (edit / "audio_map.json").exists():
-        step("2/7 audio map", [str(HERE / "audio_map.py"), str(folder)], folder)
+        step("음향 분석 - RMS·숨소리 지도", [str(HERE / "audio_map.py"), str(folder)], folder)
     else:
-        print("2/7 audio map: cached")
+        print("음향 분석 - RMS·숨소리 지도: cached")
 
     if not (edit / "speaker_blocks.json").exists():
-        step("3/6 speaker blocks", [str(HERE / "detect_speaker_blocks.py"), str(folder),
-                                    *(["--no-llm"] if args.no_llm else [])], folder, llm_fallback=True)
+        step("화자 블록", [str(HERE / "detect_speaker_blocks.py"), str(folder),
+                         *(["--no-llm"] if args.no_llm else [])], folder, llm_fallback=True)
     else:
-        print("3/6 speaker blocks: cached")
+        print("화자 블록: cached")
 
     if not (edit / "ng.json").exists():
         run_ng_pipeline(folder, edit, args.no_llm)
     else:
-        print("4/7 NG: cached")
+        print("NG 탐지: cached")
 
     if not (edit / "pauses.json").exists():
-        step("5/7 pauses", [str(HERE / "plan_pauses.py"), str(folder), *(["--no-llm"] if args.no_llm else [])], folder)
+        step("무음 리듬", [str(HERE / "plan_pauses.py"), str(folder), *(["--no-llm"] if args.no_llm else [])], folder)
     else:
         print("5/7 pauses: cached")
 

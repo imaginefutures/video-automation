@@ -530,23 +530,35 @@ function renderPipelineProgress(st) {
       + 'font:15px -apple-system,BlinkMacSystemFont,sans-serif;z-index:9999;text-align:center;padding:24px';
     document.body.appendChild(el);
   }
-  const done = st.done || 0, total = st.total || 0;
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const stages = st.stages || [];  // run.py의 PIPELINE_STAGES - 사람이 읽는 8단계 체크리스트
   const errBlock = st.state === 'error'
-    ? `<p style="color:#f66;max-width:480px">오류: ${esc(st.error || '')}</p>` : '';
-  // total을 아직 모르는 초반(pipeline_status.json이 아직 없는 "처리 준비 중")엔 회전 스피너,
-  // 단계 수를 알게 된 뒤부터는 진행률 바로 바꾼다 - 몇 % 왔는지 한눈에 보이게.
-  const indicator = total
-    ? `<div style="width:260px;height:8px;border-radius:999px;background:#2b2e33;overflow:hidden">
-         <div style="width:${pct}%;height:100%;background:#7ab8ff;transition:width 300ms ease"></div>
-       </div>
-       <p style="margin:0;font-size:13px;color:#aaa">${pct}%</p>`
+    ? `<p style="color:#f66;max-width:420px;margin:2px 0 0">오류: ${esc(st.error || '')}</p>` : '';
+  // stages를 아직 모르는 아주 초반(pipeline_status.json 자체가 없는 "처리 준비 중")엔 회전
+  // 스피너만, 단계 목록을 알게 된 뒤부터는 체크리스트로 바꾼다 - 완료된 단계는 녹색 점,
+  // 지금 하는 단계는 회전 점+굵은 글씨, 나머지는 흐리게(run.py가 안 끝난 단계를 미리 알려주는
+  // 구조라 전체 목록을 처음부터 다 보여줄 수 있음).
+  const indicator = stages.length
+    ? `<ul style="list-style:none;margin:0;padding:0;width:280px;display:flex;flex-direction:column;gap:8px">`
+      + stages.map((s) => {
+          const dot = s.done
+            ? `<span style="color:#3ecf5e;font-size:13px;line-height:1">●</span>`
+            : s.active
+              ? `<span style="display:inline-block;width:9px;height:9px;border:2px solid #3a3d42;
+                             border-top-color:#7ab8ff;border-radius:50%;animation:pipelineSpin 0.7s linear infinite"></span>`
+              : `<span style="color:#3a3d42;font-size:13px;line-height:1">○</span>`;
+          const textColor = s.done ? '#9a9a9a' : s.active ? '#f2f2f2' : '#555';
+          const weight = s.active ? '600' : '400';
+          return `<li style="display:flex;align-items:center;gap:10px;font-size:13.5px;color:${textColor};font-weight:${weight}">
+                    ${dot}<span>${esc(s.label)}</span>
+                  </li>`;
+        }).join('')
+      + `</ul>`
     : `<div style="width:34px;height:34px;border:3px solid #3a3d42;border-top-color:#7ab8ff;border-radius:50%;
                    animation:pipelineSpin 0.8s linear infinite"></div>`;
   el.innerHTML = `
     <style>@keyframes pipelineSpin{to{transform:rotate(360deg)}}</style>
     ${indicator}
-    <p style="margin:0">${esc(st.stage || '처리 준비 중')}${total ? ` (${done}/${total})` : ''}</p>
+    <p style="margin:0;font-size:12.5px;color:#888">${esc(st.stage || '처리 준비 중')}</p>
     ${errBlock}
     <p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>`;
 }
