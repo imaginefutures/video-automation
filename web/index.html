@@ -241,6 +241,10 @@
      segment geometry is set inline per word in applyStates() */
   .w.partcut { background-repeat: no-repeat; }
   .tok.sel { background: var(--select-soft) !important; outline: 2px solid var(--select); }
+  /* 10-01(읽기→추적→듣기 3단계): 확정 잠금 - "이제 안 봐도 되는 곳"을 시각적으로 치운다.
+     pointer-events는 끄지 않는다(더블클릭으로 잠금 해제해야 하므로) - onMouseUp/dblclick
+     핸들러가 locked 여부를 직접 확인해서 단일 클릭은 막고 더블클릭만 통과시킨다. */
+  .tok.w.locked { opacity: 0.38; }
   /* live playback position: as the video plays, the word under the playhead lights up so
      you can always see exactly where you are - independent of selection/cut state */
   .tok.w.playing { background: var(--accent-soft); box-shadow: 0 0 0 1px rgba(0,112,243,0.35); border-radius: 4px; }
@@ -322,27 +326,22 @@
   #helpPop .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: var(--ink); }
   #helpPop .row span:first-child { color: var(--muted); }
 
-  /* ---------------------------------------------------------------- fine-boundary zoom panel */
-  #zoomPanel { position: fixed; z-index: 24; background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
-    box-shadow: 0 24px 60px -14px rgba(0,0,0,0.25); padding: 14px 16px; display: none; flex-direction: column; gap: 10px;
-    opacity: 0; transform: scale(0.96); transition: opacity 150ms ease, transform 200ms cubic-bezier(.2,.8,.2,1); }
-  #zoomPanel.show { opacity: 1; transform: scale(1); }
-  #zoomPanel .zoom-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); cursor: move; user-select: none; }
-  #zoomPanel .zoom-head #zoomTitle { color: var(--ink); font-weight: 600; }
-  #zoomPanel .zoom-head .zoom-hint { font-size: 10.5px; }
-  #zoomPanel .zoom-head button { border: none; background: none; color: var(--muted); font-size: 14px; padding: 0 4px; margin-left: auto; }
-  #zoomPanel .zoom-head button:hover { color: var(--ink); }
-  #zoomText { font-size: 14px; line-height: 1.6; }
-  #zoomText b { background: var(--proposal-bg); border-radius: 3px; padding: 0 1px; }
-  #zoomText s { color: var(--cut); text-decoration-color: var(--cut); }
-  #zoomStatus { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  #zoomStatus .key { display: inline-flex; align-items: center; gap: 5px; }
-  #zoomStatus .sw { width: 18px; height: 10px; border-radius: 2px; display: inline-block; }
-  #zoomStatus .sw.cut { background: repeating-linear-gradient(-45deg, #bdbdbd 0 1.5px, #f2f2f2 1.5px 5px); border: 1px solid var(--gauge-fill); }
-  #zoomStatus .sw.sel { background: rgba(0,112,243,0.14); border: 1.5px solid var(--accent); }
-  #zoomStatus b { color: var(--ink); font-weight: 600; }
+  /* ---------------------------------------------------------------- persistent waveform bar */
+  /* 10-01(읽기→추적→듣기 3단계): 상시 파형 바 - Z 모달(position:fixed 팝업, 열고 닫기, 드래그
+     이동)을 완전히 대체한다. #scrollProgress가 #main 안에서 쓰는 것과 똑같은 sticky 트릭이라
+     좌표 계산이 따로 필요 없다(그 반대쪽 끝에 붙는다는 점만 다름). */
+  #waveformBar { position: sticky; bottom: 0; left: 0; right: 0; z-index: 9; background: var(--bg);
+    border-top: 1px solid var(--line); padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 8px;
+    box-shadow: 0 -8px 20px -16px rgba(0,0,0,0.25); }
+  #waveStatus { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #waveStatus .key { display: inline-flex; align-items: center; gap: 5px; }
+  #waveStatus .sw { width: 18px; height: 10px; border-radius: 2px; display: inline-block; }
+  #waveStatus .sw.cut { background: repeating-linear-gradient(-45deg, #bdbdbd 0 1.5px, #f2f2f2 1.5px 5px); border: 1px solid var(--gauge-fill); }
+  #waveStatus .sw.risk { background: repeating-linear-gradient(-45deg, #ffb27a 0 1.5px, #fff1e4 1.5px 5px); border: 1px solid var(--proposal-line); }
+  #waveStatus .sw.sel { background: rgba(0,112,243,0.14); border: 1.5px solid var(--accent); }
+  #waveStatus b { color: var(--ink); font-weight: 600; }
   .zoom-btns button:disabled { opacity: 0.35; cursor: default; filter: none; }
-  #zoomCanvas { width: 100%; height: 110px; display: block; border-radius: 8px; background: var(--surface-2); cursor: ew-resize; }
+  #waveCanvas { width: 100%; height: 92px; display: block; border-radius: 8px; background: var(--surface-2); cursor: text; }
   .zoom-handles { display: flex; flex-direction: column; gap: 6px; }
   .zoom-handle-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .zoom-handle-row label { width: 26px; color: var(--muted); }
@@ -428,6 +427,32 @@
       <div id="scrollProgressTicks"></div>
     </div>
     <div id="transcript"></div>
+    <div id="waveformBar">
+      <div id="waveStatus"></div>
+      <canvas id="waveCanvas"></canvas>
+      <div class="zoom-handles" id="waveHandles" hidden>
+        <div class="zoom-handle-row">
+          <label>시작</label>
+          <button class="nudge" data-h="hs" data-d="-0.01">−10ms</button>
+          <input type="number" id="waveHsInput" step="0.001">
+          <button class="nudge" data-h="hs" data-d="0.01">+10ms</button>
+        </div>
+        <div class="zoom-handle-row">
+          <label>끝</label>
+          <button class="nudge" data-h="he" data-d="-0.01">−10ms</button>
+          <input type="number" id="waveHeInput" step="0.001">
+          <button class="nudge" data-h="he" data-d="0.01">+10ms</button>
+        </div>
+      </div>
+      <div class="zoom-btns">
+        <button id="waveResetView">전체 보기</button>
+        <button id="wavePlayIn">▶ 선택된 부분만 듣기</button>
+        <button id="wavePlayOut">▶ 선택된 부분 빼고 듣기</button>
+        <button id="wavePlayLive" title="지금 화면에 보이는 구간을, 선택 범위와 상관없이 현재 편집(컷 결과) 그대로 재생">▶ 살아있는 부분만 듣기</button>
+        <button id="waveApplyCut" class="danger">이 범위 정밀 삭제</button>
+        <button id="waveApplyKeep" class="ok">이 범위 정밀 복원</button>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -445,7 +470,6 @@
     <button id="popPlay">▶ 듣기</button>
     <button id="popJoin" title="이음새 듣기: 자르기 전/후 경계를 1.5초씩 이어서 재생 - 잘라낸 부분이 티 안 나게 자연스럽게 이어지는지 확인용">▶ 이음새 <kbd>X</kbd></button>
     <button id="popToggle"><kbd>↵</kbd></button>
-    <button id="popZoom" title="소리 파형을 보며 경계를 미세 조정">🔍 정밀 조정 <kbd>Z</kbd></button>
     <button id="popReport" class="danger" title="자동으로 잘못 잘렸습니다 - 즉시 복원하고, 같은 유형을 앞으로 더 보수적으로 판단하도록 기록합니다">⚠ 잘못 잘렸음</button>
   </div>
   <div class="btns" id="popAlts"></div>
@@ -457,47 +481,20 @@
 <div id="helpPop" role="complementary" aria-label="키보드 단축키 도움말">
   <div class="drag-handle"></div>
   <h2>키보드 단축키</h2>
-  <div class="row"><span>다음 제안으로 이동</span><span><kbd>J</kbd></span></div>
-  <div class="row"><span>되돌리기</span><span><kbd>⌘Z</kbd></span></div>
-  <div class="row"><span>다시 실행</span><span><kbd>⌘⇧Z</kbd></span></div>
-  <div class="row"><span>삭제/살리기 전환</span><span><kbd>↵</kbd></span></div>
+  <div class="row"><span>단어 커서 이동 (⇧ = 범위 확장)</span><span><kbd>←</kbd><kbd>→</kbd></span></div>
+  <div class="row"><span>잘린 곳만 건너뛰며 이동</span><span><kbd>↑</kbd><kbd>↓</kbd></span></div>
+  <div class="row"><span>삭제 / 살리기 (명시적 지정)</span><span><kbd>C</kbd> / <kbd>V</kbd></span></div>
+  <div class="row"><span>확정 잠금 (이제 안 봐도 됨)</span><span><kbd>⇧↵</kbd></span></div>
+  <div class="row"><span>잠금 해제</span><span><kbd>U</kbd> · 더블클릭</span></div>
+  <div class="row"><span>잔음 의심 지점 이동 (파형 바)</span><span><kbd>N</kbd> / <kbd>⇧N</kbd></span></div>
+  <div class="row"><span>되돌리기 / 다시 실행</span><span><kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd></span></div>
+  <div class="row"><span>삭제/살리기 전환(토글)</span><span><kbd>↵</kbd></span></div>
   <div class="row"><span>대안 선택 (앞만/전부/뒤만 살림)</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span></div>
-  <div class="row"><span>검토 완료 (지금 상태 그대로 확정)</span><span><kbd>⇧↵</kbd></span></div>
   <div class="row"><span>판단 보류 (건너뛰기)</span><span><kbd>S</kbd></span></div>
   <div class="row"><span>재생 / 정지 (커서 위치부터)</span><span><kbd>Space</kbd></span></div>
   <div class="row"><span>이음새 듣기</span><span><kbd>X</kbd></span></div>
-  <div class="row"><span>정밀 조정(파형) 열기</span><span><kbd>Z</kbd></span></div>
   <div class="row"><span>이음새 릴 (확정 전 전수 점검)</span><span><kbd>R</kbd></span></div>
   <div class="row"><span>선택 해제 / 정지</span><span><kbd>Esc</kbd></span></div>
-</div>
-
-<div id="zoomPanel">
-  <div class="zoom-head"><span id="zoomTitle">정밀 경계 조정</span><span class="zoom-hint">휠로 확대/축소 · 드래그로 이동</span><button id="zoomClose">✕</button></div>
-  <div id="zoomText"></div>
-  <canvas id="zoomCanvas"></canvas>
-  <div id="zoomStatus"></div>
-  <div class="zoom-handles">
-    <div class="zoom-handle-row">
-      <label>시작</label>
-      <button class="nudge" data-h="hs" data-d="-0.01">−10ms</button>
-      <input type="number" id="zoomHsInput" step="0.001">
-      <button class="nudge" data-h="hs" data-d="0.01">+10ms</button>
-    </div>
-    <div class="zoom-handle-row">
-      <label>끝</label>
-      <button class="nudge" data-h="he" data-d="-0.01">−10ms</button>
-      <input type="number" id="zoomHeInput" step="0.001">
-      <button class="nudge" data-h="he" data-d="0.01">+10ms</button>
-    </div>
-  </div>
-  <div class="zoom-btns">
-    <button id="zoomResetView">전체 보기</button>
-    <button id="zoomPlayIn">▶ 선택된 부분만 듣기</button>
-    <button id="zoomPlayOut">▶ 선택된 부분 빼고 듣기</button>
-    <button id="zoomPlayLive" title="지금 화면에 보이는 구간을, 선택 범위와 상관없이 현재 편집(컷 결과) 그대로 재생">▶ 살아있는 부분만 듣기</button>
-    <button id="zoomApplyCut" class="danger">이 범위 정밀 삭제</button>
-    <button id="zoomApplyKeep" class="ok">이 범위 정밀 복원</button>
-  </div>
 </div>
 
 <script>
@@ -610,6 +607,7 @@ async function load() {
   updatePlayInfo();
   renderReviewEstimate();
   maybeShowFirstRunHelp();
+  waveSyncToSelection();  // 10-01: 상시 파형 바 첫 렌더(선택 없으니 follow 모드로 시작)
 }
 // R1: 검토 화면 첫 진입 시 "검토 N건, 예상 M분" - 막막함을 없애는 게 목적이라 페이지 로드 시
 // 한 번만 보여준다(개별 결정마다 다시 계산하지 않음 - 카드 20초 가정은 어차피 근사치다).
@@ -620,7 +618,7 @@ function renderReviewEstimate() {
   $('#quickEstimate').textContent = est && est.quick_pending
     ? `${est.quick_pending}건 · 약 ${Math.max(1, Math.round(est.quick_estimated_sec))}초 릴` : '';
 }
-// The keyboard shortcuts (J/⌘Z/X/Z...) this tool leans on are otherwise only discoverable by
+// The keyboard shortcuts (J/⌘Z/X/C/V...) this tool leans on are otherwise only discoverable by
 // noticing the small "?" button in the corner - show the help popup once per browser so a
 // first-time session isn't purely trial-and-error. localStorage is per-browser-profile, not
 // per-video, so this fires once ever on a given machine, not once per session.
@@ -816,6 +814,7 @@ function renderTranscript() {
   root.appendChild(para);
   applyStates();
   root.addEventListener('mouseup', onMouseUp);
+  root.addEventListener('dblclick', onDblClick);
   sizeTopSpacer();
 }
 function findTokIndex(wi) { return toks.findIndex((t) => t.type === 'w' && t.wi === wi); }
@@ -972,6 +971,24 @@ function gapCut(g) {  // the pause lies inside a cut that isn't its own trim
 // cut word. Word-level state can't say that, so without this such a word looked untouched
 // (or fully cut) and the precise edit was impossible to find again (UX audit H1).
 let partSet = new Map();
+let lockedSet = new Set();  // word indices belonging to a locked(확정 잠금) ng item or block
+function computeLockedSet() {
+  const out = new Set();
+  for (const n of (S.ng || [])) {
+    if (S.decisions.ng[String(n.i)]?.locked) for (let wi = n.wi_start; wi < n.wi_end; wi++) out.add(wi);
+  }
+  for (const b of (S.blocks || [])) {
+    if (S.decisions.blocks[String(b.id)]?.locked) for (let wi = b.wi_start; wi < b.wi_end; wi++) out.add(wi);
+  }
+  return out;
+}
+function wordOwner(wi) {  // {kind:'ng', ref} | {kind:'block', ref} | null - 그 단어가 속한 ng/block
+  const n = (S.ng || []).find((x) => x.wi_start <= wi && wi < x.wi_end);
+  if (n) return { kind: 'ng', ref: n };
+  const b = (S.blocks || []).find((x) => x.wi_start <= wi && wi < x.wi_end);
+  if (b) return { kind: 'block', ref: b };
+  return null;
+}
 // -> Map wi -> {mode: 'cut'|'keep', segs: [[f0, f1], ...]} (fractions of the word's duration)
 function partialWords() {
   const out = new Map(); const spans = S.cut_spans; let k = 0;
@@ -1007,6 +1024,7 @@ function paintPartial(el, p) {
 }
 function applyStates() {
   partSet = partialWords();
+  lockedSet = computeLockedSet();
   document.querySelectorAll('.tok').forEach((el) => {
     const t = toks[+el.dataset.t];
     const wasSel = el.classList.contains('sel');
@@ -1014,9 +1032,9 @@ function applyStates() {
     const wasCur = el.classList.contains('search-cur');
     if (t.type === 'w') {
       const part = partSet.has(t.wi);
-      el.className = 'tok w' + wordClass(t.wi) + (part ? ' partcut' : '');
+      el.className = 'tok w' + wordClass(t.wi) + (part ? ' partcut' : '') + (lockedSet.has(t.wi) ? ' locked' : '');
       paintPartial(el, partSet.get(t.wi));
-      el.title = fmt(t.s) + (part ? (partSet.get(t.wi).mode === 'cut' ? ' · 일부 정밀 삭제됨(빨간 줄)' : ' · 일부 정밀 복원됨(파란 밑줄)') + ' — 선택 후 Z로 확인' : '');
+      el.title = fmt(t.s) + (part ? (partSet.get(t.wi).mode === 'cut' ? ' · 일부 정밀 삭제됨(빨간 줄)' : ' · 일부 정밀 복원됨(파란 밑줄)') + ' — 선택하면 하단 파형 바에서 확인' : '');
     } else {
       const v = gv.get(t.gid); const cut = gapCut(t.g);
       const ruleKeep = !['NORMAL_INTER', 'NORMAL_INTRA', 'ENUMERATION', 'QUOTE_TO_EXPLANATION'].includes(t.g.style);
@@ -1091,8 +1109,25 @@ function onMouseUp(ev) {
     if (!el) { clearSel(); return; }
     const ti = +el.dataset.t; const t = toks[ti];
     if (t.type === 'g') { if (gapCut(t.g)) return select(ti, ti); return; }  // a cut pause: select just it to restore
+    // 10-01: 확정 잠긴 단어는 단일 클릭으로 재편집 못 하게 막는다(더블클릭만 잠금 해제) -
+    // "이제 신경 안 써도 되는 곳"이 실수로 다시 열리는 걸 방지.
+    if (lockedSet.has(t.wi)) { toast('잠긴 구간입니다 - 더블클릭하면 잠금 해제'); return; }
     return select(ti, ti);   // clicking a word is always a decide+cursor action, never playback - see 재생/정지 controls under the video
   }, 0);
+}
+function onDblClick(ev) {
+  const el = ev.target?.closest?.('.tok.w');
+  if (!el) return;
+  const ti = +el.dataset.t; const t = toks[ti];
+  if (!lockedSet.has(t.wi)) return;  // 안 잠긴 단어의 더블클릭은 평소처럼 네이티브 단어선택만
+  ev.preventDefault();
+  const owner = wordOwner(t.wi);
+  if (!owner) return;
+  reviewAction(owner, 'unlock').then((ok) => {
+    if (!ok) return;
+    toast('잠금 해제 - 다시 편집할 수 있습니다');
+    select(ti, ti);
+  });
 }
 // Walk up from wherever the browser's native selection landed until a .tok is found. Works
 // for text nodes inside a token AND (defensively) for any stray node between tokens.
@@ -1166,6 +1201,7 @@ function select(x, y) {
     const elTop = target.getBoundingClientRect().top;
     $('#main').scrollBy({ top: elTop - popTop, behavior: 'smooth' });
   });
+  waveSyncToSelection();  // 10-01: 상시 파형 바를 이 선택 구간으로 바로 맞춘다(Z 키 불필요)
 }
 // The popup always lands in the same place - the empty column under the video - instead of
 // hunting for room next to whatever was clicked. Falls back to a corner on narrow viewports
@@ -1193,8 +1229,14 @@ function selRange() {
 }
 function clearSel(hide = true) {
   document.querySelectorAll('.tok.sel').forEach((el) => el.classList.remove('sel'));
-  sel = null; selReviewMatch = null;
-  if (hide) { $('#pop').style.display = 'none'; document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active')); }
+  sel = null; selReviewMatch = null; selExtendAnchorTi = null;
+  // hide=false는 select() 내부에서 "새 선택을 세팅하기 직전" 초기화용으로만 쓰인다 - 그 직후
+  // select()가 끝에서 waveSyncToSelection()을 어차피 다시 부르므로, 여기서는 hide=true(진짜
+  // 선택 해제)일 때만 동기화해 낭비되는 fetch 한 번을 건너뛴다.
+  if (hide) {
+    $('#pop').style.display = 'none'; document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active'));
+    waveSyncToSelection();
+  }
 }
 // A selection that exactly spans a pending 검토 필요 item's words (or a whole pending
 // block) resolves THAT item via its own decision type - which drops it from the sidebar -
@@ -1212,19 +1254,25 @@ function matchStatus(match) {
   if (!match) return null;
   return match.kind === 'ng' ? ngStatus(match.ref) : blockStatus(match.ref);
 }
-async function applySel(op) {
+async function applySel(op, { advance = false } = {}) {
   if (!sel) return;
   const match = selReviewMatch;
+  // 10-01: 확정 잠긴 항목은 c/v/Enter로 재편집 못 하게 막는다(더블클릭/u로 먼저 잠금 해제).
+  const locked = match?.kind === 'ng' ? S.decisions.ng[String(match.ref.i)]?.locked
+    : match?.kind === 'block' ? S.decisions.blocks[String(match.ref.id)]?.locked : false;
+  if (locked) { toast('잠긴 구간입니다 - 더블클릭하면 잠금 해제'); return; }
   const r = selRange(); const n = r.wi_end !== null ? r.wi_end - r.wi_start + 1 : 0;
   clearSel();
   if (match?.kind === 'ng') {
     if (!(await decide({ type: 'ng', i: match.ref.i, action: op }))) return;
     toast(op === 'cut' ? '삭제로 확정' : '살리기로 확정');
+    if (advance) jumpToCutSpan(1);
     return;
   }
   if (match?.kind === 'block') {
     if (!(await decide({ type: 'block', block_id: match.ref.id, action: op }))) return;
     toast(op === 'cut' ? '블록 삭제안 승인' : '블록 전체 살림');
+    if (advance) jumpToCutSpan(1);
     return;
   }
   if (!(await decide({ type: 'range', op, ...r }))) return;
@@ -1275,13 +1323,21 @@ async function applySkip() {
   if (!(await reviewAction(match, 'skip'))) return;
   toast('건너뜀 (J로 계속하면 나중에 다시 나타남)');
 }
-// 검토 완료: 지금 상태(기본 삭제 그대로든, 정밀 조정으로 일부만 남겼든) 그대로 확정하고
-// 큐에서 뺀다 - cut/keep 토글과 달리 action을 다시 쓰지 않으므로 부분 편집을 지우지 않는다.
-async function applyConfirm() {
+// 10-01(읽기→추적→듣기 3단계, ⇧Enter의 새 의미 - 예전 "검토 완료"를 계승): 확정 잠금 -
+// 지금 상태(기본 삭제 그대로든, 정밀 조정으로 일부만 남겼든) 그대로 두고 더 이상 손대지
+// 않겠다고 표시한다. action을 다시 쓰지 않으므로 부분 편집을 지우지 않는다. 잠근 뒤엔
+// 화면에서 흐려지고 1단계 탐색(↑/↓)에서도 건너뛴다 - 더블클릭/u로만 다시 열림.
+async function applyLock() {
   const match = selReviewMatch; if (!match) return;
   clearSel();
-  if (!(await reviewAction(match, 'confirm'))) return;
-  toast('검토 완료');
+  if (!(await reviewAction(match, 'lock'))) return;
+  toast('구간 잠금 - 이제 안 보여도 됩니다 (더블클릭하면 다시 열림)');
+}
+// u 키 - 화살표 탐색으로 잠긴 단어에 커서가 가 있을 때(더블클릭 외의 키보드 경로)
+async function applyUnlock() {
+  const match = selReviewMatch; if (!match) return;
+  if (!(await reviewAction(match, 'unlock'))) return;
+  toast('잠금 해제');
 }
 function playSel() { if (sel) { const r = selRange(); playRange(r.start, r.end, { skip: false }); } }
 function playSelJoin() { if (sel) { const r = selRange(); playRange(Math.max(0, r.start - 1.5), r.end + 1.5, { skip: true, extra: [{ start: r.start, end: r.end }] }); } }
@@ -1339,7 +1395,6 @@ function makeDraggable(panel, handle) {
 }
 makeDraggable($('#pop'), $('#pop .drag-handle'));
 makeDraggable($('#helpPop'), $('#helpPop .drag-handle'));
-makeDraggable($('#zoomPanel'), $('.zoom-head'));
 makeDraggable($('#modalPanel'), $('#modalPanel .drag-handle'));
 
 // ------------------------------------------------------------------ help popup (shortcuts)
@@ -1354,54 +1409,42 @@ document.addEventListener('click', (ev) => {
   $('#helpPop').classList.remove('show');
 });
 
-// ------------------------------------------------------------------ fine-boundary zoom (waveform)
+// ------------------------------------------------------------------ 상시 파형 바 (waveform)
 // Text-boundary cuts can still leave a sliver of sound audible (ASR word timestamps carry
 // ~10-50ms jitter). This shows the real audio waveform for the area around a selection so the
 // exact cut point can be nudged past what word boundaries alone can express - the panel is
 // sized to sit inside #main only, never over the sidebar or the video (user requirement).
-let zoom = null;
-const ZOOM_MIN_WIN = 0.06;  // below this, waveform pixels stop meaning anything useful
-$('#popZoom').addEventListener('click', openZoom);
-$('#zoomClose').addEventListener('click', closeZoom);
-async function openZoom() {
-  if (!sel) return;
-  const r = selRange();
-  const pad = 0.8;
-  const origStart = Math.max(0, r.start - pad), origEnd = Math.min(S.duration, r.end + pad);
-  $('#pop').style.display = 'none';
-  zoom = { winStart: origStart, winEnd: origEnd, origStart, origEnd, hs: r.start, he: r.end, active: 'he', peaks: [] };
-  logAction('zoom_open', { hs: round3(r.start), he: round3(r.end) });
-  positionZoomPanel();
-  const panel = $('#zoomPanel'); panel.style.display = 'flex';
-  requestAnimationFrame(() => panel.classList.add('show'));
-  renderZoomText(); drawZoom(); renderZoomHandles();
-  await fetchZoomWaveform();
+// 10-01(읽기→추적→듣기 3단계): 상시 파형 바 - 예전 Z 모달(선택 먼저 → Z로 열기 → 파형)을
+// 완전히 대체한다. 이제 늘 떠 있고, select()/clearSel()이 끝에서 waveSyncToSelection()을 불러
+// 그 선택 구간으로 바로 맞춘다(키 입력 불필요). 선택이 없으면 마지막 커서 위치 주변을 그냥
+// 보여주기만 하고(hs/he 없음), 그 상태에서 파형 위를 드래그하면 거기서부터 새 범위를 만든다.
+let wave = { winStart: 0, winEnd: 0, origStart: 0, origEnd: 0, hs: null, he: null, active: null, peaks: [], wheelT: null };
+let waveFetchGen = 0;
+const WAVE_MIN_WIN = 0.06;  // below this, waveform pixels stop meaning anything useful
+const WAVE_PAD = 0.8;
+function waveSyncToSelection() {
+  if (sel) {
+    const r = selRange();
+    wave.origStart = Math.max(0, r.start - WAVE_PAD); wave.origEnd = Math.min(S.duration, r.end + WAVE_PAD);
+    wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
+    wave.hs = r.start; wave.he = r.end; wave.active = 'he';
+  } else {
+    const t = cursorTime || 0;
+    wave.origStart = Math.max(0, t - 5); wave.origEnd = Math.min(S.duration, t + 5);
+    wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
+    wave.hs = null; wave.he = null; wave.active = null;
+  }
+  drawWaveformBar(); renderWaveHandles(); fetchWaveformBar();
 }
-async function fetchZoomWaveform() {
-  if (!zoom) return;
-  const { winStart, winEnd } = zoom;
+async function fetchWaveformBar() {
+  const { winStart, winEnd } = wave;
+  const gen = ++waveFetchGen;
   try {
     const data = await (await fetch(`/api/waveform?start=${winStart}&end=${winEnd}`)).json();
-    if (!zoom || zoom.winStart !== winStart || zoom.winEnd !== winEnd) return;  // superseded by a later zoom/pan
-    zoom.peaks = data.peaks || [];
-  } catch (e) { /* waveform is a nicety - keep the panel usable without it */ }
-  drawZoom();
-}
-function closeZoom() {
-  $('#zoomPanel').classList.remove('show');
-  setTimeout(() => { $('#zoomPanel').style.display = 'none'; }, 160);
-  logAction('zoom_close');
-  zoom = null;
-  clearSel();  // the popup was already hidden on open - don't leave an orphaned selection outline behind
-}
-function positionZoomPanel() {
-  const panel = $('#zoomPanel'); const mr = $('#main').getBoundingClientRect();
-  const videoVisible = getComputedStyle($('#videoWrap')).display !== 'none';
-  const rightLimit = videoVisible ? $('#videoWrap').getBoundingClientRect().left - 24 : mr.right - 24;
-  const left = mr.left + 24;
-  const width = Math.max(340, Math.min(640, rightLimit - left));
-  const top = Math.max(mr.top + 24, 60);
-  panel.style.left = `${left}px`; panel.style.width = `${width}px`; panel.style.top = `${top}px`;
+    if (gen !== waveFetchGen) return;  // 더 최근 요청에 밀림(스크롤/선택이 빠르게 바뀜)
+    wave.peaks = data.peaks || [];
+  } catch (e) { /* waveform is a nicety - keep the bar usable without it */ }
+  drawWaveformBar();
 }
 // Seconds of [a, b] that are currently cut (S.cut_spans is sorted and non-overlapping).
 function cutOverlap(a, b) {
@@ -1412,49 +1455,52 @@ function cutOverlap(a, b) {
   }
   return sum;
 }
-function renderZoomText() {
-  const words = S.words.filter((w) => w.s < zoom.winEnd && w.e > zoom.winStart);
-  $('#zoomText').innerHTML = words.map((w) => {
-    const inSel = w.s >= zoom.hs - 0.001 && w.e <= zoom.he + 0.001;
-    const t = wordClass(w.wi) ? `<s>${esc(w.t)}</s>` : esc(w.t);  // already cut -> struck, same as the transcript
-    return inSel ? `<b>${t}</b>` : t;
-  }).join(' ');
-}
-// What the two apply buttons would actually change for the current hs/he - the panel used to
+// What the two apply buttons would actually change for the current hs/he - the bar used to
 // paint the whole selection one red regardless, so "정밀 복원" gave no clue what (if anything)
-// it would bring back (UX audit H1). Buttons that would change nothing are disabled.
-function updateZoomStatus() {
-  const len = zoom.he - zoom.hs, cut = Math.min(len, cutOverlap(zoom.hs, zoom.he)), live = len - cut;
+// it would bring back (UX audit H1). Buttons that would change nothing are disabled. hs/he가
+// 없으면(follow 모드, 아직 드래그로 범위를 안 만듦) 전부 비활성화하고 안내만 보여준다.
+function updateWaveStatus() {
+  const cutBtn = $('#waveApplyCut'), keepBtn = $('#waveApplyKeep'), inBtn = $('#wavePlayIn'), outBtn = $('#wavePlayOut');
+  if (wave.hs == null) {
+    $('#waveStatus').innerHTML = `<span>파형 위에서 드래그해서 범위를 선택하세요</span>
+      <span class="key"><span class="sw cut"></span>잘린 부분</span>
+      <span class="key"><span class="sw risk"></span>잔음 의심(<kbd>N</kbd>)</span>`;
+    cutBtn.disabled = keepBtn.disabled = inBtn.disabled = outBtn.disabled = true;
+    cutBtn.textContent = '정밀 삭제'; keepBtn.textContent = '정밀 복원';
+    $('#waveResetView').disabled = true;
+    return;
+  }
+  inBtn.disabled = outBtn.disabled = false;
+  const len = wave.he - wave.hs, cut = Math.min(len, cutOverlap(wave.hs, wave.he)), live = len - cut;
   const noneCut = cut < 0.005, allCut = live < 0.005;
   const state = noneCut ? '선택 범위는 지금 <b>모두 살아 있음</b>'
     : allCut ? `선택 범위 <b>${len.toFixed(2)}초</b>가 <b>이미 전부 잘려 있음</b>`
     : `선택 ${len.toFixed(2)}초 중 <b>${cut.toFixed(2)}초가 잘려 있음</b>`;
-  $('#zoomStatus').innerHTML = `<span>${state}</span>
-    <span class="key"><span class="sw cut"></span>현재 잘린 부분</span>
+  $('#waveStatus').innerHTML = `<span>${state}</span>
+    <span class="key"><span class="sw cut"></span>잘린 부분</span>
+    <span class="key"><span class="sw risk"></span>잔음 의심(<kbd>N</kbd>)</span>
     <span class="key"><span class="sw sel"></span>선택 범위</span>`;
-  const cutBtn = $('#zoomApplyCut'), keepBtn = $('#zoomApplyKeep');
   cutBtn.disabled = allCut; keepBtn.disabled = noneCut;
   cutBtn.textContent = allCut ? '이미 잘림' : `정밀 삭제 (${live.toFixed(2)}초 더 자름)`;
   keepBtn.textContent = noneCut ? '복원할 부분 없음' : `정밀 복원 (${cut.toFixed(2)}초 살림)`;
   // Only undoes a wheel-zoom in/out on the waveform - with no such zoom applied yet (the
-  // panel's default state), the view IS already the full original window, so clicking this did
+  // bar's default state), the view IS already the full original window, so clicking this did
   // nothing and looked broken. Disabling it when there's nothing to reset makes that visible.
-  $('#zoomResetView').disabled = Math.abs(zoom.winStart - zoom.origStart) < 0.001 && Math.abs(zoom.winEnd - zoom.origEnd) < 0.001;
+  $('#waveResetView').disabled = Math.abs(wave.winStart - wave.origStart) < 0.001 && Math.abs(wave.winEnd - wave.origEnd) < 0.001;
 }
-function drawZoom() {
-  const cv = $('#zoomCanvas'); const dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth || 300, h = 110;
+function drawWaveformBar() {
+  const cv = $('#waveCanvas'); const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth || 300, h = 92;
   cv.width = w * dpr; cv.height = h * dpr;
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-  const span = zoom.winEnd - zoom.winStart || 1;
-  const xOf = (t) => (t - zoom.winStart) / span * w;
+  const span = wave.winEnd - wave.winStart || 1;
+  const xOf = (t) => (t - wave.winStart) / span * w;
   // A thin label band on top carries each word's text right over its own slice of the
   // waveform below - so which word a given peak belongs to (and which word(s) the current
-  // blue hs/he selection covers) reads directly off the canvas, not only from the #zoomText
-  // line above it.
-  const LABEL_H = 18;
+  // blue hs/he selection covers) reads directly off the canvas.
+  const LABEL_H = 16;
   const waveTop = LABEL_H, waveH = h - LABEL_H, mid = waveTop + waveH / 2;
-  const peaks = zoom.peaks;
+  const peaks = wave.peaks;
   if (peaks.length) {
     const bw = w / peaks.length;
     ctx.fillStyle = '#4d4d4d';
@@ -1466,32 +1512,37 @@ function drawZoom() {
     ctx.fillStyle = '#666666'; ctx.font = '11px -apple-system,sans-serif';
     ctx.fillText('파형 불러오는 중…', 8, mid);
   }
-  // What's cut right now: washed out + hatched, so audio that's already gone reads differently
-  // from audio that's still in - the thing 정밀 복원 would bring back.
+  // 10-01 추가: audio_ok===false(가장 조용한 지점으로 스냅해도 여전히 시끄러움 - 잔음/절단
+  // 의심)인 구간은 주황으로, 나머지 잘린 구간은 기존 회색 해치로 - 2단계 "위험지점 추적"의
+  // 시각 신호. 이 데이터(cut_spans[i].audio_ok)는 이미 서버가 공짜로 계산해 보내고 있었는데
+  // 화면에 한 번도 안 그려지고 있었다(audio_map.choose_boundary 기반, API 비용 없음).
   for (const sp of S.cut_spans) {
-    if (sp.end <= zoom.winStart || sp.start >= zoom.winEnd) continue;
+    if (sp.end <= wave.winStart || sp.start >= wave.winEnd) continue;
     const a = Math.max(0, xOf(sp.start)), b = Math.min(w, xOf(sp.end));
+    const risky = sp.audio_ok === false;
     ctx.save(); ctx.beginPath(); ctx.rect(a, waveTop, b - a, waveH); ctx.clip();
-    ctx.fillStyle = 'rgba(245,245,245,0.78)'; ctx.fillRect(a, waveTop, b - a, waveH);
-    ctx.strokeStyle = 'rgba(0,0,0,0.16)'; ctx.lineWidth = 1;
+    ctx.fillStyle = risky ? 'rgba(255,178,122,0.45)' : 'rgba(245,245,245,0.78)'; ctx.fillRect(a, waveTop, b - a, waveH);
+    ctx.strokeStyle = risky ? 'rgba(171,87,10,0.45)' : 'rgba(0,0,0,0.16)'; ctx.lineWidth = 1;
     for (let x = a - waveH; x < b; x += 6) { ctx.beginPath(); ctx.moveTo(x, h); ctx.lineTo(x + waveH, waveTop); ctx.stroke(); }
     ctx.restore();
-    if (b - a > 30) { ctx.fillStyle = '#666666'; ctx.font = '10px -apple-system,sans-serif'; ctx.textBaseline = 'alphabetic'; ctx.fillText('잘림', a + 4, h - 5); }
+    if (b - a > 30) { ctx.fillStyle = risky ? '#ab570a' : '#666666'; ctx.font = '10px -apple-system,sans-serif'; ctx.textBaseline = 'alphabetic'; ctx.fillText(risky ? '잔음 의심' : '잘림', a + 4, h - 5); }
   }
-  const x1 = xOf(zoom.hs), x2 = xOf(zoom.he);
-  ctx.fillStyle = 'rgba(0,112,243,0.10)'; ctx.fillRect(x1, 0, x2 - x1, h);
-  ctx.strokeStyle = '#0070f3';
-  [[x1, zoom.active === 'hs'], [x2, zoom.active === 'he']].forEach(([x, active]) => {
-    ctx.lineWidth = active ? 3 : 1.5;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-  });
-  const words = (S.words || []).filter((wd) => wd.s < zoom.winEnd && wd.e > zoom.winStart);
+  if (wave.hs != null) {
+    const x1 = xOf(wave.hs), x2 = xOf(wave.he);
+    ctx.fillStyle = 'rgba(0,112,243,0.10)'; ctx.fillRect(x1, 0, x2 - x1, h);
+    ctx.strokeStyle = '#0070f3';
+    [[x1, wave.active === 'hs'], [x2, wave.active === 'he']].forEach(([x, active]) => {
+      ctx.lineWidth = active ? 3 : 1.5;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    });
+  }
+  const words = (S.words || []).filter((wd) => wd.s < wave.winEnd && wd.e > wave.winStart);
   ctx.textBaseline = 'middle';
   words.forEach((wd) => {
-    const wx1 = xOf(Math.max(wd.s, zoom.winStart)), wx2 = xOf(Math.min(wd.e, zoom.winEnd));
+    const wx1 = xOf(Math.max(wd.s, wave.winStart)), wx2 = xOf(Math.min(wd.e, wave.winEnd));
     ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(wx1, 0); ctx.lineTo(wx1, h); ctx.stroke();
-    const inSel = wd.s >= zoom.hs - 0.001 && wd.e <= zoom.he + 0.001;
+    const inSel = wave.hs != null && wd.s >= wave.hs - 0.001 && wd.e <= wave.he + 0.001;
     ctx.fillStyle = inSel ? '#0070f3' : '#8f8f8f';
     ctx.font = inSel ? 'bold 10px -apple-system,sans-serif' : '10px -apple-system,sans-serif';
     const colW = wx2 - wx1;
@@ -1507,105 +1558,182 @@ function drawZoom() {
     }
     ctx.restore();
   });
-  updateZoomStatus();
+  updateWaveStatus();
 }
-function renderZoomHandles() {
-  const hsI = $('#zoomHsInput'), heI = $('#zoomHeInput');
-  hsI.value = zoom.hs.toFixed(3); heI.value = zoom.he.toFixed(3);
-  hsI.classList.toggle('active', zoom.active === 'hs');
-  heI.classList.toggle('active', zoom.active === 'he');
+function renderWaveHandles() {
+  const hsI = $('#waveHsInput'), heI = $('#waveHeInput');
+  $('#waveHandles').hidden = wave.hs == null;
+  if (wave.hs == null) return;
+  hsI.value = wave.hs.toFixed(3); heI.value = wave.he.toFixed(3);
+  hsI.classList.toggle('active', wave.active === 'hs');
+  heI.classList.toggle('active', wave.active === 'he');
+}
+// 10-01 추가: 드래그 중 근처(±150ms) 가장 조용한 지점을 찾아 60ms 안으로 들어오면 자석처럼
+// 붙인다 - 자동 컷이 이미 쓰는 조용한 지점 스냅(audio_map.choose_boundary)을 사람이 손으로
+// 조정할 때도 받을 수 있게 하는 것. 이미 받아둔 peaks(민/맥스 버킷)만 보므로 새 서버 호출 없음.
+function nearestQuietPoint(t, windowSec = 0.15) {
+  if (!wave.peaks.length) return null;
+  const span = wave.winEnd - wave.winStart;
+  const bucketSec = span / wave.peaks.length;
+  const i0 = Math.round((t - wave.winStart) / bucketSec);
+  const radius = Math.max(1, Math.round(windowSec / bucketSec));
+  let best = -1, bestAmp = Infinity;
+  for (let i = Math.max(0, i0 - radius); i <= Math.min(wave.peaks.length - 1, i0 + radius); i++) {
+    const [mn, mx] = wave.peaks[i];
+    const amp = Math.max(Math.abs(mn), Math.abs(mx));
+    if (amp < bestAmp) { bestAmp = amp; best = i; }
+  }
+  return best < 0 ? null : wave.winStart + (best + 0.5) * bucketSec;
 }
 // A handle can only move within [0, duration] and must not cross the other handle; if the
 // new value would fall outside the current (possibly zoomed-in) view, the view pans just
 // enough to keep it visible instead of the handle silently vanishing off-canvas.
-function setHandle(which, t) {
+function setHandle(which, t, { snap = true } = {}) {
+  if (snap) {
+    const q = nearestQuietPoint(t, 0.15);
+    if (q != null && Math.abs(q - t) < 0.06) t = q;
+  }
   t = Math.max(0, Math.min(S.duration, t));
-  if (which === 'hs') zoom.hs = Math.min(t, zoom.he - 0.005);
-  else zoom.he = Math.max(t, zoom.hs + 0.005);
-  const v = zoom[which];
-  const span = zoom.winEnd - zoom.winStart;
-  if (v < zoom.winStart) { zoom.winStart = Math.max(0, v - span * 0.1); zoom.winEnd = zoom.winStart + span; fetchZoomWaveform(); }
-  else if (v > zoom.winEnd) { zoom.winEnd = Math.min(S.duration, v + span * 0.1); zoom.winStart = zoom.winEnd - span; fetchZoomWaveform(); }
-  renderZoomText(); drawZoom(); renderZoomHandles();
+  if (which === 'hs') wave.hs = Math.min(t, wave.he - 0.005);
+  else wave.he = Math.max(t, wave.hs + 0.005);
+  const v = wave[which];
+  const span = wave.winEnd - wave.winStart;
+  if (v < wave.winStart) { wave.winStart = Math.max(0, v - span * 0.1); wave.winEnd = wave.winStart + span; fetchWaveformBar(); }
+  else if (v > wave.winEnd) { wave.winEnd = Math.min(S.duration, v + span * 0.1); wave.winStart = wave.winEnd - span; fetchWaveformBar(); }
+  drawWaveformBar(); renderWaveHandles();
 }
-$('#zoomCanvas').addEventListener('mousedown', (ev) => {
-  if (!zoom) return;
-  const rect = ev.currentTarget.getBoundingClientRect(); const w = rect.width; const span = zoom.winEnd - zoom.winStart;
-  const xOf = (t) => (t - zoom.winStart) / span * w;
+// 10-01 추가: 조정을 "놓는" 순간(드래그 끝/넛지 클릭/숫자 입력) 그 경계 앞뒤를 자동으로 짧게
+// 들려준다 - "조정→버튼 눌러 듣기→다시 조정" 반복에서 버튼 클릭을 없앤 것(사용자 지적: 정밀
+// 조정-다시듣기가 반복적으로 일어남). 드래그 중(mousemove)에는 안 부른다 - 계속 재생 호출이
+// 겹치면 오히려 거슬림, 손을 뗐을 때 한 번만.
+function previewHandleEdit() {
+  if (wave.active === 'hs') playRange(Math.max(0, wave.hs - 0.4), wave.hs + 0.4, { skip: false });
+  else playRange(wave.he - 0.4, Math.min(S.duration, wave.he + 0.4), { skip: false });
+}
+$('#waveCanvas').addEventListener('mousedown', (ev) => {
+  const rect = ev.currentTarget.getBoundingClientRect(); const w = rect.width; const span = wave.winEnd - wave.winStart;
+  const xOf = (t) => (t - wave.winStart) / span * w;
+  const tOf = (x) => wave.winStart + Math.max(0, Math.min(w, x)) / w * span;
   const mx = ev.clientX - rect.left;
-  const handle = Math.abs(mx - xOf(zoom.hs)) < Math.abs(mx - xOf(zoom.he)) ? 'hs' : 'he';
-  zoom.active = handle;
+  const distHs = wave.hs != null ? Math.abs(mx - xOf(wave.hs)) : Infinity;
+  const distHe = wave.he != null ? Math.abs(mx - xOf(wave.he)) : Infinity;
+  if (Math.min(distHs, distHe) < 14) {  // 기존 경계 중 하나에 가까움 - 그 경계를 조정
+    const handle = distHs < distHe ? 'hs' : 'he';
+    wave.active = handle;
+    const move = (e2) => setHandle(handle, tOf(e2.clientX - rect.left));
+    move(ev);
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+      previewHandleEdit(); logAction('wave_drag', { hs: round3(wave.hs), he: round3(wave.he) });
+    };
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up, { once: true });
+    return;
+  }
+  // 10-01 추가: 기존 핸들과 무관하게 이 지점부터 새 범위를 드래그로 만든다(사용자 요청 핵심 -
+  // 단어를 먼저 클릭하지 않아도 파형 위에서 바로 범위를 만들어 삭제/살리기).
+  const startT = tOf(mx);
+  wave.hs = startT; wave.he = startT; wave.active = 'he';
+  let dragged = false;
   const move = (e2) => {
-    const t = zoom.winStart + Math.max(0, Math.min(w, e2.clientX - rect.left)) / w * span;
-    setHandle(handle, t);
+    dragged = true;
+    const t = tOf(e2.clientX - rect.left);
+    if (t < startT) { wave.hs = t; wave.he = startT; wave.active = 'hs'; }
+    else { wave.hs = startT; wave.he = t; wave.active = 'he'; }
+    drawWaveformBar(); renderWaveHandles();
   };
-  move(ev);
-  const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); logAction('zoom_drag', { hs: round3(zoom.hs), he: round3(zoom.he) }); };
+  const up = () => {
+    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+    if (!dragged || wave.he - wave.hs < 0.02) {  // 실수로 짧게 클릭 - 새 범위 취소
+      wave.hs = null; wave.he = null; drawWaveformBar(); renderWaveHandles(); return;
+    }
+    // clearSel()은 본문 텍스트 선택을 지우려고 부르는 건데, clearSel()이 내부에서
+    // waveSyncToSelection()도 다시 불러서(sel이 null이니 follow 모드로) 방금 만든 이
+    // wave.hs/he를 지워버린다 - 그래서 호출 전에 백업해뒀다가 그대로 복원한다.
+    const finalHs = wave.hs, finalHe = wave.he, finalActive = wave.active;
+    clearSel();
+    wave.hs = finalHs; wave.he = finalHe; wave.active = finalActive;
+    drawWaveformBar(); renderWaveHandles(); updateWaveStatus();
+    previewHandleEdit();
+    logAction('wave_select', { hs: round3(wave.hs), he: round3(wave.he) });
+  };
   window.addEventListener('mousemove', move); window.addEventListener('mouseup', up, { once: true });
 });
 // Wheel-zoom on the waveform itself: this is the main answer to "the waveform alone isn't
 // precise enough" - zooming in shrinks the time window, so the SAME pixel width covers far
 // fewer milliseconds and dragging becomes proportionally more precise.
-$('#zoomCanvas').addEventListener('wheel', (ev) => {
-  if (!zoom) return;
+$('#waveCanvas').addEventListener('wheel', (ev) => {
   ev.preventDefault();
   const rect = ev.currentTarget.getBoundingClientRect();
-  const span = zoom.winEnd - zoom.winStart;
-  const cursorT = zoom.winStart + Math.max(0, Math.min(rect.width, ev.clientX - rect.left)) / rect.width * span;
+  const span = wave.winEnd - wave.winStart;
+  const cursorT = wave.winStart + Math.max(0, Math.min(rect.width, ev.clientX - rect.left)) / rect.width * span;
   const factor = ev.deltaY < 0 ? 0.7 : 1 / 0.7;
-  let newSpan = Math.max(ZOOM_MIN_WIN, Math.min(zoom.origEnd - zoom.origStart, span * factor));
-  let newStart = cursorT - (cursorT - zoom.winStart) * (newSpan / span);
+  let newSpan = Math.max(WAVE_MIN_WIN, Math.min(Math.max(wave.origEnd - wave.origStart, 10), span * factor));
+  let newStart = cursorT - (cursorT - wave.winStart) * (newSpan / span);
   newStart = Math.max(0, Math.min(S.duration - newSpan, newStart));
-  zoom.winStart = newStart; zoom.winEnd = newStart + newSpan;
-  drawZoom();
-  clearTimeout(zoom.wheelT); zoom.wheelT = setTimeout(fetchZoomWaveform, 120);
+  wave.winStart = newStart; wave.winEnd = newStart + newSpan;
+  drawWaveformBar();
+  clearTimeout(wave.wheelT); wave.wheelT = setTimeout(fetchWaveformBar, 120);
 }, { passive: false });
-$('#zoomResetView').addEventListener('click', () => {
-  if (!zoom) return;
-  zoom.winStart = zoom.origStart; zoom.winEnd = zoom.origEnd;
-  drawZoom(); fetchZoomWaveform();
+$('#waveResetView').addEventListener('click', () => {
+  wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
+  drawWaveformBar(); fetchWaveformBar();
 });
 document.querySelectorAll('.zoom-handle-row .nudge').forEach((btn) => btn.addEventListener('click', () => {
-  if (!zoom) return;
-  const h = btn.dataset.h; zoom.active = h;
-  setHandle(h, zoom[h] + parseFloat(btn.dataset.d));
+  if (wave.hs == null) return;
+  const h = btn.dataset.h; wave.active = h;
+  setHandle(h, wave[h] + parseFloat(btn.dataset.d));
+  previewHandleEdit();
 }));
-$('#zoomHsInput').addEventListener('change', (e) => { zoom.active = 'hs'; setHandle('hs', parseFloat(e.target.value)); });
-$('#zoomHeInput').addEventListener('change', (e) => { zoom.active = 'he'; setHandle('he', parseFloat(e.target.value)); });
-$('#zoomHsInput').addEventListener('focus', () => { zoom.active = 'hs'; drawZoom(); renderZoomHandles(); });
-$('#zoomHeInput').addEventListener('focus', () => { zoom.active = 'he'; drawZoom(); renderZoomHandles(); });
-$('#zoomPlayIn').addEventListener('click', () => { if (zoom) playRange(zoom.hs, zoom.he, { skip: false }); });
-$('#zoomPlayOut').addEventListener('click', () => {
-  if (!zoom) return;
-  playRange(zoom.winStart, zoom.winEnd, { skip: true, extra: [{ start: zoom.hs, end: zoom.he }] });
+$('#waveHsInput').addEventListener('change', (e) => { wave.active = 'hs'; setHandle('hs', parseFloat(e.target.value)); previewHandleEdit(); });
+$('#waveHeInput').addEventListener('change', (e) => { wave.active = 'he'; setHandle('he', parseFloat(e.target.value)); previewHandleEdit(); });
+$('#waveHsInput').addEventListener('focus', () => { wave.active = 'hs'; drawWaveformBar(); renderWaveHandles(); });
+$('#waveHeInput').addEventListener('focus', () => { wave.active = 'he'; drawWaveformBar(); renderWaveHandles(); });
+$('#wavePlayIn').addEventListener('click', () => { if (wave.hs != null) playRange(wave.hs, wave.he, { skip: false }); });
+$('#wavePlayOut').addEventListener('click', () => {
+  if (wave.hs == null) return;
+  playRange(wave.winStart, wave.winEnd, { skip: true, extra: [{ start: wave.hs, end: wave.he }] });
 });
 // Independent of hs/he - previews the current edit exactly as it'll actually sound in this
 // area (existing cut_spans only), regardless of whatever boundary is currently being nudged.
-$('#zoomPlayLive').addEventListener('click', () => {
-  if (!zoom) return;
-  playRange(zoom.winStart, zoom.winEnd, { skip: true });
+$('#wavePlayLive').addEventListener('click', () => {
+  playRange(wave.winStart, wave.winEnd, { skip: true });
 });
-// Applying stays IN the panel rather than closing it - precise work is rarely one cut: the
+// Applying stays on the bar rather than closing anything - precise work is rarely one cut: the
 // natural next move is to nudge the same boundary again or restore a sliver you just went
-// too far on, and re-opening from scratch each time (re-picking the range, re-fetching the
-// waveform) was real friction. The panel now only closes when the user actually says so.
-$('#zoomApplyCut').addEventListener('click', async () => {
-  if (!zoom) return;
-  const n = (zoom.he - zoom.hs) - cutOverlap(zoom.hs, zoom.he);
+// too far on, and re-picking the range each time was real friction.
+$('#waveApplyCut').addEventListener('click', async () => {
+  if (wave.hs == null) return;
+  const n = (wave.he - wave.hs) - cutOverlap(wave.hs, wave.he);
   // decide() already toasts its own '실패: ...' and leaves S untouched on failure - if we kept
-  // going here regardless, this success toast would overwrite that error message and drawZoom
-  // would repaint the same (unchanged) state, making a real failure look just like success.
-  if (!(await decide({ type: 'range', op: 'cut', start: zoom.hs, end: zoom.he }))) return;
+  // going here regardless, this success toast would overwrite that error message and
+  // drawWaveformBar would repaint the same (unchanged) state, making a real failure look like success.
+  if (!(await decide({ type: 'range', op: 'cut', start: wave.hs, end: wave.he }))) return;
   toast(`${n.toFixed(2)}초 정밀 삭제 (⌘Z로 되돌리기)`);
-  drawZoom(); renderZoomText();
+  drawWaveformBar();
 });
-$('#zoomApplyKeep').addEventListener('click', async () => {
-  if (!zoom) return;
-  const n = cutOverlap(zoom.hs, zoom.he);
-  if (!(await decide({ type: 'range', op: 'keep', start: zoom.hs, end: zoom.he }))) return;
+$('#waveApplyKeep').addEventListener('click', async () => {
+  if (wave.hs == null) return;
+  const n = cutOverlap(wave.hs, wave.he);
+  if (!(await decide({ type: 'range', op: 'keep', start: wave.hs, end: wave.he }))) return;
   toast(`${n.toFixed(2)}초 정밀 복원 (⌘Z로 되돌리기)`);
-  drawZoom(); renderZoomText();
+  drawWaveformBar();
 });
+// 10-01(2단계 "위험지점 추적"): audio_ok===false인 cut_spans만 순서대로 건너뛰며 - 본문 선택과
+// 무관하게 파형 자체를 그 지점으로 옮긴다(단어 경계와 안 맞을 수 있어 sel을 쓰지 않음).
+function jumpToAudioRisk(dir) {
+  const risky = S.cut_spans.filter((sp) => sp.audio_ok === false).sort((a, b) => a.start - b.start);
+  if (!risky.length) { toast('잔음 의심 구간이 없습니다'); return; }
+  const cur = wave.hs != null ? wave.hs : (cursorTime || -1);
+  let span;
+  if (dir > 0) span = risky.find((s) => s.start > cur + 0.01) || risky[0];
+  else { const rev = [...risky].reverse(); span = rev.find((s) => s.start < cur - 0.01) || rev[0]; }
+  clearSel();
+  wave.origStart = Math.max(0, span.start - WAVE_PAD); wave.origEnd = Math.min(S.duration, span.end + WAVE_PAD);
+  wave.winStart = wave.origStart; wave.winEnd = wave.origEnd;
+  wave.hs = span.start; wave.he = span.end; wave.active = 'he';
+  drawWaveformBar(); renderWaveHandles(); fetchWaveformBar();
+  playRange(wave.hs, wave.he, { skip: false });  // 이 단계부터는 귀로 확인하는 단계라 자동재생
+}
 
 // ------------------------------------------------------------------ pending navigation
 // J walks the sidebar's own pending items, each selected exactly as its card would select it.
@@ -1635,6 +1763,61 @@ function nextPending() {
     document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active'));
     if (i >= 0) { const c = document.querySelectorAll('.review-card')[i]; c.classList.add('active'); c.scrollIntoView({ block: 'nearest' }); }
   }, 250);
+}
+// 10-01(읽기→추적→듣기 3단계): 1단계 "빠른 검토 모드" 탐색 - pendingList()는 REVIEW(judge
+// layer)만 보던 좁은 범위라 확정 전 경고 카운트용으로 그대로 남겨두고(의미 유지: "판단
+// 자체가 안 끝난 것"만 센다), 탐색은 여기 새 함수로 - AUTO_SAFE까지 포함해 "지금 잘려 있는
+// 모든 곳"을 다 훑을 수 있어야 자동 삭제도 혹시나 하고 살펴보며 지나갈 수 있다. 잠긴
+// 항목(확정 잠금)은 "이제 안 봐도 됨"이므로 제외.
+function cutSpanList() {
+  const out = [];
+  for (const n of (S.ng || [])) {
+    const nd = S.decisions.ng[String(n.i)];
+    if (nd?.action === 'cut' && !nd.locked) out.push([n.wi_start, n.wi_end - 1]);
+  }
+  for (const b of (S.blocks || [])) {
+    const bd = S.decisions.blocks[String(b.id)];
+    if (bd?.approved && !bd.locked && b.lines.some((ln) => bd.lines[String(ln.id)] === 'delete')) {
+      out.push([b.wi_start, b.wi_end]);
+    }
+  }
+  return out.map(([wa, wb]) => ({ a: findTokIndex(wa), b: findTokIndex(wb), start: S.words[wa].s }))
+    .filter((p) => p.a >= 0 && p.b >= 0).sort((x, y) => x.start - y.start);
+}
+function jumpToCutSpan(dir) {  // dir: +1 = 다음(↓) · -1 = 이전(↑)
+  const cur = sel ? toks[sel.a].s : (cursorTime || -1);
+  const list = cutSpanList();
+  if (!list.length) { toast('지금 잘려 있는 구간이 없습니다'); return; }
+  let item;
+  if (dir > 0) item = list.find((p) => p.start > cur + 0.01) || list[0];
+  else { const rev = [...list].reverse(); item = rev.find((p) => p.start < cur - 0.01) || rev[0]; }
+  document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  setTimeout(() => select(item.a, item.b), 120);
+}
+// 화살표 좌우 = 단어 단위 커서 이동(읽는 속도로 훑기, 무음) - Shift면 선택을 그 방향으로
+// 확장한다(구 단위 일괄 삭제/살리기용). 잠긴 단어도 지나가며 볼 수는 있게 그대로 둔다 -
+// 재편집은 onMouseUp과 동일하게 더블클릭/u로만.
+let selExtendAnchorTi = null;  // Shift로 연속 확장하는 동안 고정할 기준점 - 늘리다가 반대
+  // 방향으로 줄여도(흔한 텍스트 에디터 동작) 처음 시작한 쪽은 그대로 두고 반대쪽 끝만
+  // 움직이게 한다. 매번 새로 anchorTi를 재계산하면 방향을 바꾸는 순간 엉뚱한 쪽이 고정됨.
+function moveWordCursor(dir, extend) {
+  const words = wordIdx;  // [{s,e,wi}] sorted by s - buildWordIndex()에서 이미 계산됨
+  if (!words.length) return;
+  if (!extend) selExtendAnchorTi = null;  // 확장이 아니면 다음 확장 때 새로 잡는다
+  const curWi = sel ? toks[sel.b]?.wi : null;
+  let idx = curWi != null ? words.findIndex((w) => w.wi === curWi) : -1;
+  if (idx < 0) idx = dir > 0 ? -1 : words.length;
+  const nextIdx = Math.min(words.length - 1, Math.max(0, idx + dir));
+  const w = words[nextIdx];
+  const ti = findTokIndex(w.wi);
+  if (ti < 0) return;
+  if (extend && sel) {
+    if (selExtendAnchorTi == null) selExtendAnchorTi = dir > 0 ? sel.a : sel.b;
+    select(Math.min(selExtendAnchorTi, ti), Math.max(selExtendAnchorTi, ti));
+  } else {
+    select(ti, ti);
+  }
+  document.querySelector(`.tok[data-t="${ti}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 // ------------------------------------------------------------------ playback (virtual, no render)
 let play = null;
@@ -2138,14 +2321,24 @@ function hideModal() { $('#modal').style.display = 'none'; }
 // ------------------------------------------------------------------ keyboard
 document.addEventListener('keydown', (e) => {
   if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+  if (document.activeElement === $('#scrollProgress')) return;  // 그 컨트롤 자신의 화살표 스크롤과 충돌 방지
   if (e.key === 'Escape' && $('#modal').style.display === 'flex') {  // Esc = 취소 on a confirm, 닫기 otherwise
     e.preventDefault(); if ($('#modalNo')) $('#modalNo').click(); else hideModal(); return;
   }
   if (e.key === 'Escape' && $('#helpPop').classList.contains('show')) { e.preventDefault(); $('#helpPop').classList.remove('show'); return; }
-  if (e.key === 'Escape' && zoom) { e.preventDefault(); closeZoom(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); $('#btnRedo').click(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); $('#btnUndo').click(); return; }
-  if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); return nextPending(); }
+  // 10-01(읽기→추적→듣기 3단계): 1단계 "빠른 검토 모드" 핵심 탐색/편집 - 무음, 팝업 없이
+  // 커서+즉시 반영. ←/→ = 단어 단위 커서 이동(+Shift로 범위 확장), ↑/↓(및 기존 J)는 "지금
+  // 잘려 있는 곳"만 건너뛰며 순회(잠긴 구간은 제외) - jumpToCutSpan()/moveWordCursor() 참고.
+  if (e.key === 'ArrowLeft') { e.preventDefault(); return moveWordCursor(-1, e.shiftKey); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); return moveWordCursor(1, e.shiftKey); }
+  if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); return jumpToCutSpan(1); }
+  // 2단계 "위험지점 추적": 파형 바의 잔음 의심(audio_ok===false) 구간만 순서대로 - 본문 선택과
+  // 무관하므로 sel 유무와 상관없이 전역에서 동작.
+  if (e.key === 'n' && !e.shiftKey) { e.preventDefault(); return jumpToAudioRisk(1); }
+  if (e.key === 'N' || (e.key === 'n' && e.shiftKey)) { e.preventDefault(); return jumpToAudioRisk(-1); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); return jumpToCutSpan(-1); }
   if (e.key === ' ') { e.preventDefault(); return togglePlay(); }  // global: play/pause from cursor, selection or not
   if (e.key === 'r' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); return reel ? stopReel() : playReel(null, '이음새 릴'); }
   // 이음새 릴 재생 중 거슬리는 곳에서 Enter: 릴은 멈추고(다음 구간으로 안 넘어감) 그 자리에서
@@ -2153,13 +2346,17 @@ document.addEventListener('keydown', (e) => {
   // 대응하진 않아(수동 병합·쉼 트림 등) 카드까지 자동으로 열지는 않는다.
   if (e.key === 'Enter' && reel && !sel) { e.preventDefault(); stopReel(); toast('릴 정지 - 이 구간에 머뭅니다'); return; }
   if (sel) {
-    // ⇧↵/S mirror the review card's own 검토 완료/건너뛰기 buttons - only live while the
-    // current selection matches a still-undecided review item (see matchStatus/reviewAction).
-    if (e.key === 'Enter' && e.shiftKey) {
-      e.preventDefault();
-      const st = matchStatus(selReviewMatch);
-      if (st === 'pending' || st === 'skipped') applyConfirm();
-      return;
+    // c/v: 명시적 삭제/살리기(토글 아님 - 빠르게 연타해도 상태가 안 꼬임), 결정 직후 자동으로
+    // 다음 "잘려 있는 곳"으로 이동한다(advance:true) - 1단계 핵심 루프.
+    if (e.key === 'c') { e.preventDefault(); return applySel('cut', { advance: true }); }
+    if (e.key === 'v') { e.preventDefault(); return applySel('keep', { advance: true }); }
+    // ⇧↵ = 확정 잠금(예전 "검토 완료"를 계승 - applyLock 참고), u = 잠금 해제(화살표로
+    // 잠긴 단어까지 커서를 옮긴 경우의 키보드 경로 - 마우스는 더블클릭).
+    if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); return applyLock(); }
+    if (e.key === 'u') {
+      const locked = selReviewMatch?.kind === 'ng' ? S.decisions.ng[String(selReviewMatch.ref.i)]?.locked
+        : selReviewMatch?.kind === 'block' ? S.decisions.blocks[String(selReviewMatch.ref.id)]?.locked : false;
+      if (locked) { e.preventDefault(); return applyUnlock(); }
     }
     if (e.key === 'Enter') { e.preventDefault(); return toggleSel(); }  // the one shortcut for both 삭제/살리기 - see popToggle
     // docs/기획/05-검토-화면.md 4.2절 번호 키 - 이 항목에 실제 내부 쉼(split_wi)이 있을 때만
@@ -2172,7 +2369,6 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     if (e.key === 'x') { e.preventDefault(); return playSelJoin(); }
-    if (e.key === 'z') { e.preventDefault(); return openZoom(); }
     if (e.key === 's' && matchStatus(selReviewMatch) === 'pending') { e.preventDefault(); return applySkip(); }
     if (e.key === 'Escape') { clearSel(); stop(); return; }
   }

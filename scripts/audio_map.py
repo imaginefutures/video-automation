@@ -129,6 +129,17 @@ def energy_db_at(amap: dict, t: float) -> float:
     return amap["rms_db"][_frame_idx(amap, t)]
 
 
+def audio_ok_at(amap: dict | None, start: float, end: float) -> bool | None:
+    """`choose_boundary()`의 `audio_ok` 판정과 같은 기준(room_tone_db + QUIET_MARGIN_DB)을,
+    자동으로 경계를 찾지 않고 사용자가 드래그로 직접 고른 임의의 시간 구간에도 적용한다
+    (10-01, 읽기→추적→듣기 3단계 재설계 2단계: 수동 override 구간은 choose_boundary를 안
+    거쳐 audio_ok가 항상 None으로 남던 것을 보강 - API 비용 없음, 로컬 배열 조회뿐)."""
+    if not amap:
+        return None
+    threshold = amap["room_tone_db"] + QUIET_MARGIN_DB
+    return energy_db_at(amap, start) <= threshold and energy_db_at(amap, end) <= threshold
+
+
 def snap_to_quiet(amap: dict, t: float, window_sec: float = 0.08) -> float:
     """Nearest local energy minimum within ±window_sec of t - only meaningful when t is
     already inside a real gap; do not use this centered on a WORD boundary timestamp, since

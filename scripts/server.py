@@ -536,7 +536,7 @@ class Session:
             clf = item.get("llm_classification") or {}
             disp = self._display_route(item)
             if disp == "AUTO_SAFE":
-                ng[str(i)] = {"action": "cut", "by": "auto", "skipped": False, "wi": wi}
+                ng[str(i)] = {"action": "cut", "by": "auto", "skipped": False, "wi": wi, "locked": False}
                 continue
             # REVIEW (route=CUT, flag=restore): the algorithm itself isn't sure. It starts CUT
             # (서비스-개요와-철학.md 원칙 4, 09-29 decision): the queue then only asks "restore
@@ -544,11 +544,19 @@ class Session:
             # no longer checks a per-user personalized default here - see "(removed)
             # personalization" above.
             if disp == "REVIEW":
-                ng[str(i)] = {"action": "cut", "by": "auto", "skipped": False, "wi": wi}
+                ng[str(i)] = {"action": "cut", "by": "auto", "skipped": False, "wi": wi, "locked": False}
             else:
-                ng[str(i)] = {"action": "keep", "by": "auto", "skipped": False, "wi": wi}
+                ng[str(i)] = {"action": "keep", "by": "auto", "skipped": False, "wi": wi, "locked": False}
         # speaker blocks follow the same rule: the proposed deletion starts applied
+        # "locked" (10-01, 읽기→추적→듣기 3단계 재설계): "확정 잠금" - 사용자가 ⇧Enter로 그
+        # 구간을 승인하면 True. 순수 UI 상태일 뿐 cut_spans() 계산에는 영향 없음(아래 참고) -
+        # 편집 가능 여부만 통제. 기존 decisions.json(이 필드가 없던 파일)은 _merge_defaults()의
+        # setdefault 패턴으로 False가 채워진다 - migrate.py의 무거운 버전/백업 체계를 쓰지
+        # 않는다(새 필드에 안전한 기본값을 주는 것뿐이라, 10-01에 겪은 "매니페스트 기록 없음=
+        # 구버전 오판" 사고와 같은 범주의 위험이 없음 - 이 필드는 schema version이 아니라 이
+        # 함수의 setdefault가 전담).
         blocks = {str(b["id"]): {"approved": True, "decided": False, "skipped": False, "wi": self._block_wi(b),
+                                 "locked": False,
                                  "lines": {str(ln["id"]): ln.get("proposed", "delete") for ln in b["lines"]}}
                   for b in self.blocks}
         return {"ng": ng,
@@ -569,6 +577,7 @@ class Session:
             nd = saved.setdefault("ng", {}).setdefault(k, v)
             nd.setdefault("skipped", False)
             nd.setdefault("wi", v["wi"])
+            nd.setdefault("locked", False)
             # a REVIEW item still on the untouched 'auto' default follows the CURRENT default
             # (cut since 09-29) - older sessions saved it as keep; anything the user decided stays
             if nd.get("by") == "auto" and self._display_route(self.ng[int(k)]) == "REVIEW":
@@ -578,6 +587,7 @@ class Session:
             bd.setdefault("decided", False)
             bd.setdefault("skipped", False)
             bd.setdefault("wi", v["wi"])
+            bd.setdefault("locked", False)
             if not bd["decided"]:  # same for a block nobody has decided yet
                 bd["approved"] = v["approved"]
         saved.setdefault("pause", defaults["pause"])
@@ -669,7 +679,8 @@ class Session:
             start_, end_ = span
             if ov["op"] == "cut":
                 if end_ > start_:
-                    spans.append({"start": start_, "end": end_, "kind": "manual", "ref": f"manual:{k}"})
+                    spans.append({"start": start_, "end": end_, "kind": "manual", "ref": f"manual:{k}",
+                                  "audio_ok": am.audio_ok_at(self.amap, start_, end_)})
             else:
                 spans = _subtract(spans, start_, end_)
         spans.sort(key=lambda s: s["start"])
@@ -775,7 +786,8 @@ class Session:
     def _describe(self, msg: dict) -> dict:
         """What a decision touched, for the undo toast: a Korean label + where it is (seconds)."""
         t = msg.get("type")
-        act = {"cut": "삭제", "keep": "살리기", "skip": "건너뛰기", "confirm": "검토 완료"}.get(msg.get("action") or msg.get("op"), "")
+        act = {"cut": "삭제", "keep": "살리기", "skip": "건너뛰기", "confirm": "검토 완료",
+               "lock": "구간 잠금", "unlock": "잠금 해제"}.get(msg.get("action") or msg.get("op"), "")
         if t == "ng":
             item = self.ng[int(msg["i"])] if 0 <= int(msg["i"]) < len(self.ng) else {}
             return {"label": f"NG {act}", "at": item.get("start")}
@@ -844,6 +856,10 @@ class Session:
             i = int(msg["i"]); action = msg["action"]
             if action == "skip":
                 d["ng"][str(i)]["skipped"] = True
+            elif action in ("lock", "unlock"):
+                # 10-01(3단계 재설계): "확정 잠금"/해제 - 순수 UI 상태만 바꾼다, action/by는
+                # 그대로 둔다(= 'confirm'과 같은 결의 "상태는 안 건드리고 플래그만" 분기).
+                d["ng"][str(i)]["locked"] = action == "lock"
             elif action == "confirm":
                 d["ng"][str(i)]["by"] = "user"
                 d["ng"][str(i)]["skipped"] = False
@@ -871,6 +887,8 @@ class Session:
             bd = d["blocks"][str(msg["block_id"])]
             if action == "skip":
                 bd["skipped"] = True
+            elif action in ("lock", "unlock"):
+                bd["locked"] = action == "lock"
             elif action == "confirm":
                 bd["decided"] = True
                 bd["skipped"] = False
