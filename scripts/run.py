@@ -50,6 +50,7 @@ group, gated on the same ng.json existence check as everything else in that grou
 from __future__ import annotations
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -134,7 +135,20 @@ def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback
             raise
         print(f"\n[자동 대체] {title} - LLM 호출이 실패한 것으로 보여 결정론적 모드(--no-llm)로 "
               f"다시 시도합니다. 검토 항목이 평소보다 많을 수 있습니다.")
-        subprocess.run([sys.executable, *cmd, "--no-llm"], check=True, cwd=HERE.parent)
+        try:
+            subprocess.run([sys.executable, *cmd, "--no-llm"], check=True, cwd=HERE.parent)
+        except subprocess.CalledProcessError as e2:
+            # 10-01 발견: 이 재시도에는 원래 try/except가 없어서, --no-llm으로도 실패하면
+            # (예: 무음/빈 전사처럼 LLM과 무관한 원인) 예외가 그대로 전파돼 run.py가
+            # pipeline_status.json에 에러를 한 번도 못 쓰고 죽었다 - 검토 서버는 계속 살아있어
+            # 마지막 성공 단계의 "running" 상태를 영원히 돌려주고, 웹 화면은 스피너만 돌며
+            # 멈춘 채 사용자에게 아무 신호도 안 줬다(화자 블록/NG 1·2단계 재현).
+            print(f"\n[실패] {title} - 결정론적 모드(--no-llm)로도 실패했습니다. 위 에러 메시지가 "
+                  f"원인입니다. 각 단계는 결과 파일로 캐시되므로, 원인을 해결한 뒤 같은 명령으로 "
+                  f"다시 실행하면 이 단계부터 이어서 진행됩니다.")
+            if folder is not None:
+                _write_pipeline_status(folder, title, "error", str(e2))
+            raise
     _pipeline_done += 1
     if folder is not None:
         _write_pipeline_status(folder, title, "running")
@@ -288,6 +302,20 @@ def main() -> None:
     except SystemExit as e:
         _write_pipeline_status(folder, "API 키 확인", "error", str(e))
         raise
+
+    # 10-01 발견: ffmpeg가 없으면 clean_media.py 내부의 subprocess.run(["ffmpeg", ...])이
+    # FileNotFoundError를 던지고, 그걸 감싼 "python clean_media.py" 프로세스가 비정상
+    # 종료하면서 step()은 그냥 일반 CalledProcessError로만 본다 - pipeline_status.json에
+    # 남는 에러가 "returned non-zero exit status 1"뿐이라 ffmpeg가 원인인지 전혀 알 수 없다.
+    # 파이프라인을 시작하기 전에 미리 확인해서(API 키 체크와 같은 자리, 같은 방식) 원인을
+    # 명확히 알려준다.
+    missing_bins = [b for b in ("ffmpeg", "ffprobe") if shutil.which(b) is None]
+    if missing_bins:
+        msg = (f"{', '.join(missing_bins)}가 설치돼 있지 않습니다 - 홈 화면 설정 패널의 '설치' "
+               f"버튼을 쓰거나 터미널에서 `brew install ffmpeg`를 실행한 뒤 다시 시도하세요.")
+        _write_pipeline_status(folder, "ffmpeg 확인", "error", msg)
+        sys.exit(msg)
+
     clean = edit / "clean.mp4"
     if not clean.exists():
         step("정리", [str(HERE / "clean_media.py"), str(raw), "--out", str(clean)], folder)

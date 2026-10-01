@@ -363,7 +363,7 @@
     <div class="pad">
       <div class="title-row">
         <div style="display:flex;align-items:center;gap:6px;min-width:0">
-          <a href="http://127.0.0.1:8764/" class="icon-btn" title="프로젝트 홈으로" aria-label="프로젝트 홈으로" style="text-decoration:none">⌂</a>
+          <a href="http://127.0.0.1:8764/" id="homeLink" class="icon-btn" title="프로젝트 홈으로" aria-label="프로젝트 홈으로" style="text-decoration:none">⌂</a>
           <h1 id="title">video-cut</h1>
         </div>
         <div class="history-row">
@@ -562,6 +562,15 @@ function renderPipelineProgress(st) {
     ${errBlock}
     <p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>`;
 }
+// 10-01: "홈으로" 링크가 127.0.0.1:8764로 고정돼 있었다 - 홈 서버를 다른 포트로 띄우면
+// 깨졌다. server.py가 VIDEO_CUT_HOME_PORT(홈 서버가 자식 프로세스에 물려준 자신의 실제 포트)를
+// /api/status·/api/session 양쪽에 실어 보내므로, 둘 중 먼저 오는 쪽에서 바로 반영한다.
+function updateHomeLink(homePort) {
+  if (!homePort) return;
+  const link = document.getElementById('homeLink');
+  if (link) link.href = `http://127.0.0.1:${homePort}/`;
+}
+
 async function pipelineBoot() {
   let st;
   try {
@@ -570,6 +579,7 @@ async function pipelineBoot() {
     setTimeout(pipelineBoot, 1000);  // server not reachable yet - keep retrying, don't throw
     return;
   }
+  updateHomeLink(st.home_port);
   if (st.ready === false) {
     renderPipelineProgress(st);
     setTimeout(pipelineBoot, 1000);
@@ -585,6 +595,7 @@ async function pipelineBoot() {
 // ------------------------------------------------------------------ data
 async function load() {
   S = await (await fetch('/api/session')).json();
+  updateHomeLink(S.home_port);
   document.title = `${S.name} · video-cut`;
   $('#title').textContent = S.name;
   video.src = '/media';

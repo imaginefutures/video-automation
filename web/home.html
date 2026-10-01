@@ -11,6 +11,7 @@
     --bg: #ffffff; --panel: #fafafa; --surface-2: #f5f5f5; --ink: #171717; --muted: #666666; --line: #ebebeb; --line-strong: #a1a1a1;
     --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0066dd;
     --warn: #ab570a; --warn-soft: #ffefcf;
+    --danger: #ee0000; --danger-soft: #f7d4d6;
     --chip: rgba(0,0,0,0.045); --chip-hover: rgba(0,0,0,0.08);
     --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
     --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 9999px;
@@ -86,6 +87,7 @@
   .badge.processing { background: var(--chip); color: var(--muted); }
   .badge.reviewing { background: var(--warn-soft); color: var(--warn); }
   .badge.confirmed { background: var(--accent-soft); color: var(--accent-strong); }
+  .badge.error { background: var(--danger-soft); color: var(--danger); }
   .card-meta { margin-top: 6px; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 14px; }
   .card-meta .preview-chip { background: var(--chip); color: var(--ink); padding: 1px 8px; border-radius: var(--r-full); font-size: 11.5px; }
   .card-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
@@ -142,6 +144,7 @@
     <header>
       <h1>video-cut</h1>
       <span class="sub" id="rootPath"></span>
+      <span class="sub" id="updateChecked" style="margin-right:0" title="업데이트 확인은 5분 간격으로 백그라운드에서 돈다"></span>
       <div class="toolbar">
         <button id="btnSettings">환경설정</button>
         <button id="btnNewVideo" class="primary">+ 새 영상</button>
@@ -218,15 +221,18 @@ function fmtDuration(sec) {
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 function statusBadge(p) {
+  if (p.status === 'error') return { cls: 'error', text: '처리 실패' };
   if (p.status === 'processing') return { cls: 'processing', text: '처리 중' };
   if (p.status === 'reviewing') return { cls: 'reviewing', text: `검토 중 · ${p.pending}건 남음` };
   return { cls: 'confirmed', text: '확정' };
 }
 
 function renderCard(p) {
-  const clickable = p.status !== 'processing' || p.managed;  // 홈 화면에서 "영상 생성"으로
-    // 막 업로드돼 아직 ng.json이 없어도, 이 서버가 그 run.py를 띄워 관리 중(managed)이면
-    // 클릭해서 진행 화면으로 들어갈 수 있다 - CLI로 raw.mp4만 떨궈둔 레거시 케이스만 비활성
+  // 'error'(10-01 추가 - 파이프라인이 중간에 죽은 상태, 전엔 'processing'과 구분이 안 돼
+  // 카드가 영원히 "처리 중"으로 멈추고 클릭도 안 됐다)와 'reviewing'/'confirmed'는 항상
+  // 클릭 가능. 'processing'은 이 서버가 run.py를 띄워 관리 중(managed)일 때만 - CLI로
+  // raw.mp4만 떨궈둔 레거시 케이스는 비활성인 채로 둔다.
+  const clickable = p.status !== 'processing' || p.managed;
   const card = document.createElement(clickable ? 'button' : 'div');
   card.className = 'card' + (clickable ? ' clickable' : '');
   const badge = statusBadge(p);
@@ -251,6 +257,13 @@ function renderCard(p) {
     meta.appendChild(chip);
   }
   if (meta.childNodes.length) card.appendChild(meta);
+
+  if (p.status === 'error') {
+    const hint = document.createElement('div'); hint.className = 'card-hint';
+    hint.style.color = 'var(--warn)';
+    hint.textContent = `${p.stage ? p.stage + ' 단계에서 ' : ''}${p.error || '처리 중 오류가 발생했습니다'} - 클릭하면 자세히 볼 수 있어요`;
+    card.appendChild(hint);
+  }
 
   if (p.status === 'processing') {
     const hint = document.createElement('div'); hint.className = 'card-hint';
@@ -368,7 +381,7 @@ function setupBodyHtml(data) {
     ? `<div class="row-line"><span>ffmpeg/ffprobe</span><span class="field-chip ok">설치됨</span></div>`
     : data.brew
       ? `<div class="row-line"><span>ffmpeg/ffprobe</span><button id="btnInstallFfmpeg">설치</button></div>`
-      : `<div class="row-line"><span>ffmpeg/ffprobe 없음 - <a href="https://brew.sh" target="_blank" rel="noopener">Homebrew</a> 설치 후 다시 열어주세요</span></div>`;
+      : `<div class="row-line"><span>ffmpeg/ffprobe 없음 - <a href="https://brew.sh" target="_blank" rel="noopener">Homebrew</a> 설치 후 <b>터미널에서 홈 서버를 재시작</b>해주세요(브라우저 새로고침만으로는 반영 안 됨 - Ctrl+C 후 다시 실행)</span></div>`;
   return keyRows + ffmpegRow + '<div id="ffmpegInstallProgress"></div>';
 }
 function isSetupComplete(data) { return data.keys.every((k) => k.set) && data.ffmpeg && data.ffprobe; }
@@ -470,7 +483,14 @@ async function checkSetupGate() {
 function $$(s, r = document) { return Array.from(r.querySelectorAll(s)); }
 async function checkUpdate() {
   let st;
-  try { st = await (await fetch('/api/update/status')).json(); } catch (e) { return; }
+  try { st = await (await fetch('/api/update/status')).json(); } catch (e) {
+    $('#updateChecked').textContent = '업데이트 확인 안 됨 - 서버에 연결할 수 없음';
+    return;
+  }
+  // 10-01 추가: 배너가 안 뜨는 게 "최신"이라서인지 "확인 자체가 멈춰서"인지 구분할 방법이
+  // 없었다 - 백그라운드 확인 스레드(5분 간격)가 마지막으로 성공한 시각을 항상 보여준다.
+  $('#updateChecked').textContent = st.checked_at
+    ? `업데이트 확인: ${fmtDate(st.checked_at)}` : '업데이트 확인: 아직 안 됨';
   if (st.error || !st.behind) { $('#updateBanner').classList.remove('show'); return; }
   $('#updateBannerText').textContent = `새 업데이트 ${st.behind}건이 있습니다`;
   $('#updateBanner').classList.add('show');

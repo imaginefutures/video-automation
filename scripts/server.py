@@ -758,6 +758,7 @@ class Session:
             "suggestions": self.suggestions,
             "review_estimate": self._review_estimate(),
             "global_review_ran": self.global_review_ran,
+            "home_port": home_port(),
         }
 
     # ---- mutations
@@ -1449,12 +1450,25 @@ def _try_build_session(folder: Path) -> Session | None:
         return None
 
 
+def home_port() -> int:
+    """홈 서버(scripts/home_server.py)가 run.py/server.py를 띄울 때 자신의 포트를
+    VIDEO_CUT_HOME_PORT로 환경에 심어 자식 프로세스가 물려받는다(home_server.py의 serve()
+    참고) - 10-01: web/index.html의 "홈으로" 링크가 8764로 고정돼 있어 홈 서버를 다른
+    포트로 띄우면 깨지던 문제. CLI로 직접(`python scripts/server.py ...`) 돌려서 이 환경변수가
+    없으면 홈 서버의 기본 포트(8764)로 가정한다."""
+    try:
+        return int(os.environ.get("VIDEO_CUT_HOME_PORT", "8764"))
+    except ValueError:
+        return 8764
+
+
 def _pipeline_status(folder: Path) -> dict:
     """Read-only progress readout written by run.py's step() after every pipeline stage - see
     run.py's `step()` and docstring there. Missing/unreadable file just means "processing
     hasn't written a status yet" (e.g. still in clean_media/transcribe), not an error."""
     p = folder / "edit" / "pipeline_status.json"
-    default = {"stage": "처리 준비 중", "done": 0, "total": 0, "state": "running", "error": None, "stages": []}
+    default = {"stage": "처리 준비 중", "done": 0, "total": 0, "state": "running", "error": None,
+               "stages": [], "home_port": home_port()}
     if not p.exists():
         return default
     try:
@@ -1463,7 +1477,7 @@ def _pipeline_status(folder: Path) -> dict:
         return default
     return {"stage": data.get("stage", default["stage"]), "done": data.get("done", 0),
             "total": data.get("total", 0), "state": data.get("state", "running"),
-            "error": data.get("error"), "stages": data.get("stages", [])}
+            "error": data.get("error"), "stages": data.get("stages", []), "home_port": home_port()}
 
 
 def _session_watcher(folder: Path, interval: float = 1.0) -> None:

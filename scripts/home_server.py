@@ -196,6 +196,20 @@ def project_status(folder: Path) -> dict:
     info["managed"] = _is_managed(folder.name)
 
     if not ng_path.exists():
+        # 10-01 발견: run.py가 중간에 죽으면(예: LLM 재시도까지 실패) ng.json은 영원히 안 생기고
+        # 검토 서버(detached)는 계속 살아서 마지막 pipeline_status.json을 그대로 돌려준다 -
+        # 이걸 구분 안 하면 홈 카드가 "처리 중"에서 영원히 멈춰 클릭도 안 되고 사용자는 실패
+        # 사실조차 모른다. 두 신호로 판단한다: (1) pipeline_status.json이 명시적으로 에러를
+        # 기록했거나, (2) run.py 프로세스 자체가 죽었는데 아직 ng.json이 없는 경우(비정상 종료,
+        # 강제 종료 등 - pipeline_status.json이 에러를 못 남겼을 수도 있음).
+        pstatus = _read_json(edit / "pipeline_status.json", {})
+        active = _active.get(folder.name)
+        proc_died = active is not None and active["proc"].poll() is not None
+        if pstatus.get("state") == "error" or proc_died:
+            info["status"] = "error"
+            info["stage"] = pstatus.get("stage")
+            info["error"] = pstatus.get("error") or "처리가 예기치 않게 중단됐습니다 - edit/run.log를 확인하세요"
+            return info
         info["status"] = "processing"
         return info
 
@@ -289,37 +303,38 @@ def open_review(name: str) -> dict:
     if not is_project_folder(folder):
         raise ValueError(f"알 수 없는 영상: {name}")
 
-    with _active_lock:
-        active = _active.get(name)
-        if active and active["proc"].poll() is None and _port_listening(active["port"]):
-            return {"url": f"http://127.0.0.1:{active['port']}/"}
-
     # "영상 생성"으로 막 업로드돼 아직 ng.json이 없어도(= 파이프라인 처리 중), 이 홈 서버가
     # 이미 그 run.py를 띄워 관리 중이면 그 진행 화면으로 보낸다 - ng.json 유무 체크는 그 뒤,
     # 즉 "CLI로 raw.mp4만 떨궈놓고 아직 run.py를 한 번도 안 돌린" 레거시 케이스만 거른다.
-    if not (folder / "edit" / "ng.json").exists() and name not in _active:
-        raise ValueError("아직 처리 중입니다 - 처리가 끝난 뒤에 검토할 수 있어요")
-
+    #
+    # 10-01 발견: 예전엔 "살아있는 proc + 포트가 이미 listening" 둘 다 만족해야만 재사용하고,
+    # 아니면 새로 스폰했다 - 그래서 막 스폰해서 아직 포트가 안 뜬 수 초 사이에 같은 이름으로
+    # 두 번째 요청이 들어오면(탭 두 개로 동시 클릭 등) "이미 떠 있지만 포트는 아직" 상태를
+    # "없다"로 오판해 서버를 하나 더 띄웠다 - 두 Session이 같은 decisions.json에 동시에 쓸 수
+    # 있는 위험한 레이스였다. 지금은 "스폰할지 말지"만 락 안에서 원자적으로 정하고(이미 살아있는
+    # proc이 등록돼 있으면 포트 listening 여부와 무관하게 그걸 그대로 쓴다), 포트가 뜨길
+    # 기다리는 건 락 밖에서 - 동시에 들어온 요청들이 전부 같은 포트를 같이 기다리게 된다.
     with _active_lock:
         active = _active.get(name)
-        if active and active["proc"].poll() is None and _port_listening(active["port"]):
-            return {"url": f"http://127.0.0.1:{active['port']}/"}
-
-        port = _alloc_port()
-        log_path = folder / "edit" / "server.log"
-        log_f = open(log_path, "a")
-        proc = subprocess.Popen(
-            [sys.executable, str(HERE / "server.py"), str(folder), "--port", str(port), "--no-open"],
-            cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
-        )
-        _active[name] = {"port": port, "proc": proc, "log": log_f}
+        if active is None or active["proc"].poll() is not None:
+            if active is None and not (folder / "edit" / "ng.json").exists():
+                raise ValueError("아직 처리 중입니다 - 처리가 끝난 뒤에 검토할 수 있어요")
+            port = _alloc_port()
+            log_path = folder / "edit" / "server.log"
+            log_f = open(log_path, "a")
+            proc = subprocess.Popen(
+                [sys.executable, str(HERE / "server.py"), str(folder), "--port", str(port), "--no-open"],
+                cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
+            )
+            _active[name] = {"port": port, "proc": proc, "log": log_f}
+        active = _active[name]
 
     deadline = time.time() + 12
     while time.time() < deadline:
-        if _active[name]["proc"].poll() is not None:
-            raise RuntimeError(f"검토 서버가 바로 종료됐습니다 - {log_path} 확인")
-        if _port_listening(port):
-            return {"url": f"http://127.0.0.1:{port}/"}
+        if active["proc"].poll() is not None:
+            raise RuntimeError(f"검토 서버가 바로 종료됐습니다 - {folder / 'edit' / 'server.log'} 확인")
+        if _port_listening(active["port"]):
+            return {"url": f"http://127.0.0.1:{active['port']}/"}
         time.sleep(0.2)
     raise RuntimeError("검토 서버가 제시간에 뜨지 않았습니다")
 
@@ -337,6 +352,14 @@ def create_project(title: str, content_length: int, rfile) -> dict:
     missing = [k["key"] for k in api_keys_status() if not k["set"]]
     if missing:
         raise ValueError(f"API 키가 없습니다 - 설정 패널에서 먼저 등록하세요 ({', '.join(missing)})")
+
+    # 10-01 추가: 설정 게이트는 클라이언트 쪽 판단(페이지 로드 시점의 /api/setup 응답)일 뿐이라,
+    # 게이트를 통과한 뒤 ffmpeg가 사라지거나(드묾) API를 직접 호출하는 경우를 서버에서도 막는다 -
+    # 안 막으면 대용량 업로드가 전부 끝난 뒤에야 run.py의 clean_media 단계에서 실패해 시간을
+    # 낭비한다.
+    fstatus = ffmpeg_status()
+    if not (fstatus["ffmpeg"] and fstatus["ffprobe"]):
+        raise ValueError("ffmpeg/ffprobe가 설치돼 있지 않습니다 - 설정 패널에서 먼저 설치하세요")
 
     folder = videos_root() / name
     if (folder / "raw.mp4").exists():
@@ -459,7 +482,12 @@ def git_current() -> dict:
     return {"sha": sha, "subject": subject}
 
 
-CHANGELOG_VERSION_RE = re.compile(r"^##\s+(\S+)(?:\s+—\s+(\S+))?")
+# 10-01 발견: 예전 정규식은 구분자로 em-dash(—)만, 버전/날짜로 공백 없는 토큰 하나만 받았다 -
+# 실수로 일반 하이픈(-)을 쓰거나 버전에 설명을 덧붙이면(예: "1.5.1 Hotfix") 크래시 없이
+# 날짜가 조용히 통째로 사라졌다. 구분자는 -/–/—ambiguous 아무거나, 날짜는 ISO 형식
+# (YYYY-MM-DD)만 요구하고 그 앞은 전부 버전으로 받는다 - 날짜 형식 자체가 어긋나면(예: 공백으로
+# 구분) 여전히 날짜를 못 뽑지만 최소한 버전 제목 전체가 보존되어 완전히 유실되진 않는다.
+CHANGELOG_VERSION_RE = re.compile(r"^##\s+(.+?)(?:\s*[-–—]\s*(\d{4}-\d{2}-\d{2}))?\s*$")
 
 
 def read_changelog(limit: int = 20) -> list[dict]:
@@ -518,7 +546,18 @@ def git_pull() -> dict:
             raise ValueError("커밋되지 않은 변경사항이 있어 건너뜁니다 - 터미널에서 직접 정리한 뒤 다시 시도하세요")
         r = _run_git(["pull", "--ff-only"], timeout=60)
         if r.returncode != 0:
-            raise ValueError((r.stderr or r.stdout).strip()[-800:] or "git pull 실패")
+            raw = (r.stderr or r.stdout).strip()
+            # 10-01 발견: 로컬 브랜치가 origin/main과 갈라져(diverge) --ff-only가 실패하면
+            # git이 영어 원문(hint: Diverging branches...)을 그대로 돌려줬다 - 브라우저만 쓰는
+            # 사용자는 대응할 방법이 없으니 원인과 터미널에서 할 일을 한국어로 안내한다. 그 외
+            # 실패(네트워크 등)는 원문을 그대로 보여준다(섣불리 번역하면 실제 원인을 가릴 수 있음).
+            if "diverging" in raw.lower() or "not possible to fast-forward" in raw.lower():
+                raise ValueError(
+                    "로컬 코드가 원격과 갈라져서(diverge) 자동으로 합칠 수 없습니다 - 터미널에서 "
+                    "이 프로젝트 폴더로 가서 `git log --oneline -5`로 상태를 확인한 뒤 "
+                    "`git pull --rebase` 또는 `git merge origin/main`을 직접 실행해주세요."
+                )
+            raise ValueError(raw[-800:] or "git pull 실패")
         with _update_cache_lock:
             _update_cache.update(behind=0, checked_at=datetime.now().isoformat(timespec="seconds"))
         return {"output": r.stdout.strip()}
@@ -635,6 +674,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(port: int, open_browser: bool) -> None:
+    # 10-01 추가: 검토 화면(web/index.html)의 "홈으로" 링크가 8764로 고정돼 있어서 홈 서버를
+    # --port로 다른 포트에 띄우면 깨졌다. os.environ에 심어두면 이후 create_project()/
+    # open_review()가 subprocess.Popen(env=...없이)으로 띄우는 run.py/server.py가 그대로
+    # 상속받고, server.py가 그 값을 /api/status·/api/session에 실어 index.html이 읽는다.
+    os.environ["VIDEO_CUT_HOME_PORT"] = str(port)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
     print(f"project home: {url}   (videos: {videos_root()})")
