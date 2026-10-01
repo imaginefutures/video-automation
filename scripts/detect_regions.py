@@ -30,7 +30,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, norm, thinking_kwargs
+from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, norm, thinking_kwargs, log_llm_usage
 from detect_speaker_blocks import split_lines
 
 LLM_MODEL = "claude-opus-5-5"   # PD_MODEL(global_review.py)과 같은 규모의 판단
@@ -185,10 +185,11 @@ def build_document_view(chunk_lines_: list[dict], covered: set[int], block_cover
     return "\n".join(out)
 
 
-def llm_scan(client, doc_view: str) -> list[RegionFlag]:
+def llm_scan(client, doc_view: str, folder: Path) -> list[RegionFlag]:
     resp = client.messages.parse(model=LLM_MODEL, max_tokens=8000, system=SYSTEM,
                                  messages=[{"role": "user", "content": doc_view}],
                                  output_format=RegionScan, **thinking_kwargs(LLM_MODEL, effort="high"))
+    log_llm_usage(folder, "detect_regions", LLM_MODEL, resp.usage)
     return resp.parsed_output.regions
 
 
@@ -218,7 +219,7 @@ def detect(folder: Path, use_llm: bool = True) -> Path:
               f"({LLM_MODEL}, {CHUNK_WORDS}단어/청크·{CHUNK_OVERLAP_WORDS}단어 겹침)")
 
         def scan_chunk(chunk: list[dict]) -> list[RegionFlag]:
-            return llm_scan(client, build_document_view(chunk, covered, block_covered))
+            return llm_scan(client, build_document_view(chunk, covered, block_covered), folder)
 
         seen: set[tuple[int, int, str]] = set()
         with ThreadPoolExecutor(max_workers=6) as pool:

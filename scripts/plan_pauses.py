@@ -46,7 +46,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json
+from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, log_llm_usage
 from audio_map import load_audio_map, true_onset
 
 SHOW_MIN = 0.12       # below this a gap is articulation, not a pause; Scribe jitter is 50-100ms
@@ -158,7 +158,7 @@ def build_gaps(words: list[dict], amap: dict | None = None) -> list[dict]:
     return gaps
 
 
-def classify_with_llm(gaps: list[dict]) -> dict[int, str]:
+def classify_with_llm(gaps: list[dict], folder: Path) -> dict[int, str]:
     import anthropic
     client = anthropic.Anthropic()
     labels: dict[int, str] = {}
@@ -170,6 +170,7 @@ def classify_with_llm(gaps: list[dict]) -> dict[int, str]:
             model="claude-haiku-4-5-20251001", max_tokens=8000, system=SYSTEM,
             messages=[{"role": "user", "content": "\n\n".join(lines)}], output_format=GapLabels,
             thinking={"type": "disabled"})
+        log_llm_usage(folder, "plan_pauses", "claude-haiku-4-5-20251001", resp.usage)
         for lab in resp.parsed_output.labels:
             labels[lab.gap_id] = lab.style
     return labels
@@ -203,7 +204,7 @@ def plan(folder: Path, use_llm: bool = True) -> Path:
         load_env()
         if os.environ.get("ANTHROPIC_API_KEY"):
             print(f"classifying {len(todo)} gaps with claude-haiku-4-5 ({len(need) - len(todo)} reused)...")
-            labels.update(classify_with_llm(todo))
+            labels.update(classify_with_llm(todo, folder))
         else:
             print("ANTHROPIC_API_KEY not set - using conservative fallback labels")
 

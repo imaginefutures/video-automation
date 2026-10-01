@@ -510,6 +510,54 @@ const $ = (s) => document.querySelector(s);
 const video = $('#video');
 const PX_PER_SEC = 44, G_MIN = 12, G_MAX = 260;
 
+// ------------------------------------------------------------------ R2: 처리 중 진행 화면
+// (docs/백로그/R2-시작-마찰-제거.md) - run.py가 이제 파이프라인 시작과 동시에 서버를 열므로,
+// 평소의 load()(아래, /api/session을 바로 부름)를 돌리기 전에 /api/status로 준비 여부부터
+// 묻는다. 아직 처리 중(ready:false)이면 최소한의 진행 화면만 보여주고 1초마다 다시 묻다가,
+// ready가 true로 바뀌는 순간 location.reload()로 페이지를 처음부터 다시 띄워 평소 bootstrap
+// 경로(load())를 그대로 타게 한다 - 이 블록 밖 나머지 코드는 건드리지 않는다. 이미 다 처리된
+// 폴더를 열 때는 최초 fetch에서 바로 ready:true가 오므로 이 화면은 한 번도 보이지 않는다.
+function renderPipelineProgress(st) {
+  let el = document.getElementById('pipelineProgress');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pipelineProgress';
+    el.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;'
+      + 'justify-content:center;gap:14px;background:#15171a;color:#eee;'
+      + 'font:15px -apple-system,BlinkMacSystemFont,sans-serif;z-index:9999;text-align:center;padding:24px';
+    document.body.appendChild(el);
+  }
+  const done = st.done || 0, total = st.total || 0;
+  const errBlock = st.state === 'error'
+    ? `<p style="color:#f66;max-width:480px">오류: ${esc(st.error || '')}</p>` : '';
+  el.innerHTML = `
+    <style>@keyframes pipelineSpin{to{transform:rotate(360deg)}}</style>
+    <div style="width:34px;height:34px;border:3px solid #3a3d42;border-top-color:#7ab8ff;border-radius:50%;
+                animation:pipelineSpin 0.8s linear infinite"></div>
+    <p style="margin:0">${esc(st.stage || '처리 준비 중')}${total ? ` (${done}/${total})` : ''}</p>
+    ${errBlock}
+    <p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>`;
+}
+async function pipelineBoot() {
+  let st;
+  try {
+    st = await (await fetch('/api/status')).json();
+  } catch (e) {
+    setTimeout(pipelineBoot, 1000);  // server not reachable yet - keep retrying, don't throw
+    return;
+  }
+  if (st.ready === false) {
+    renderPipelineProgress(st);
+    setTimeout(pipelineBoot, 1000);
+    return;
+  }
+  if (document.getElementById('pipelineProgress')) {
+    location.reload();  // was showing the progress view - reload so load() runs fresh below
+    return;
+  }
+  load();  // already ready on first paint (normal/already-processed case) - no reload needed
+}
+
 // ------------------------------------------------------------------ data
 async function load() {
   S = await (await fetch('/api/session')).json();
@@ -2004,6 +2052,7 @@ $('#btnConfirm').addEventListener('click', async () => {
           <div>내 결정 &nbsp;복원 ${rc.judge_restored ?? rc.restored} / 판단 필요 ${rc.judge_flagged ?? rc.flagged}건${rc.quick_total ? ` · 빠른 확인 ${rc.quick_total}건 통과` : ''}</div>
           <div>검토 시간 &nbsp;${reviewLine}</div>
           <div>안전 &nbsp;신고된 오삭제 누적 <strong>${rc.reported_bad_cuts}건</strong></div>
+          ${rc.cost_est_usd != null ? `<div>처리 비용 추정 &nbsp;$${rc.cost_est_usd.toFixed(2)}</div>` : ''}
         </div>`;
     }
     showModal(`<h2>확정 완료</h2>
@@ -2105,7 +2154,7 @@ function fmtDur(t) { const d = Math.round(t * 10) / 10; return d >= 60 ? `${Math
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function styleKo(k) { return { NORMAL_INTER: '문장 간', NORMAL_INTRA: '문장 내', ENUMERATION: '나열', QUOTE_TO_EXPLANATION: '인용→설명', TRANSITION: '전환', QUESTION_TO_ANSWER: '질문→답', SPEAKER_CHANGE: '화자 전환' }[k] || k; }
 
-load();
+pipelineBoot();
 </script>
 </body>
 </html>

@@ -56,32 +56,73 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import load_env, ensure_api_keys, video_dir, edit_dir, PROJECT_ROOT  # noqa: E402
+from common import load_env, ensure_api_keys, video_dir, edit_dir, write_json, PROJECT_ROOT  # noqa: E402
 import migrate  # noqa: E402
 
+# ----------------------------------------------------------------------------- R2: 처리 중 진행 화면
+# (백로그/R2-시작-마찰-제거.md) - step()이 매 단계 끝에 edit/pipeline_status.json을 써서,
+# 아직 transcript.json이 없어 Session을 못 만드는 server.py가 /api/status로 이 파일을 읽어
+# 진행률을 보여줄 수 있게 한다. _PIPELINE_TOTAL_STEPS는 전체 파이프라인(LLM 포함, 캐시 없음)의
+# step() 호출 지점 개수를 어림잡은 것 - --no-llm이나 캐시로 일부가 스킵되면 done이 total에 못
+# 미치고 끝날 수 있는데, 어차피 사람이 보는 진행률 표시일 뿐 run.py 자신은 이 파일을 다시
+# 읽지 않으므로 상관없다.
+_PIPELINE_TOTAL_STEPS = 13
+_pipeline_done = 0
 
-def step(title: str, cmd: list[str], *, llm_fallback: bool = False) -> None:
+
+def _write_pipeline_status(folder: Path, stage: str, state: str, error: str | None = None) -> None:
+    """Best-effort only - a failed write here must never fail the pipeline itself."""
+    try:
+        write_json(edit_dir(folder) / "pipeline_status.json",
+                   {"stage": stage, "done": _pipeline_done, "total": _PIPELINE_TOTAL_STEPS,
+                    "state": state, "error": error})
+    except OSError:
+        pass
+
+
+def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback: bool = False) -> None:
     """한 파이프라인 단계를 돈다. 실패하면(백로그/R8-실패-대응.md) 흔한 원인과 "캐시돼 있으니
     원인 해결 후 같은 명령으로 다시 실행하면 이 단계부터 이어서 진행된다"는 안내를 더해 다시
-    던진다 - 처리 중엔 아직 브라우저가 안 열려 있어(R2 "브라우저 먼저 열기"는 회귀 위험으로
-    미착수) 버튼을 놓을 화면 자체가 없으므로, 지금 할 수 있는 동등한 조치다.
+    던진다. `folder`가 주어지면 (R2) edit/pipeline_status.json에 진행률을 남긴다 - 서버가 이미
+    처리 시작과 동시에 떠서 그 진행 화면이 이걸 읽는다.
 
     `llm_fallback=True`는 이 단계에 LLM 호출이 들어있고 `--no-llm` 결정론적 경로가 있다는
     뜻(Stage 1/2, 화자 블록) - 이미 `--no-llm`으로 도는 게 아니면 실패 시 자동으로 그걸 붙여
     한 번 더 시도한다. "검토는 항상 가능해야 한다"는 방침 - LLM이 막혀도 파이프라인 자체가
     멈추지 않는다."""
+    global _pipeline_done
     print(f"\n== {title}")
     try:
         subprocess.run([sys.executable, *cmd], check=True, cwd=HERE.parent)
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
         if not llm_fallback or "--no-llm" in cmd:
             print(f"\n[실패] {title} - 위 에러 메시지가 원인입니다(API 키 만료, 네트워크 오류, "
                   f"ffmpeg 문제가 흔함). 각 단계는 결과 파일로 캐시되므로, 원인을 해결한 뒤 "
                   f"같은 명령으로 다시 실행하면 이 단계부터 이어서 진행됩니다.")
+            if folder is not None:
+                _write_pipeline_status(folder, title, "error", str(e))
             raise
         print(f"\n[자동 대체] {title} - LLM 호출이 실패한 것으로 보여 결정론적 모드(--no-llm)로 "
               f"다시 시도합니다. 검토 항목이 평소보다 많을 수 있습니다.")
         subprocess.run([sys.executable, *cmd, "--no-llm"], check=True, cwd=HERE.parent)
+    _pipeline_done += 1
+    if folder is not None:
+        _write_pipeline_status(folder, title, "running")
+
+
+def start_server(folder: Path, port: int, no_open: bool) -> subprocess.Popen:
+    """R2: launch the review server right away, before the pipeline runs, instead of at the
+    very end - the browser opens immediately and shows a progress view (web/index.html polling
+    /api/status) until transcript.json exists, then the normal review UI as soon as it does.
+    Detached (own session, own stdout/stderr) so Ctrl+C'ing this script, or it simply exiting
+    once the pipeline finishes, doesn't take the server down with it - the browser tab stays
+    open against this same server process for the rest of the review (백로그/
+    R2-시작-마찰-제거.md). `--serve`의 기존 동기 실행 경로는 이 함수와 무관하게 그대로 둔다."""
+    log = open(edit_dir(folder) / "server.log", "a")
+    return subprocess.Popen(
+        [sys.executable, str(HERE / "server.py"), str(folder), "--port", str(port),
+         *(["--no-open"] if no_open else [])],
+        cwd=HERE.parent, stdout=log, stderr=log, start_new_session=True)
 
 
 def auto_create_project(videos_root: Path) -> Path | None:
@@ -138,20 +179,20 @@ def run_ng_pipeline(folder: Path, edit: Path, no_llm: bool = False) -> None:
     `main()`은 `ng.json` 없을 때만 부르고, `redetect.py`(새 모델로 재분석)는 기존 산출물을
     백업해 지운 뒤 매번 이 함수를 그대로 재사용한다 - 두 경로가 서로 다른 스텝 목록으로
     갈라지지 않게 하려고 로직을 여기 한 곳에만 둔다."""
-    step("4/7 pronunciation candidates", [str(HERE / "detect_pronunciation_candidates.py"), str(folder)])
+    step("4/7 pronunciation candidates", [str(HERE / "detect_pronunciation_candidates.py"), str(folder)], folder)
     step("4/7 Stage 1 (전체를 넓게)", [str(HERE / "detect_regions.py"), str(folder),
-                                    *(["--no-llm"] if no_llm else [])], llm_fallback=True)
+                                    *(["--no-llm"] if no_llm else [])], folder, llm_fallback=True)
     step("4/7 Stage 2 (부분을 좁게)", [str(HERE / "classify_region.py"), str(folder),
-                                    *(["--no-llm"] if no_llm else [])], llm_fallback=True)
+                                    *(["--no-llm"] if no_llm else [])], folder, llm_fallback=True)
     step("4/7 NG route", [str(HERE / "route_candidates.py"), str(edit / "ng_classified.json"),
-                          "--out", str(edit / "ng.json")])
-    step("4/7 filler", [str(HERE / "detect_filler_candidates.py"), str(folder)])  # deterministic, always runs
+                          "--out", str(edit / "ng.json")], folder)
+    step("4/7 filler", [str(HERE / "detect_filler_candidates.py"), str(folder)], folder)  # deterministic, always runs
     if not no_llm:
-        step("4/7 assemble draft", [str(HERE / "assemble_draft.py"), str(folder)])
-        step("4/7 seam refine", [str(HERE / "seam_refine.py"), str(folder)])
+        step("4/7 assemble draft", [str(HERE / "assemble_draft.py"), str(folder)], folder)
+        step("4/7 seam refine", [str(HERE / "seam_refine.py"), str(folder)], folder)
         # global_review.py가 내부적으로 1회 재투입(missed_cut 반영 -> assemble_draft.py/
         # seam_refine.py를 한 번만 다시 부름)까지 다 하므로 여기선 한 번만 호출
-        step("4/7 global review", [str(HERE / "global_review.py"), str(folder)])
+        step("4/7 global review", [str(HERE / "global_review.py"), str(folder)], folder)
 
 
 def notify(title: str, message: str) -> None:
@@ -193,47 +234,56 @@ def main() -> None:
     if not raw.exists() and concat_segments(folder) is None:
         sys.exit(f"put the source video at {raw}")
 
-    if not args.serve:
-        ensure_api_keys()  # --serve는 처리 없이 검토 화면만 여니 API 키가 필요 없음
-        clean = edit / "clean.mp4"
-        if not clean.exists():
-            step("0/5 clean media", [str(HERE / "clean_media.py"), str(raw), "--out", str(clean)])
-        else:
-            print("0/5 clean media: cached")
+    if args.serve:
+        # 처리 과정 없음 - 기존과 동일하게 검토 화면만 동기적으로 연다
+        print("\n== 6/7 review UI")
+        subprocess.run([sys.executable, str(HERE / "server.py"), str(folder), "--port", str(args.port),
+                        *(["--no-open"] if args.no_open else [])], cwd=HERE.parent)
+        return
 
-        step("1/5 transcribe", [str(HERE / "transcribe.py"), str(folder)])
+    # R2-시작-마찰-제거: 처리 시작과 동시에 서버를 띄우고 브라우저를 연다 - 더 이상 파이프라인이
+    # 다 끝난 뒤에야 열지 않는다. 서버는 자신의 백그라운드 스레드로 transcript.json이 생기길
+    # 기다리므로, 지금 당장 Session을 만들 수 없어도 바로 bind해서 진행 화면을 보여준다.
+    server_proc = start_server(folder, args.port, args.no_open)
+    print(f"review server pid {server_proc.pid} (detached) - http://127.0.0.1:{args.port}/")
 
-        if not args.no_llm and not (edit / "prosody.json").exists():
-            step("2/7 prosody", [str(HERE / "prosody.py"), str(folder)])
-        elif not args.no_llm:
-            print("2/7 prosody: cached")
+    ensure_api_keys()  # --serve는 처리 없이 검토 화면만 여니 API 키가 필요 없음
+    clean = edit / "clean.mp4"
+    if not clean.exists():
+        step("0/5 clean media", [str(HERE / "clean_media.py"), str(raw), "--out", str(clean)], folder)
+    else:
+        print("0/5 clean media: cached")
 
-        if not (edit / "audio_map.json").exists():
-            step("2/7 audio map", [str(HERE / "audio_map.py"), str(folder)])
-        else:
-            print("2/7 audio map: cached")
+    step("1/5 transcribe", [str(HERE / "transcribe.py"), str(folder)], folder)
 
-        if not (edit / "speaker_blocks.json").exists():
-            step("3/6 speaker blocks", [str(HERE / "detect_speaker_blocks.py"), str(folder),
-                                        *(["--no-llm"] if args.no_llm else [])], llm_fallback=True)
-        else:
-            print("3/6 speaker blocks: cached")
+    if not args.no_llm and not (edit / "prosody.json").exists():
+        step("2/7 prosody", [str(HERE / "prosody.py"), str(folder)], folder)
+    elif not args.no_llm:
+        print("2/7 prosody: cached")
 
-        if not (edit / "ng.json").exists():
-            run_ng_pipeline(folder, edit, args.no_llm)
-        else:
-            print("4/7 NG: cached")
+    if not (edit / "audio_map.json").exists():
+        step("2/7 audio map", [str(HERE / "audio_map.py"), str(folder)], folder)
+    else:
+        print("2/7 audio map: cached")
 
-        if not (edit / "pauses.json").exists():
-            step("5/7 pauses", [str(HERE / "plan_pauses.py"), str(folder), *(["--no-llm"] if args.no_llm else [])])
-        else:
-            print("5/7 pauses: cached")
+    if not (edit / "speaker_blocks.json").exists():
+        step("3/6 speaker blocks", [str(HERE / "detect_speaker_blocks.py"), str(folder),
+                                    *(["--no-llm"] if args.no_llm else [])], folder, llm_fallback=True)
+    else:
+        print("3/6 speaker blocks: cached")
 
-        notify("처리 완료", f"{folder.name} 검토 준비됨 - 브라우저가 곧 열립니다")
+    if not (edit / "ng.json").exists():
+        run_ng_pipeline(folder, edit, args.no_llm)
+    else:
+        print("4/7 NG: cached")
 
-    print("\n== 6/7 review UI")
-    subprocess.run([sys.executable, str(HERE / "server.py"), str(folder), "--port", str(args.port),
-                    *(["--no-open"] if args.no_open else [])], cwd=HERE.parent)
+    if not (edit / "pauses.json").exists():
+        step("5/7 pauses", [str(HERE / "plan_pauses.py"), str(folder), *(["--no-llm"] if args.no_llm else [])], folder)
+    else:
+        print("5/7 pauses: cached")
+
+    notify("처리 완료", f"{folder.name} 검토 준비됨")
+    print(f"\n review UI: http://127.0.0.1:{args.port}/  (folder: {folder})")
 
 
 if __name__ == "__main__":

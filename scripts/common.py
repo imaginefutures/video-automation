@@ -4,6 +4,7 @@ import getpass
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -168,6 +169,61 @@ def thinking_kwargs(model: str, effort: str = "low") -> dict:
     if model in NEW_THINKING_CONTRACT_MODELS:
         return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
     return {"thinking": {"type": "disabled"}}
+
+
+# R8(백로그/R8-실패-대응.md) "남은 것: 영수증에 영상당 처리 비용 추정 표시" - USD/1M토큰 가격표.
+# `claude-api` 스킬의 캐시된 가격표(2026-06-24)에서 이 파이프라인이 실제로 부르는 모델 문자열만
+# 그대로 가져왔다 - 추측하지 않음. cache_write/cache_read는 ephemeral(5분) 프롬프트 캐시 단가 -
+# 2026-10-01 현재 이 helper를 쓰는 6개 호출부 중 cache_control을 쓰는 곳은 없어서(grep으로 확인)
+# 실제로는 안 쓰이지만, 나중에 캐싱을 넣었을 때 조용히 잘못 계산되는 걸 막기 위해 남겨 둔다.
+# 새 호출부가 여기 없는 모델을 쓰게 되면 가격을 먼저 이 표에 추가할 것 - 추측해서 넣지 말 것.
+LLM_PRICING_USD_PER_MTOK: dict[str, dict[str, float]] = {
+    "claude-opus-5-5":           {"input": 4.00, "output": 20.00, "cache_write": 5.00, "cache_read": 0.20},
+    "claude-sonnet-5":           {"input": 2.00, "output": 10.00, "cache_write": 2.50, "cache_read": 0.20},
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00, "cache_write": 1.25, "cache_read": 0.10},
+    "claude-fable-5-1":          {"input": 10.00, "output": 50.00, "cache_write": 12.50, "cache_read": 1.00},
+}
+
+
+def log_llm_usage(folder: Path, step_label: str, model: str, usage) -> None:
+    """Anthropic API 호출 하나의 토큰 사용량을 <folder>/edit/llm_usage.jsonl에 한 줄 추가한다
+    (R8 영수증의 "영상당 처리 비용 추정"이 이 파일을 합산해서 보여줌, server.py Session.receipt()).
+
+    `usage`는 보통 `client.messages.parse(...)` 응답의 `.usage` 객체지만(속성:
+    input_tokens/output_tokens/cache_creation_input_tokens/cache_read_input_tokens), 테스트
+    편의를 위해 같은 키를 가진 dict도 받는다. 가격표에 없는 모델은 비용을 추측하지 않고
+    그냥 기록을 건너뛴다(잘못된 비용보다 누락이 낫다)."""
+    pricing = LLM_PRICING_USD_PER_MTOK.get(model)
+    if pricing is None:
+        print(f"[llm_usage] 가격표에 없는 모델 '{model}' - 비용 기록 생략", file=sys.stderr)
+        return
+
+    def _get(key: str) -> int:
+        val = usage.get(key) if isinstance(usage, dict) else getattr(usage, key, None)
+        return val or 0
+
+    input_tokens = _get("input_tokens")
+    output_tokens = _get("output_tokens")
+    cache_write_tokens = _get("cache_creation_input_tokens")
+    cache_read_tokens = _get("cache_read_input_tokens")
+
+    cost_usd = (
+        input_tokens * pricing["input"]
+        + output_tokens * pricing["output"]
+        + cache_write_tokens * pricing["cache_write"]
+        + cache_read_tokens * pricing["cache_read"]
+    ) / 1_000_000
+
+    row = {
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "step": step_label,
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost_usd": round(cost_usd, 6),
+    }
+    with (edit_dir(folder) / "llm_usage.jsonl").open("a") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def trace_to_ng_indices(cut_id: int, draft_cuts: list[dict]) -> list[int]:

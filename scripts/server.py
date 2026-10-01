@@ -1147,6 +1147,19 @@ class Session:
             review_sec = round((datetime.fromisoformat(d["confirmed_at"]) - started).total_seconds())
         seams = self._load("seams.json", {"seams": []}).get("seams", [])
         seam_flag_rate = round(sum(1 for s in seams if s.get("flag")) / len(seams), 3) if seams else None
+        # R8(백로그/R8-실패-대응.md) "영상당 처리 비용 추정" - scripts/common.py log_llm_usage()가
+        # 6개 LLM 호출부에서 쌓은 edit/llm_usage.jsonl을 합산. --no-llm으로 돌리면 이 파일 자체가
+        # 안 생기므로(기능이 아예 안 돈 것) 0이 아니라 None - seam_flag_rate와 같은 패턴.
+        usage_path = self.edit / "llm_usage.jsonl"
+        cost_est_usd = None
+        if usage_path.exists():
+            cost_est_usd = 0.0
+            for line in usage_path.read_text().splitlines():
+                try:
+                    cost_est_usd += json.loads(line).get("cost_usd", 0) or 0
+                except json.JSONDecodeError:
+                    continue
+            cost_est_usd = round(cost_est_usd, 4)
         return {
             "video": self.name, "confirmed_at": d.get("confirmed_at"),
             "raw_sec": round(self.duration, 1), "result_sec": round(self.duration - removed, 1),
@@ -1154,7 +1167,8 @@ class Session:
             "flagged": flagged, "restored": restored,
             "judge_flagged": judge_flagged, "judge_restored": judge_restored, "quick_total": quick_total,
             "reported_bad_cuts": len(d.get("reported_bad_cuts", [])),
-            "review_sec": review_sec, "seam_flag_rate": seam_flag_rate, "decided_by": by_counts,
+            "review_sec": review_sec, "seam_flag_rate": seam_flag_rate, "cost_est_usd": cost_est_usd,
+            "decided_by": by_counts,
             # 2026-10-01: 개인화를 대체하는 구조적 의심 탐지(기획/04 3장) - 자동 라우팅엔 영향 없고
             # 영수증에만 보임. 빈 리스트가 정상(의심 패턴이 없다는 뜻).
             "structural_suspects": self.flagged_structural_suspects(),
@@ -1261,7 +1275,8 @@ def _subtract(spans: list[dict], s: float, e: float) -> list[dict]:
 # ----------------------------------------------------------------------------- http
 
 class Handler(BaseHTTPRequestHandler):
-    session: Session
+    session: Session | None = None  # None until transcript.json exists - see _try_build_session/serve()
+    folder: Path  # set once in serve(); needed to read pipeline_status.json while session is None
     # A cut-heavy stretch makes the player seek rapidly (jump past each short cut in turn);
     # each seek aborts the in-flight /media request and opens a new one. Without a timeout, a
     # thread whose client already moved on can sit forever blocked on wfile.write() (the socket
@@ -1285,12 +1300,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        # These never touch self.session - must work before processing has even reached
+        # transcribe (R2: the server now binds and opens the browser before the pipeline
+        # starts, see run.py/serve()).
         if path in ("/", "/index.html"):
             return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+        if path.startswith("/static/"):
+            f = WEB_DIR / path[len("/static/"):]
+            if f.is_file():
+                return self._file(f, mimetypes.guess_type(str(f))[0] or "application/octet-stream")
+            return self.send_error(404)
+        if path == "/api/status":
+            if self.session is not None:
+                return self._json({"ready": True, "render": self.session.render_status,
+                                   "cut_spans": self.session.cut_spans()})
+            return self._json({"ready": False, **_pipeline_status(self.folder)})
+        if self.session is None:  # everything below needs a built Session
+            return self._json({"ok": False, "ready": False, "error": "아직 처리 중입니다"}, 503)
         if path == "/api/session":
             return self._json(self.session.payload())
-        if path == "/api/status":
-            return self._json({"render": self.session.render_status, "cut_spans": self.session.cut_spans()})
         if path == "/media":
             return self._media()
         if path == "/api/waveform":
@@ -1302,19 +1334,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.session.waveform(start, end))
             except Exception as e:
                 return self._json({"error": str(e)}, 400)
-        if path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
-            return
-        if path.startswith("/static/"):
-            f = WEB_DIR / path[len("/static/"):]
-            if f.is_file():
-                return self._file(f, mimetypes.guess_type(str(f))[0] or "application/octet-stream")
         self.send_error(404)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.session is None:  # R2: every POST endpoint mutates/reads a built Session
+            return self._json({"ok": False, "ready": False, "error": "아직 처리 중입니다"}, 503)
         try:
             if self.path == "/api/decision":
                 with self.session.lock:
@@ -1408,10 +1434,61 @@ class Handler(BaseHTTPRequestHandler):
                 pass  # client already seeked elsewhere and abandoned this request - expected, not an error
 
 
+def _try_build_session(folder: Path) -> Session | None:
+    """None (never raises) until transcript.json exists AND Session() actually succeeds -
+    covers both "pipeline hasn't reached transcribe yet" and "transcript.json is still being
+    written" (a half-written file fails json.loads, same as missing). Every later-stage file
+    (ng.json, pauses.json, ...) already has a safe default inside Session._load(), so this is
+    the ONE real gate - see docs/백로그/R2-시작-마찰-제거.md."""
+    if not (folder / "edit" / "transcript.json").exists():
+        return None
+    try:
+        return Session(folder)
+    except Exception as e:
+        print(f"[server] {folder.name}: session not ready yet ({e})")
+        return None
+
+
+def _pipeline_status(folder: Path) -> dict:
+    """Read-only progress readout written by run.py's step() after every pipeline stage - see
+    run.py's `step()` and docstring there. Missing/unreadable file just means "processing
+    hasn't written a status yet" (e.g. still in clean_media/transcribe), not an error."""
+    p = folder / "edit" / "pipeline_status.json"
+    default = {"stage": "처리 준비 중", "done": 0, "total": 0, "state": "running", "error": None}
+    if not p.exists():
+        return default
+    try:
+        data = json.loads(p.read_text())
+    except (OSError, json.JSONDecodeError):
+        return default
+    return {"stage": data.get("stage", default["stage"]), "done": data.get("done", 0),
+            "total": data.get("total", 0), "state": data.get("state", "running"),
+            "error": data.get("error")}
+
+
+def _session_watcher(folder: Path, interval: float = 1.0) -> None:
+    """Background thread (R2): the server binds and answers requests immediately even when
+    transcript.json doesn't exist yet (run.py now launches this server before the pipeline
+    runs, not after - see run.py). This retries Session construction every `interval` seconds
+    and swaps it into Handler.session the moment it succeeds, so every in-flight request before
+    that either saw the static shell or a 503, and nothing crashes on an AttributeError."""
+    while Handler.session is None:
+        time.sleep(interval)
+        sess = _try_build_session(folder)
+        if sess is not None:
+            Handler.session = sess
+            print(f"[server] {folder.name}: session ready")
+            return
+
+
 def serve(folder: Path, port: int = 8765, open_browser: bool = True) -> None:
     for msg in migrate.migrate_project(folder):  # run.py도 호출하지만, server.py 단독 실행 대비
         print(f"[migrate] {msg}")
-    Handler.session = Session(folder)
+    Handler.folder = folder
+    Handler.session = _try_build_session(folder)
+    if Handler.session is None:
+        print(f"[server] {folder.name}: still processing - serving progress view until transcript.json appears")
+        threading.Thread(target=_session_watcher, args=(folder,), daemon=True).start()
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
     print(f"review UI: {url}   (folder: {folder})")

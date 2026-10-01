@@ -42,7 +42,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 from common import (load_env, video_dir, edit_dir, load_transcript, words_only, write_json, source_media, norm,
-                    trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs)
+                    trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs, log_llm_usage)
 import audio_map as am
 from plan_pauses import PRESETS
 from transcribe import call_scribe
@@ -186,13 +186,14 @@ def build_judge_prompt(items: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def judge_batch(client, model: str, items: list[dict]) -> dict[tuple[int, str], AltJudgment]:
+def judge_batch(client, model: str, items: list[dict], folder: Path) -> dict[tuple[int, str], AltJudgment]:
     out: dict[tuple[int, str], AltJudgment] = {}
     for k in range(0, len(items), JUDGE_BATCH):
         part = items[k:k + JUDGE_BATCH]
         resp = client.messages.parse(model=model, max_tokens=8000, system=JUDGE_SYSTEM,
                                      messages=[{"role": "user", "content": build_judge_prompt(part)}],
                                      output_format=AltJudgments, **thinking_kwargs(model))
+        log_llm_usage(folder, "seam_refine_judge", model, resp.usage)
         for j in resp.parsed_output.judgments:
             out[(j.cut_id, j.alt)] = j
     return out
@@ -443,7 +444,7 @@ def refine(folder: Path, max_rounds: int = 3) -> Path:
         judgments: dict[tuple[int, str], AltJudgment] = {}
         for model, items in groups.items():
             print(f"  judging {len(items)} (cut,alt) pair(s) with {model}...")
-            judgments.update(judge_batch(client, model, items))
+            judgments.update(judge_batch(client, model, items, folder))
 
         changed = set()
         for cid in to_process:

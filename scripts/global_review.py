@@ -33,7 +33,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 from common import (load_env, video_dir, edit_dir, load_transcript, words_only, write_json,
-                    trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs)
+                    trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs, log_llm_usage)
 
 PD_MODEL = "claude-opus-5-5"
 VIEWER_MODEL = "claude-fable-5-1"
@@ -164,12 +164,13 @@ missed_cut으로 다시 보고하지 마라** - 이미 처리 중이다.
 """
 
 
-def pd_review(pd_view: str) -> list[PDFinding]:
+def pd_review(pd_view: str, folder: Path) -> list[PDFinding]:
     import anthropic
     client = anthropic.Anthropic()
     resp = client.messages.parse(model=PD_MODEL, max_tokens=6000, system=PD_SYSTEM,
                                  messages=[{"role": "user", "content": pd_view}],
                                  output_format=PDReview, **thinking_kwargs(PD_MODEL))
+    log_llm_usage(folder, "global_review_pd", PD_MODEL, resp.usage)
     return resp.parsed_output.findings
 
 
@@ -190,7 +191,7 @@ finding도 내지 마라 - 이건 재질의 전용이니 다른 missed_cut/over_
 
 
 def recheck_repetitions(words: list[dict], repetition_vfs: list["ViewerFinding"],
-                        seg_by_id: dict[int, dict]) -> list[PDFinding]:
+                        seg_by_id: dict[int, dict], folder: Path) -> list[PDFinding]:
     blocks = []
     for vf in repetition_vfs:
         seg = seg_by_id.get(vf.segment_id)
@@ -207,6 +208,7 @@ def recheck_repetitions(words: list[dict], repetition_vfs: list["ViewerFinding"]
     resp = client.messages.parse(model=PD_MODEL, max_tokens=3000, system=REPETITION_RECHECK_SYSTEM,
                                  messages=[{"role": "user", "content": "\n\n".join(blocks)}],
                                  output_format=PDReview, **thinking_kwargs(PD_MODEL))
+    log_llm_usage(folder, "global_review_repetition_recheck", PD_MODEL, resp.usage)
     return resp.parsed_output.findings
 
 
@@ -244,7 +246,7 @@ quote(짧은 인용), reason(한 문장), severity. 마지막에 overall(flow 1-
 """
 
 
-def viewer_review(viewer_view: str) -> tuple[ViewerReview, str]:
+def viewer_review(viewer_view: str, folder: Path) -> tuple[ViewerReview, str]:
     import anthropic
     client = anthropic.Anthropic()
     model = VIEWER_MODEL
@@ -258,6 +260,7 @@ def viewer_review(viewer_view: str) -> tuple[ViewerReview, str]:
         resp = client.messages.parse(model=model, max_tokens=4000, system=VIEWER_SYSTEM,
                                      messages=[{"role": "user", "content": viewer_view}],
                                      output_format=ViewerReview, thinking={"type": "disabled"})
+    log_llm_usage(folder, "global_review_viewer", model, resp.usage)
     return resp.parsed_output, model
 
 
@@ -276,12 +279,12 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
     print(f"  PD 입력 {len(pd_view)}자 ({PD_MODEL}), 시청자 입력 {len(viewer_view)}자 "
           f"({len(segments)}구간, {VIEWER_MODEL} 시도)")
 
-    pd_findings = pd_review(pd_view)
+    pd_findings = pd_review(pd_view, folder)
     print(f"  PD 발견: {len(pd_findings)}건")
     for f in pd_findings:
         print(f"    {f.type} sev={f.severity} conf={f.confidence:.2f} :: {f.reason}")
 
-    viewer_result, viewer_model_used = viewer_review(viewer_view)
+    viewer_result, viewer_model_used = viewer_review(viewer_view, folder)
     print(f"  시청자 발견: {len(viewer_result.findings)}건 (flow={viewer_result.overall.flow} "
           f"pace={viewer_result.overall.pace})")
     for f in viewer_result.findings:
@@ -293,7 +296,7 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
     # repetition(시청자만 지적, PD는 놓침) -> PD에게 "missed_cut 맞냐"고 좁혀 재질의
     # (docs/기획/03-두-관점-평가.md 4장). 결과는 missed_cut이면 아래 new_ng_items 처리에 합류.
     repetition_vfs = [vf for vf in viewer_result.findings if vf.type == "repetition"]
-    repetition_findings = recheck_repetitions(words, repetition_vfs, seg_by_id) if repetition_vfs else []
+    repetition_findings = recheck_repetitions(words, repetition_vfs, seg_by_id, folder) if repetition_vfs else []
     if repetition_vfs:
         print(f"  repetition 재질의: {len(repetition_vfs)}건 중 {len(repetition_findings)}건 missed_cut으로 확인")
     pd_findings = pd_findings + repetition_findings

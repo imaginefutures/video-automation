@@ -29,7 +29,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json
+from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, log_llm_usage
 
 MIN_LINES = 3            # a block is a back-and-forth: at least 3 lines, 2 speaker switches
 MAX_LINE_WORDS = 25      # a line longer than this is monologue, not dialogue
@@ -142,7 +142,7 @@ def split_lines(seg: list[dict]) -> list[dict]:
     return lines
 
 
-def label_with_llm(primary: str, block: dict, after_lines: list[dict]) -> None:
+def label_with_llm(primary: str, block: dict, after_lines: list[dict], folder: Path) -> None:
     """`after_lines`: the lines right after the block, which stay in the cut. The real final
     take is often a long monologue line that falls OUTSIDE the block (too long to be
     "dialogue"); without seeing it the model promotes the last in-block attempt to FINAL."""
@@ -156,6 +156,7 @@ def label_with_llm(primary: str, block: dict, after_lines: list[dict]) -> None:
     resp = client.messages.parse(model="claude-sonnet-5", max_tokens=4000, system=SYSTEM,
                                  messages=[{"role": "user", "content": body}], output_format=BlockLabels,
                                  thinking={"type": "disabled"})
+    log_llm_usage(folder, "detect_speaker_blocks", "claude-sonnet-5", resp.usage)
     roles = {l.line_id: l.role for l in resp.parsed_output.lines}
     for ln in block["lines"]:
         ln["role"] = roles.get(ln["id"], "DIRECTION")
@@ -175,7 +176,7 @@ def detect(folder: Path, use_llm: bool = True) -> Path:
             all_lines = split_lines(words)
             for b in blocks:
                 after = [ln for ln in all_lines if ln["start"] > b["end"]][:2]
-                label_with_llm(primary, b, after)
+                label_with_llm(primary, b, after, folder)
             labeled = True
         else:
             print("ANTHROPIC_API_KEY not set - proposing whole-block deletion without line roles")
