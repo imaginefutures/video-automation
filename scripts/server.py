@@ -17,6 +17,7 @@ import getpass
 import json
 import mimetypes
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -44,8 +45,22 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # 복원/추가삭제를 "개인 취향"으로 똑같이 취급했는데, 실제로는 상당수가 엔진이 보편적으로 틀린
 # 것(접속사 삼킴 버그 사례)이라 구분이 안 됐다 - 보편적 버그가 개인 계정 통계에 조용히 흡수돼
 # 묻히는 결함. 사용자 피드백은 이제 구조적 의심 탐지(docs/남은-개발.md)로만 쓴다 - 자동 라우팅은
-# 바꾸지 않는다.
+# 바꾸지 않는다. (counting-only 절충안도 검토됐으나 기획/04 3장의 구조적 태그 기반 탐지로
+# 완전히 대체하기로 함 - _record_structural_signal 참고, prefs.json 자체를 더 안 씀.)
 UNDO_LIMIT = 200  # decision snapshots kept for ⌘Z (each is a few KB)
+
+# ----------------------------------------------------------------------------- 두 관점 평가 배지
+# (docs/기획/03-두-관점-평가.md 5장, docs/기획/05-검토-화면.md 3장) - global_review.py는 PD/시청자
+# 지적을 구조화된 필드가 아니라 ng.json의 route_reason 텍스트에 역전파한다(세미콜론으로 이어붙인
+# 로그). 카드 배지는 그 문장들 중 이 세 가지 알려진 형태만 파싱한다 - 모르는 문장은 그냥 무시되고
+# (크래시 없음), 아무 것도 못 찾으면 "전체 루프가 돌았는데 이 항목은 안 걸렸다"는 뜻으로 ✓를 보여
+# 준다(global_review.json 자체가 없으면 그마저도 안 보여준다 - 평가 자체가 없었던 것과 "통과"는
+# 달라야 한다).
+_PD_NEW_RE = re.compile(r"^전체 루프 PD 평가: (.+) \(confidence=([\d.]+)\) - 복원 후보로 자름$")
+_PD_OVERCUT_RE = re.compile(r"^전체 루프 PD: 정보 손실 의심 - (.+)$")
+_VIEWER_RE = re.compile(r"^전체 루프 시청자: (jump|unclear|rushed|dragging|repetition|boring) - (.+)$")
+VIEWER_LABEL_KO = {"jump": "끊김", "unclear": "이해불가", "rushed": "급함",
+                    "dragging": "늘어짐", "repetition": "반복", "boring": "지루함"}
 
 
 def user_id() -> str:
@@ -109,6 +124,11 @@ class Session:
         # run for this video yet, in which case cut_spans() falls back to the flat pad exactly
         # like before.
         self.amap = am.load_audio_map(folder)
+        # docs/기획/05-검토-화면.md 2장/3장 (두 층 큐 + PD·시청자 배지 + 번호 키 대안) - route/flag/
+        # route_reason/draft_cuts/seams는 확정 전까지 바뀌지 않으므로 세션당 한 번만 계산해 캐시한다.
+        self.global_review_ran = (self.edit / "global_review.json").exists()
+        self._ng_to_cut_ids, self._cut_info_lost = self._load_seam_info()
+        self._review_meta_cache: list[dict | None] = [self._review_meta(i, it) for i, it in enumerate(self.ng)]
 
     # ---- structural suspect detection (개인화 대체, docs/기획/04-지식-층과-학습.md 3장)
 
@@ -235,6 +255,120 @@ class Session:
         if route == "KEEP":
             return "KEEP"
         return "REVIEW" if item.get("flag") == "restore" else "AUTO_SAFE"
+
+    # ---- docs/기획/05-검토-화면.md 2장/3장: 두 층 큐 + PD·시청자 배지 + 번호 키 대안
+    #
+    # global_review.py(건드리지 않음)는 PD/시청자 지적을 구조화된 필드가 아니라 ng.json의
+    # route_reason에 세미콜론으로 이어붙인 문장으로 역전파한다(실제 산출물로 확인 - 09장 참고).
+    # 여기서는 그 문장들 중 알려진 세 형태만 파싱하고, 모르는 문장은 조용히 무시한다.
+
+    def _load_seam_info(self) -> tuple[dict[int, list[int]], dict[int, str]]:
+        """ng.json 인덱스 -> 그 항목이 속한 final cut id들(draft_cuts.json의 sources를 거꾸로
+        읽음), 그리고 cut id -> seam 판정의 info_lost(seams.json). 둘 다 "정보 손실 major" 정렬
+        기준 계산에만 쓰는 읽기 전용 참고 데이터다 - seam_refine.py/global_review.py 자체는 전혀
+        건드리지 않는다. 둘 중 하나라도 아직 안 돌았으면(옛 영상, 또는 처리 중) 빈 dict로 조용히
+        빠진다 - 크래시하지 않는다."""
+        ng_to_cuts: dict[int, list[int]] = {}
+        for c in self._load("draft_cuts.json", {"cuts": []}).get("cuts", []):
+            for src in c.get("sources", []):
+                sid = src.get("source_id", "")
+                if sid.startswith("ng["):
+                    try:
+                        ng_to_cuts.setdefault(int(sid[3:-1]), []).append(c["id"])
+                    except ValueError:
+                        pass
+        info_lost: dict[int, str] = {}
+        for s in self._load("seams.json", {"seams": []}).get("seams", []):
+            j = s.get("judgment")
+            if j and j.get("info_lost"):
+                info_lost[s["cut_id"]] = j["info_lost"]
+        return ng_to_cuts, info_lost
+
+    def _worst_info_lost(self, ng_idx: int) -> str | None:
+        order = {"major": 2, "minor": 1, "none": 0}
+        best = None
+        for cid in self._ng_to_cut_ids.get(ng_idx, []):
+            lvl = self._cut_info_lost.get(cid)
+            if lvl and (best is None or order.get(lvl, 0) > order.get(best, 0)):
+                best = lvl
+        return best
+
+    def _split_point(self, item: dict) -> int | None:
+        """A real internal pause inside this NG item's own word span, if there is one - the
+        only grounded "alternative boundary" the pipeline actually gives us (seam_refine.py's
+        alternatives themselves are NOT persisted beyond the one it already chose, see
+        seams.json's `chosen_alt` - there is no multi-candidate list to offer). Picks the
+        longest internal gap so the split lands on the most plausible phrase break; returns
+        None when the item is a single word or has no internal pause, which is common (e.g. a
+        lone filler "음.") - that card then simply has no numbered alternative, matching 05
+        문서's "대안이 1~2개뿐일 수 있다"."""
+        ws, we = item["raw_word_index_start"], item["raw_word_index_end"]
+        if we - ws < 2:
+            return None
+        candidates = [g for g in self.gaps if ws <= g["prev_wi"] < we - 1]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda g: g["gap_end"] - g["gap_start"])["prev_wi"]
+
+    def _review_signals(self, reason: str) -> dict:
+        pd = None
+        viewer = []
+        for part in (reason or "").split("; "):
+            m = _PD_NEW_RE.match(part)
+            if m:
+                pd = {"status": "new", "reason": m.group(1), "confidence": float(m.group(2))}
+                continue
+            m = _PD_OVERCUT_RE.match(part)
+            if m:
+                pd = {"status": "warn", "reason": m.group(1)}
+                continue
+            m = _VIEWER_RE.match(part)
+            if m:
+                viewer.append({"type": m.group(1), "label": VIEWER_LABEL_KO[m.group(1)], "reason": m.group(2)})
+        return {"pd": pd, "viewer": viewer}
+
+    def _review_meta(self, i: int, item: dict) -> dict | None:
+        """None for anything not in the restore-candidate queue (AUTO_SAFE/KEEP) - those never
+        show a card at all, so they need no layer/badge/alt computation."""
+        if self._display_route(item) != "REVIEW":
+            return None
+        sig = self._review_signals(item.get("route_reason") or "")
+        pd_badge = sig["pd"]
+        if pd_badge is None and self.global_review_ran:
+            pd_badge = {"status": "ok"}
+        viewer_badges = sig["viewer"]
+        viewer_ok = self.global_review_ran and not viewer_badges
+        both_flagged = bool(pd_badge and pd_badge.get("status") == "warn") and bool(viewer_badges)
+        info_lost = self._worst_info_lost(i)
+        clf = item.get("llm_classification") or {}
+        confidence = clf.get("confidence")
+        mismatch = bool(clf.get("recommended_action")) and clf["recommended_action"] != "CUT"
+        low_conf = isinstance(confidence, (int, float)) and confidence < 0.75
+        # docs/기획/05-검토-화면.md 2.2절의 정렬 순위. "L2에서 자주 복원한 유형"과 "삭제 후보"
+        # 두 단계는 뺐다 - 전자는 개인화 폐기(04 문서)와 경계가 애매해 피했고, 후자는 지금
+        # 파이프라인에 그런 항목(기본이 KEEP인 재검토 카드)이 아예 없다(route/flag를 다 확인함) -
+        # 없는 걸 있는 척 만들지 않는다(이번 작업 지시사항).
+        if both_flagged:
+            tier = 1
+        elif info_lost == "major":
+            tier = 2
+        elif mismatch:
+            tier = 3
+        elif low_conf:
+            tier = 4
+        else:
+            tier = 5
+        # 빠른 확인 자격: 전체 루프가 실제로 돌았고 PD·시청자 둘 다 이 항목을 지적하지 않았으며,
+        # 정보 손실 major가 아니고, 분류기 신뢰도도 충분하고, 판정이 엇갈리지도 않을 때만. 그 외
+        # (전체 루프 미실행 포함)는 전부 판단 필요 층으로 - 평가되지 않은 항목을 안전한 쪽으로
+        # 분류한다(경고 없는 복원 최우선 방지 원칙과 동일한 방향).
+        is_quick = (self.global_review_ran and pd_badge is not None and pd_badge.get("status") == "ok"
+                    and viewer_ok and info_lost != "major" and not mismatch and not low_conf)
+        return {
+            "layer": "quick" if is_quick else "judge", "tier": tier,
+            "pd": pd_badge, "viewer": viewer_badges,
+            "split_wi": self._split_point(item),
+        }
 
     def _ng_status(self, i: int) -> str:
         """Python-side mirror of web/index.html's ngStatus() - used for the entry-banner estimate
@@ -383,13 +517,17 @@ class Session:
         return "done_cut" if bd.get("approved") else "done_keep"
 
     def _review_estimate(self) -> dict:
-        """백로그/R1-결과-영수증.md 2.3: 검토 화면 첫 진입 시 '검토 N건, 예상 M분'. 카드 유형별
-        평균 결정 시간(L2)이 아직 없어 카드당 20초로 가정 - 사례가 쌓이면 history.jsonl 기반으로
-        바꿀 수 있다."""
-        pending = (sum(1 for i, it in enumerate(self.ng) if self._display_route(it) == "REVIEW"
-                       and self._ng_status(i) == "pending")
-                   + sum(1 for b in self.blocks if self._block_status(b) == "pending"))
-        return {"pending": pending, "estimated_sec": pending * 20}
+        """docs/기획/05-검토-화면.md 2.3절: "검토 8건 · 예상 4분   빠른 확인 23건 (2분 릴)" - 두
+        층을 따로 센다. 카드 유형별 평균 결정 시간(L2)이 아직 없어 판단 필요 카드는 20초로
+        가정한다(사례가 쌓이면 history.jsonl 기반으로 바꿀 수 있다). 빠른 확인은 릴 재생 시간
+        그대로(앞뒤 1.5초씩 이어붙이면 23건에 약 70초 - 같은 문서 4.3절 실측 어림값)."""
+        judge_ng = sum(1 for i, it in enumerate(self.ng) if self._display_route(it) == "REVIEW"
+                       and self._review_meta_cache[i]["layer"] == "judge" and self._ng_status(i) == "pending")
+        quick_ng = sum(1 for i, it in enumerate(self.ng) if self._display_route(it) == "REVIEW"
+                       and self._review_meta_cache[i]["layer"] == "quick" and self._ng_status(i) == "pending")
+        pending = judge_ng + sum(1 for b in self.blocks if self._block_status(b) == "pending")
+        return {"pending": pending, "estimated_sec": pending * 20,
+                "quick_pending": quick_ng, "quick_estimated_sec": round(quick_ng * 70 / 23)}
 
     def _default_decisions(self) -> dict:
         ng = {}
@@ -450,7 +588,8 @@ class Session:
         saved["pause"].setdefault("enabled", True)
         for k in ("overrides", "reported_bad_cuts", "history"):
             saved.setdefault(k, [])
-        saved.pop("outtakes", None)  # 기능 제거(엔딩용 후보 별표) - 남아있던 값은 그냥 버림
+        saved.pop("outtakes", None)  # 2026-10-01: outtake 기능 전체 제거 (★ 버튼, 배지, 큐) - 남은
+        # decisions.json에 옛 outtakes 리스트가 있어도 그냥 버린다, 안 읽는다
         for m in saved.pop("manual_cuts", []):  # pre-overrides format
             saved["overrides"].append({"op": "cut", "wi_start": m["wi_start"], "wi_end": m["wi_end"]})
         saved.setdefault("confirmed_at", None)
@@ -605,7 +744,8 @@ class Session:
             "ng": [{"i": i, "start": it["start"], "end": it["end"], "wi_start": it["raw_word_index_start"],
                     "wi_end": it["raw_word_index_end"], "label": it["label"], "route": self._display_route(it),
                     "route_reason": it.get("route_reason", ""), "text": it.get("deleted_text", ""),
-                    "clf": it.get("llm_classification")} for i, it in enumerate(self.ng)],
+                    "clf": it.get("llm_classification"),
+                    "review": self._review_meta_cache[i]} for i, it in enumerate(self.ng)],
             "pause": {"presets": self.pause_presets, "gaps": self.gaps, "protect_sec": PROTECT_SEC,
                       "view": self.gap_view()},
             "pad_sec": BOUNDARY_PAD_SEC,
@@ -617,6 +757,7 @@ class Session:
             "render": self.render_status,
             "suggestions": self.suggestions,
             "review_estimate": self._review_estimate(),
+            "global_review_ran": self.global_review_ran,
         }
 
     # ---- mutations
@@ -985,6 +1126,15 @@ class Session:
         flagged = sum(1 for it in self.ng if self._display_route(it) == "REVIEW")
         restored = sum(1 for i, it in enumerate(self.ng) if self._display_route(it) == "REVIEW"
                        and d["ng"].get(str(i), {}).get("action") == "keep")
+        # docs/기획/05-검토-화면.md 6.2절 영수증: "내 결정 복원 2/8건 · 빠른 확인 23건 통과" - 두
+        # 층을 나눠서 보여준다("flagged"/"restored"는 하위 호환을 위해 전체 합으로 그대로 둔다).
+        judge_flagged = sum(1 for i, it in enumerate(self.ng) if self._display_route(it) == "REVIEW"
+                            and self._review_meta_cache[i]["layer"] == "judge")
+        judge_restored = sum(1 for i, it in enumerate(self.ng) if self._display_route(it) == "REVIEW"
+                             and self._review_meta_cache[i]["layer"] == "judge"
+                             and d["ng"].get(str(i), {}).get("action") == "keep")
+        quick_total = sum(1 for i, it in enumerate(self.ng) if self._display_route(it) == "REVIEW"
+                          and self._review_meta_cache[i]["layer"] == "quick")
         by_counts: dict[str, int] = {}
         for v in d["ng"].values():
             by_counts[v.get("by", "auto")] = by_counts.get(v.get("by", "auto"), 0) + 1
@@ -1002,6 +1152,7 @@ class Session:
             "raw_sec": round(self.duration, 1), "result_sec": round(self.duration - removed, 1),
             "cuts_ng": cuts_ng, "cuts_pause": cuts_pause, "cuts_block": cuts_block, "cuts_manual": cuts_manual,
             "flagged": flagged, "restored": restored,
+            "judge_flagged": judge_flagged, "judge_restored": judge_restored, "quick_total": quick_total,
             "reported_bad_cuts": len(d.get("reported_bad_cuts", [])),
             "review_sec": review_sec, "seam_flag_rate": seam_flag_rate, "decided_by": by_counts,
             # 2026-10-01: 개인화를 대체하는 구조적 의심 탐지(기획/04 3장) - 자동 라우팅엔 영향 없고

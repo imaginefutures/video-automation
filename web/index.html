@@ -125,6 +125,14 @@
   .review-card.st-auto .rc-type, .review-card.st-skipped .rc-type,
   .review-card.st-pattern .rc-type { color: var(--muted); }
   .review-card .rc-status { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  /* docs/기획/03-두-관점-평가.md 5장 / 05-검토-화면.md 3장: PD·시청자 배지. 누르면(클릭 =
+     터치에서도 되게, title만으론 모바일/터치에서 사유를 못 봄) 평가자의 reason을 토스트로 보여준다. */
+  .rc-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+  .badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-full); border: 1px solid transparent;
+    white-space: nowrap; cursor: help; }
+  .badge.ok { background: rgba(0,0,0,0.045); color: var(--muted); }
+  .badge.warn { background: var(--proposal-bg); color: var(--proposal-line); border-color: var(--proposal-line); }
+  .badge.clash { background: var(--danger-soft); color: #9a0000; border-color: var(--danger); }
   .review-card .rc-text { color: var(--ink); line-height: 1.4;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .review-card .rc-actions { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
@@ -134,6 +142,17 @@
   .review-card .rc-actions button:hover { filter: brightness(1.06); }
   #reviewProgress { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
   #reviewEstimate { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
+
+  /* ---------------------------------------------------------------- 빠른 확인 (docs/기획/05-검토-화면.md 2장)
+     flag는 있지만 두 평가 모두 통과한, 한 번도 복원한 적 없는 유형 - 카드를 하나씩 보는 대신
+     이음새를 이어 재생하는 릴로 소비한다. 개별 카드는 감사용으로 접어서만 둔다(기본 닫힘). */
+  #quickSection:empty { display: none; }
+  #quickEstimate { font-size: 11px; color: var(--muted); margin: -2px 16px 8px; }
+  #btnQuickReel { width: calc(100% - 32px); margin: 0 16px 10px; padding: 8px; border-radius: var(--r-md);
+    border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; font-size: 12.5px; }
+  #btnQuickReel:hover { filter: brightness(1.03); }
+  #btnQuickReel:disabled { opacity: 0.45; cursor: default; filter: none; }
+  #quickPanel { padding: 0 16px 4px; }
 
   /* accordion: one compact line up near the title/confirm button - most sessions never need
      to touch the tuning inputs, so the header alone (name + live summary) is all that shows */
@@ -259,6 +278,12 @@
   #pop .btns button.danger { background: var(--danger); color: var(--danger-ink); border-color: var(--danger); }
   #pop .btns button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   #pop .btns button:hover { filter: brightness(1.1); }
+  /* docs/기획/05-검토-화면.md 3장/4.2절: 번호 키 대안 - seam_refine.py가 실제로 기록한 내부
+     쉼(gap) 하나를 기준으로 앞/뒤 중 한쪽만 살리는 대안. 그런 쉼이 이 항목 안에 없으면(흔함 -
+     한 단어짜리 필러 등) 아예 안 보인다 - 없는 대안을 있는 척하지 않는다. */
+  #popAlts { display: none; gap: 6px; flex-wrap: wrap; padding-top: 2px; border-top: 1px dashed var(--line); }
+  #popAlts button { font-size: 12px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+  #popAlts button:hover { filter: brightness(1.05); }
   /* review-mode: opened from a 검토 필요 card. The work panel is the same panel a plain
      manual selection uses - every tool (듣기/이음새/정밀 조정/★) stays available either way,
      so nothing about how you refine a cut differs by where the selection came from. The only
@@ -369,13 +394,20 @@
       </div>
     </div>
     <div class="divider"></div>
-    <div class="section-title">검토 필요 <span id="reviewCount"></span></div>
+    <div class="section-title">판단 필요 <span id="reviewCount"></span></div>
     <div id="reviewProgress"></div>
     <div id="reviewEstimate"></div>
     </div>
     <div id="sidebarScroll">
       <div id="suggestionPanel"></div>
       <div id="reviewPanel"></div>
+      <div id="quickSection">
+        <div class="divider"></div>
+        <div class="section-title">빠른 확인 <span id="quickCount"></span></div>
+        <div id="quickEstimate"></div>
+        <button id="btnQuickReel" title="두 평가 모두 통과한 자동 컷만 앞뒤 1.5초씩 이어서 훑어 듣는다 - 거슬리는 곳에서 Enter">▶ 빠른 확인 릴 재생</button>
+        <div id="quickPanel"></div>
+      </div>
     </div>
   </aside>
 
@@ -413,6 +445,7 @@
     <button id="popZoom" title="소리 파형을 보며 경계를 미세 조정">🔍 정밀 조정 <kbd>Z</kbd></button>
     <button id="popReport" class="danger" title="자동으로 잘못 잘렸습니다 - 즉시 복원하고, 같은 유형을 앞으로 더 보수적으로 판단하도록 기록합니다">⚠ 잘못 잘렸음</button>
   </div>
+  <div class="btns" id="popAlts"></div>
 </div>
 <div id="gtip"></div>
 <div id="modal"><div class="box" id="modalPanel" role="dialog" aria-modal="true"><div class="drag-handle"></div><div id="modalBox"></div></div></div>
@@ -425,6 +458,7 @@
   <div class="row"><span>되돌리기</span><span><kbd>⌘Z</kbd></span></div>
   <div class="row"><span>다시 실행</span><span><kbd>⌘⇧Z</kbd></span></div>
   <div class="row"><span>삭제/살리기 전환</span><span><kbd>↵</kbd></span></div>
+  <div class="row"><span>대안 선택 (앞만/전부/뒤만 살림)</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span></div>
   <div class="row"><span>검토 완료 (지금 상태 그대로 확정)</span><span><kbd>⇧↵</kbd></span></div>
   <div class="row"><span>판단 보류 (건너뛰기)</span><span><kbd>S</kbd></span></div>
   <div class="row"><span>재생 / 정지 (커서 위치부터)</span><span><kbd>Space</kbd></span></div>
@@ -500,6 +534,8 @@ function renderReviewEstimate() {
   const est = S.review_estimate;
   $('#reviewEstimate').textContent = est && est.pending
     ? `예상 ${Math.max(1, Math.round(est.estimated_sec / 60))}분` : '';
+  $('#quickEstimate').textContent = est && est.quick_pending
+    ? `${est.quick_pending}건 · 약 ${Math.max(1, Math.round(est.quick_estimated_sec))}초 릴` : '';
 }
 // The keyboard shortcuts (J/⌘Z/X/Z...) this tool leans on are otherwise only discoverable by
 // noticing the small "?" button in the corner - show the help popup once per browser so a
@@ -1007,9 +1043,7 @@ function select(x, y) {
   // a generic manual override - see applySel(). 건너뛰기/검토 완료/★
   // live on the sidebar card itself (renderReviewPanel) since they're decisions, not edits -
   // this popup only holds tools that touch content (듣기/이음새/정밀 조정) plus the generic
-  // 삭제/살리기 toggle, which doubles as the fast path for a matched review item too. ★ stays
-  // in the popup too, but only for an AUTO_SAFE ng item (route !== 'REVIEW') - those never get
-  // a sidebar card, so the popup is their only way to reach it.
+  // 삭제/살리기 toggle, which doubles as the fast path for a matched review item too.
   selReviewMatch = matchedReview(words);
   const why = item ? `${esc(item.clf?.reasoning || '')} <span style="color:var(--muted)">(신뢰도 ${item.clf?.confidence ?? '-'})</span>` : '';
   $('#popWhy').innerHTML = why; $('#popWhy').style.display = why ? 'block' : 'none';
@@ -1026,6 +1060,7 @@ function select(x, y) {
   } else {
     $('#popMeta').style.display = 'none';
   }
+  renderPopAlts(selReviewMatch?.kind === 'ng' ? selReviewMatch.ref : null);
   // One toggle button, not two - it always names the action Enter will take (the opposite
   // of what's currently selected), so 삭제/살리기 never need two different shortcuts again.
   selAllCut = allCut;
@@ -1113,6 +1148,35 @@ async function applySel(op) {
   toast(op === 'cut' ? `${n ? n + '단어' : '쉼'} 삭제 (⌘Z로 되돌리기)` : `${n ? n + '단어' : '쉼'} 살림`);
 }
 function toggleSel() { if (sel) applySel(selAllCut ? 'keep' : 'cut'); }
+// docs/기획/05-검토-화면.md 3장/4.2절: 번호 키 대안. n.review.split_wi는 server.py가 seams.json/
+// pauses.json에서 찾은 이 항목 "안"의 실제 쉼 하나 - 세 번째 대안을 지어내는 대신, 그 쉼을
+// 기준으로 앞/뒤 중 한쪽만 살리는 것과 전부 살리는 것(= Enter와 동일) 두세 개만 보여준다.
+// split_wi가 없으면(대부분의 한 단어짜리 필러 등) 아무 버튼도 없다 - 없는 대안을 꾸며내지 않는다.
+function renderPopAlts(n) {
+  const box = $('#popAlts'); box.innerHTML = '';
+  const sp = n?.review?.split_wi;
+  if (sp == null) { box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  const mk = (key, label, title, fn) => {
+    const b = document.createElement('button');
+    b.innerHTML = `<kbd>${key}</kbd> ${esc(label)}`; if (title) b.title = title;
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+    box.appendChild(b);
+  };
+  mk('1', '앞만 살림', '이 구간의 앞부분만 복원하고 뒷부분은 계속 삭제', () => applyAltRestore(n, 'front'));
+  mk('2', '전부 살림', 'Enter와 동일', () => applySel('keep'));
+  mk('3', '뒤만 살림', '이 구간의 뒷부분만 복원하고 앞부분은 계속 삭제', () => applyAltRestore(n, 'back'));
+}
+async function applyAltRestore(n, which) {
+  const sp = n?.review?.split_wi; if (sp == null) return;
+  const a = which === 'front' ? n.wi_start : sp + 1;
+  const b = which === 'front' ? sp : n.wi_end - 1;
+  if (a > b) return;
+  const wa = S.words[a], wb = S.words[b];
+  clearSel();
+  if (!(await decide({ type: 'range', op: 'keep', start: wa.s + S.pad_sec, end: wb.e - S.pad_sec, wi_start: a, wi_end: b }))) return;
+  toast(which === 'front' ? '앞부분만 살림' : '뒷부분만 살림');
+}
 // The one place both the sidebar card's buttons and the keyboard shortcuts (⇧↵/S) route a
 // 건너뛰기/검토 완료 decision through - takes a {kind, ref} match directly, no selection needed.
 // Returns decide()'s result (falsy on failure) so callers can skip their own success toast.
@@ -1468,7 +1532,7 @@ $('#zoomApplyKeep').addEventListener('click', async () => {
 // the count here is the same one the sidebar and the 확정 dialog show (L3).
 function pendingList() {
   const out = [];
-  for (const n of reviewNgItems()) if (ngStatus(n) === 'pending') out.push([n.wi_start, n.wi_end - 1]);
+  for (const n of judgeNgItems()) if (ngStatus(n) === 'pending') out.push([n.wi_start, n.wi_end - 1]);
   for (const b of reviewBlocks()) if (blockStatus(b) === 'pending') out.push([b.wi_start, b.wi_end]);
   return out.map(([wa, wb]) => ({ a: findTokIndex(wa), b: findTokIndex(wb), start: S.words[wa].s }))
     .filter((p) => p.a >= 0 && p.b >= 0).sort((x, y) => x.start - y.start);
@@ -1560,25 +1624,38 @@ $('#btnStop').addEventListener('click', () => { logAction('stop', { at: round3(v
 // 사용자가 도중에 정지/다른 재생을 하면(stop()이 reel을 null로 비움) 릴은 그 자리에서 멈추고
 // 다음 구간으로 건너뛰지 않는다.
 let reel = null;
-function reelPoints() {
+// filterRefs: optional Set of cut_spans ref strings ("ng:<i>") - used by the 빠른 확인 릴
+// (docs/기획/05-검토-화면.md 4.3절) to play only the quick-layer seams instead of every cut.
+function reelPoints(filterRefs) {
   return (S.cut_spans || [])
+    .filter((s) => !filterRefs || s.refs.some((r) => filterRefs.has(r)))
     .slice().sort((a, b) => a.start - b.start)
     .map((s) => ({ start: Math.max(0, s.start - 1.5), end: Math.min(S.duration, s.end + 1.5), cutStart: s.start, cutEnd: s.end }));
 }
-function playReel() {
-  const points = reelPoints();
-  if (!points.length) { toast('훑어 들을 자동 컷이 없습니다'); return; }
-  logAction('reel_start', { n: points.length });
-  reel = { points, idx: -1 };
+function playReel(filterRefs, label) {
+  const points = reelPoints(filterRefs);
+  if (!points.length) { toast('훑어 들을 구간이 없습니다'); return; }
+  logAction('reel_start', { n: points.length, label: label || 'all' });
+  reel = { points, idx: -1, label: label || '이음새 릴' };
   reelStep();
+}
+// docs/기획/05-검토-화면.md 4.3절: 빠른 확인 층(두 평가 모두 통과 + 한 번도 복원한 적 없는 유형)의
+// 이음새만 이어서 훑는다 - 거슬리는 곳에서 Enter를 누르면 멈춘다(이음새 릴과 동일한 정지 로직).
+function playQuickReel() {
+  const refs = new Set(quickNgItems().map((n) => `ng:${n.i}`));
+  playReel(refs, '빠른 확인 릴');
 }
 function reelStep() {
   if (!reel) return;
   reel.idx++;
-  if (reel.idx >= reel.points.length) { const n = reel.points.length; reel = null; stop(); toast(`이음새 릴 완료 (${n}곳)`); return; }
+  if (reel.idx >= reel.points.length) { const n = reel.points.length; const label = reel.label; reel = null; stop(); toast(`${label} 완료 (${n}곳)`); return; }
   const p = reel.points[reel.idx];
-  $('#playInfo').textContent = `이음새 릴 ${reel.idx + 1}/${reel.points.length}`;
+  // playRange() itself sets #playInfo to a generic "컷 결과대로 재생" the moment it starts - set
+  // the reel's own "N/M" label AFTER that call (not before, pre-existing order bug: 두 줄의
+  // 순서가 바뀌어 있으면 이 줄이 항상 playRange에 덮어써져 릴 중에도 일반 재생 문구만 보였다),
+  // so the reel's progress is what's actually visible while it plays.
   playRange(p.start, p.end, { skip: true, onEnd: reelStep });
+  $('#playInfo').textContent = `${reel.label} ${reel.idx + 1}/${reel.points.length}`;
 }
 function stopReel() {
   if (!reel) return;
@@ -1586,7 +1663,8 @@ function stopReel() {
   reel = null;
   stop();
 }
-$('#btnReel').addEventListener('click', () => { if (reel) stopReel(); else playReel(); });
+$('#btnReel').addEventListener('click', () => { if (reel) stopReel(); else playReel(null, '이음새 릴'); });
+$('#btnQuickReel').addEventListener('click', () => { if (reel) stopReel(); else playQuickReel(); });
 // Dedicated transport under the video instead of the native player's own controls, which sit
 // above the fold and need scrolling back up to reach while reading further down the
 // transcript. Space is the same toggle: play from the cursor (wherever was last clicked/
@@ -1659,9 +1737,30 @@ $('#pauseHead').addEventListener('click', () => {
 // render as kept-for-now (see wordClass) and live here instead. 2026-10-01: this panel no
 // longer feeds a per-user personalized default into the next video (removed - see server.py
 // "(removed) personalization", docs/채택하지-않은-것.md) - resolving an item here only affects
-// this video.
+// this video. Structurally repeated patterns instead feed structural_suspects.json (기획/04
+// 3장) for developer review - never read back to auto-decide anything.
 const CASE_KO = { A: '정정 재시작', B: '재진술', C: '강조 반복', D: '정상 나열', E: '조사·어미 수정', F: '미완성 전환', OTHER: '기타', FILLER: '필러' };
 function ngTypeLabel(n) { return CASE_KO[n.clf?.case] || '검토 필요'; }
+// docs/기획/03-두-관점-평가.md 5장 / 05-검토-화면.md 3장: PD·시청자 배지. n.review는 server.py의
+// Session._review_meta가 route_reason을 파싱해 계산한 것 - 전체 루프(global_review.py)가 아예 안
+// 돌았으면 n.review.pd가 null이고, 그때는 배지 자체를 안 보여준다(평가 안 한 것과 "통과"는 다르다).
+function renderBadges(n) {
+  const rv = n.review;
+  if (!rv || !rv.pd) return null;
+  const box = document.createElement('div'); box.className = 'rc-badges';
+  const add = (cls, label, reason) => {
+    const b = document.createElement('span'); b.className = `badge ${cls}`; b.textContent = label;
+    if (reason) { b.title = reason; b.addEventListener('click', (e) => { e.stopPropagation(); toast(reason); }); }
+    box.appendChild(b);
+  };
+  if (rv.pd.status === 'warn' && rv.viewer.length) add('clash', '두 관점 엇갈림');
+  if (rv.pd.status === 'warn') add('warn', 'PD ⚠ 정보 누락', rv.pd.reason);
+  else if (rv.pd.status === 'new') add('warn', 'PD ⚠ 추가 발견', rv.pd.reason);
+  else add('ok', 'PD ✓');
+  if (rv.viewer.length) rv.viewer.forEach((v) => add('warn', `시청자 ⚠ ${v.label}`, v.reason));
+  else add('ok', '시청자 ✓');
+  return box;
+}
 function ngStatus(n) {
   const dec = S.decisions.ng[String(n.i)] || {};
   // 'skipped' is a tag on top of whatever action currently applies, not a third action - a
@@ -1684,6 +1783,12 @@ function blockStatus(b) {
 }
 const STATUS_KO = { pending: '○ 삭제됨 · 검토 대기', done_cut: '✓ 삭제로 확정', done_keep: '✓ 살리기로 확정', skipped: '— 건너뜀', pattern: '✓ 패턴 적용됨' };
 function reviewNgItems() { return (S.ng || []).filter((n) => n.route === 'REVIEW'); }
+// docs/기획/05-검토-화면.md 2장: 두 층. "빠른 확인" 자격은 서버가 이미 계산해 n.review.layer로
+// 내려준다(PD·시청자 둘 다 통과 + 정보손실 major 아님 + 신뢰도 충분 + 판정 안 엇갈림, 전체 루프가
+// 아직 안 돌았으면 무조건 판단 필요 쪽 - server.py Session._review_meta 참고). 발화 블록은 그
+// 평가 대상이 아니라서 항상 판단 필요 쪽에 그대로 둔다.
+function judgeNgItems() { return reviewNgItems().filter((n) => (n.review?.layer ?? 'judge') === 'judge'); }
+function quickNgItems() { return reviewNgItems().filter((n) => n.review?.layer === 'quick'); }
 function reviewBlocks() { return S.blocks || []; }
 // Clicking a review card's body highlights the words it's about in the transcript, the same
 // blue background a manual text selection gets (.tok.sel), and opens the work panel (#pop) for
@@ -1710,8 +1815,12 @@ function reviewCard(typeLabel, status, text, [wa, wb], kind, ref, onOpen) {
   const head = document.createElement('div'); head.className = 'rc-head';
   head.innerHTML = `<span class="rc-type">${esc(typeLabel)}</span><span class="rc-status">${STATUS_KO[status]}</span>`;
   card.appendChild(head);
+  if (kind === 'ng') {
+    const badges = renderBadges(ref);
+    if (badges) card.appendChild(badges);
+  }
   const t = document.createElement('div'); t.className = 'rc-text'; t.textContent = text; card.appendChild(t);
-  // 건너뛰기/검토 완료: every decision this card can make, right here - none of them need an
+  // 건너뛰기/검토 완료: every decision this card can make, right here - neither needs an
   // exact-range reselect in the popup. Both only apply before a decision exists (pending/skipped).
   const actions = document.createElement('div'); actions.className = 'rc-actions';
   if (status === 'pending') {
@@ -1763,38 +1872,69 @@ function makeBlockCard(b) {
     `${b.preview || `발화 블록 (${b.lines.length}줄)`} · ${fmtDur(b.proposed_delete_sec || 0)} 삭제 제안`, [b.wi_start, b.wi_end],
     'block', b, () => selectWordRange(b.wi_start, b.wi_end));
 }
+// docs/기획/05-검토-화면.md 2.2절 정렬: 판단 필요 층 안에서는 tier(server.py가 계산 - 두 관점
+// 모두 지적 > 정보 손실 major > 판정 엇갈림 > 저신뢰도 자동삭제 > 그 외) 오름차순, 같은 tier면
+// 영상 시간순 - 사용자가 영상 흐름을 따라가며 볼 수 있도록.
+function sortByTier(items) {
+  return items.slice().sort((a, b) => (a.review?.tier ?? 5) - (b.review?.tier ?? 5) || a.start - b.start);
+}
 function renderReviewPanel() {
-  const ngItems = reviewNgItems(), blocks = reviewBlocks();
-  const total = ngItems.length + blocks.length;
+  const blocks = reviewBlocks();
+  const judgeNg = judgeNgItems(), quickNg = quickNgItems();
+  const total = judgeNg.length + blocks.length;
   // Anything not 'pending' already reads as resolved-for-now everywhere else (STATUS_KO,
   // the grey st-skipped/st-done_* card treatment, the N/M 완료 count) - the drawer just gives
   // that same group a place to live instead of sitting inline among what's still open.
-  const doneNg = ngItems.filter((n) => ngStatus(n) !== 'pending');
+  const doneNg = judgeNg.filter((n) => ngStatus(n) !== 'pending');
   const doneBlocks = blocks.filter((b) => blockStatus(b) !== 'pending');
-  const activeNg = ngItems.filter((n) => ngStatus(n) === 'pending');
+  const activeNg = sortByTier(judgeNg.filter((n) => ngStatus(n) === 'pending'));
   const activeBlocks = blocks.filter((b) => blockStatus(b) === 'pending');
   const done = doneNg.length + doneBlocks.length;
   $('#reviewCount').textContent = total ? `· ${total}` : '';
   $('#reviewProgress').textContent = total ? `${done}/${total} 완료` : '';
   const panel = $('#reviewPanel'); panel.innerHTML = '';
-  if (!total) { panel.innerHTML = '<div class="empty-hint">검토할 항목이 없습니다</div>'; renderScrollTicks(); return; }
-  if (done) {
-    const drawer = document.createElement('div'); drawer.id = 'reviewDoneDrawer';
-    const head = document.createElement('button');
-    head.id = 'reviewDoneHead'; head.setAttribute('aria-expanded', String(reviewDoneOpen));
-    head.innerHTML = `<span>✓ 검토 완료<span class="n">${done}건</span></span><span class="chev">▸</span>`;
-    head.addEventListener('click', () => { reviewDoneOpen = !reviewDoneOpen; renderReviewPanel(); });
-    drawer.appendChild(head);
-    const body = document.createElement('div');
-    body.id = 'reviewDoneBody'; body.className = reviewDoneOpen ? 'open' : '';
-    doneNg.forEach((n) => body.appendChild(makeReviewCard(n)));
-    doneBlocks.forEach((b) => body.appendChild(makeBlockCard(b)));
-    drawer.appendChild(body);
-    panel.appendChild(drawer);
+  if (!total) { panel.innerHTML = '<div class="empty-hint">판단이 필요한 항목이 없습니다</div>'; }
+  else {
+    if (done) {
+      const drawer = document.createElement('div'); drawer.id = 'reviewDoneDrawer';
+      const head = document.createElement('button');
+      head.id = 'reviewDoneHead'; head.setAttribute('aria-expanded', String(reviewDoneOpen));
+      head.innerHTML = `<span>✓ 검토 완료<span class="n">${done}건</span></span><span class="chev">▸</span>`;
+      head.addEventListener('click', () => { reviewDoneOpen = !reviewDoneOpen; renderReviewPanel(); });
+      drawer.appendChild(head);
+      const body = document.createElement('div');
+      body.id = 'reviewDoneBody'; body.className = reviewDoneOpen ? 'open' : '';
+      doneNg.forEach((n) => body.appendChild(makeReviewCard(n)));
+      doneBlocks.forEach((b) => body.appendChild(makeBlockCard(b)));
+      drawer.appendChild(body);
+      panel.appendChild(drawer);
+    }
+    activeNg.forEach((n) => panel.appendChild(makeReviewCard(n)));
+    activeBlocks.forEach((b) => panel.appendChild(makeBlockCard(b)));
   }
-  activeNg.forEach((n) => panel.appendChild(makeReviewCard(n)));
-  activeBlocks.forEach((b) => panel.appendChild(makeBlockCard(b)));
+  renderQuickPanel(quickNg);
   renderScrollTicks();
+}
+// docs/기획/05-검토-화면.md 2장: 빠른 확인 층 - flag는 있지만 두 평가 모두 통과한 항목. 카드를
+// 하나씩 보는 게 아니라 릴(playQuickReel)로 훑어 듣는 게 기본 동선이라 개별 카드는 기본 접어
+// 둔다(판단 필요 쪽의 "검토 완료" 서랍과 같은 패턴) - 감사하고 싶을 때만 펼친다.
+let quickOpen = false;
+function renderQuickPanel(quickNg) {
+  const section = $('#quickSection'); const panel = $('#quickPanel');
+  $('#quickCount').textContent = quickNg.length ? `· ${quickNg.length}` : '';
+  $('#btnQuickReel').disabled = !quickNg.length;
+  panel.innerHTML = '';
+  if (!quickNg.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  const head = document.createElement('button');
+  head.id = 'reviewDoneHead'; head.setAttribute('aria-expanded', String(quickOpen));
+  head.innerHTML = `<span>카드로 보기<span class="n">${quickNg.length}건</span></span><span class="chev">▸</span>`;
+  head.addEventListener('click', () => { quickOpen = !quickOpen; renderReviewPanel(); });
+  panel.appendChild(head);
+  const body = document.createElement('div');
+  body.id = 'reviewDoneBody'; body.className = quickOpen ? 'open' : '';
+  sortByTier(quickNg).forEach((n) => body.appendChild(makeReviewCard(n)));
+  panel.appendChild(body);
 }
 
 // ------------------------------------------------------------------ stats / confirm
@@ -1861,7 +2001,7 @@ $('#btnConfirm').addEventListener('click', async () => {
         <div style="margin:10px 0;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);font-size:13px;line-height:1.75">
           <div>이번 영상 &nbsp;${fmtDur(rc.raw_sec)} → ${fmtDur(rc.result_sec)} (잘라낸 ${fmtDur(rc.raw_sec - rc.result_sec)})</div>
           <div>자동 처리 &nbsp;컷 ${totalCuts}건 (NG ${rc.cuts_ng} · 쉼 ${rc.cuts_pause} · 대화블록 ${rc.cuts_block} · 수동 ${rc.cuts_manual})</div>
-          <div>내 결정 &nbsp;복원 ${rc.restored} / 검토 ${rc.flagged}건</div>
+          <div>내 결정 &nbsp;복원 ${rc.judge_restored ?? rc.restored} / 판단 필요 ${rc.judge_flagged ?? rc.flagged}건${rc.quick_total ? ` · 빠른 확인 ${rc.quick_total}건 통과` : ''}</div>
           <div>검토 시간 &nbsp;${reviewLine}</div>
           <div>안전 &nbsp;신고된 오삭제 누적 <strong>${rc.reported_bad_cuts}건</strong></div>
         </div>`;
@@ -1923,7 +2063,7 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); $('#btnUndo').click(); return; }
   if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); return nextPending(); }
   if (e.key === ' ') { e.preventDefault(); return togglePlay(); }  // global: play/pause from cursor, selection or not
-  if (e.key === 'r' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); return reel ? stopReel() : playReel(); }
+  if (e.key === 'r' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); return reel ? stopReel() : playReel(null, '이음새 릴'); }
   // 이음새 릴 재생 중 거슬리는 곳에서 Enter: 릴은 멈추고(다음 구간으로 안 넘어감) 그 자리에서
   // 들을 수 있게 남겨 둔다 - 모든 cut_spans 항목이 리뷰 카드로 열 수 있는 ng/block과 깔끔하게
   // 대응하진 않아(수동 병합·쉼 트림 등) 카드까지 자동으로 열지는 않는다.
@@ -1938,6 +2078,15 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     if (e.key === 'Enter') { e.preventDefault(); return toggleSel(); }  // the one shortcut for both 삭제/살리기 - see popToggle
+    // docs/기획/05-검토-화면.md 4.2절 번호 키 - 이 항목에 실제 내부 쉼(split_wi)이 있을 때만
+    // 반응한다(renderPopAlts와 같은 조건) - 없으면 숫자 키는 그냥 아무 일도 안 한다.
+    if (['1', '2', '3'].includes(e.key) && selReviewMatch?.kind === 'ng' && selReviewMatch.ref.review?.split_wi != null) {
+      e.preventDefault();
+      if (e.key === '1') applyAltRestore(selReviewMatch.ref, 'front');
+      else if (e.key === '2') applySel('keep');
+      else applyAltRestore(selReviewMatch.ref, 'back');
+      return;
+    }
     if (e.key === 'x') { e.preventDefault(); return playSelJoin(); }
     if (e.key === 'z') { e.preventDefault(); return openZoom(); }
     if (e.key === 's' && matchStatus(selReviewMatch) === 'pending') { e.preventDefault(); return applySkip(); }
