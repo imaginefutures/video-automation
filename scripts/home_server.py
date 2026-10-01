@@ -22,6 +22,7 @@ import getpass
 import json
 import mimetypes
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -458,14 +459,34 @@ def git_current() -> dict:
     return {"sha": sha, "subject": subject}
 
 
-def git_recent_log(limit: int = 20) -> list[dict]:
-    r = _run_git(["log", f"-{limit}", "--pretty=format:%h|%ad|%an|%s", "--date=short"])
-    out = []
-    for line in r.stdout.splitlines():
-        parts = line.split("|", 3)
-        if len(parts) == 4:
-            out.append({"sha": parts[0], "date": parts[1], "author": parts[2], "subject": parts[3]})
-    return out
+CHANGELOG_VERSION_RE = re.compile(r"^##\s+(\S+)(?:\s+—\s+(\S+))?")
+
+
+def read_changelog(limit: int = 20) -> list[dict]:
+    """`CHANGELOG.md`를 "업데이트 이력"용으로 파싱한다 - `## <버전> — <날짜>` 제목 아래
+    `- ` 불릿들을 그 버전 항목으로 묶는다. 원래는 raw `git log`를 보여줬는데(커밋 메시지가
+    너무 기술적이라 읽기 불편), 배포할 때마다 이 파일에 사람이 읽을 요약을 직접 적어 넣는
+    방식으로 바꿨다(SKILL.md "설치와 업데이트" 참고) - 파일이 없거나 형식이 안 맞으면
+    빈 목록만 돌려주고 에러는 안 낸다(업데이트 이력은 부가 정보라 실패해도 나머지 화면은
+    정상 동작해야 함)."""
+    path = PROJECT_ROOT / "CHANGELOG.md"
+    if not path.exists():
+        return []
+    versions: list[dict] = []
+    current: dict | None = None
+    for line in path.read_text().splitlines():
+        m = CHANGELOG_VERSION_RE.match(line)
+        if m:
+            if current:
+                versions.append(current)
+            current = {"version": m.group(1), "date": m.group(2) or "", "items": []}
+            continue
+        stripped = line.strip()
+        if current and stripped.startswith("- "):
+            current["items"].append(stripped[2:])
+    if current:
+        versions.append(current)
+    return versions[:limit]
 
 
 def _update_refresh_loop() -> None:
@@ -535,10 +556,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(update_status())
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
-        if path == "/api/update/log":
+        if path == "/api/update/changelog":
             q = parse_qs(urlsplit(self.path).query)
             limit = int((q.get("limit") or ["20"])[0])
-            return self._json({"commits": git_recent_log(limit)})
+            return self._json({"versions": read_changelog(limit)})
         if path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()

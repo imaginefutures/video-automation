@@ -49,21 +49,24 @@
     min-width: 420px; max-width: 640px; max-height: 80vh; overflow-y: auto; line-height: 1.6;
     box-shadow: 0 24px 60px -14px rgba(0,0,0,0.25); }
   #modal .box .drag-handle { height: 12px; margin: -8px -12px 10px; cursor: move; user-select: none; }
-  #modal .box h2 { margin: 0 0 4px; font-size: 16px; }
-  #modal .box p.note { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
-  #modal .box button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 13px; }
-  #modal .box button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  #modal .box button:disabled { opacity: 0.5; cursor: default; }
-  #modal .field { margin-bottom: 14px; }
-  #modal .field-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
-  #modal .field-label { font-size: 13px; font-weight: 600; }
-  #modal .field-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--r-full); }
-  #modal .field-chip.ok { background: var(--accent-soft); color: var(--accent-strong); }
-  #modal .field-chip.missing { background: var(--warn-soft); color: var(--warn); }
-  #modal .field input[type=text], #modal .field input[type=password] { width: 100%; padding: 7px 10px; border-radius: 8px;
+  #modal .box h2, #setupGate h2 { margin: 0 0 4px; font-size: 16px; }
+  #modal .box p.note, #setupGate p.note { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
+  #modal .box button, #setupGate button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 13px; }
+  #modal .box button.primary, #setupGate button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #modal .box button:disabled, #setupGate button:disabled { opacity: 0.5; cursor: default; }
+  #modal .field, #setupGate .field { margin-bottom: 14px; }
+  #modal .field-top, #setupGate .field-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  #modal .field-label, #setupGate .field-label { font-size: 13px; font-weight: 600; }
+  #modal .field-chip, #setupGate .field-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--r-full); }
+  #modal .field-chip.ok, #setupGate .field-chip.ok { background: var(--accent-soft); color: var(--accent-strong); }
+  #modal .field-chip.missing, #setupGate .field-chip.missing { background: var(--warn-soft); color: var(--warn); }
+  #modal .field input[type=text], #modal .field input[type=password],
+  #setupGate .field input[type=text], #setupGate .field input[type=password] { width: 100%; padding: 7px 10px; border-radius: 8px;
     border: 1px solid var(--line); font: inherit; font-size: 13px; box-sizing: border-box; }
-  #modal .field a { font-size: 11.5px; color: var(--accent); }
-  #modal .row-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  #modal .field a, #setupGate .field a { font-size: 11.5px; color: var(--accent); }
+  #modal .row-line, #setupGate .row-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  #setupGate { max-width: 460px; margin: 60px auto; }
+  #setupGate h1 { font-size: 20px; margin: 0 0 8px; }
   #modal .commit-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
   #modal .commit-row { display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
   #modal .commit-row .sha { font-family: var(--mono); color: var(--muted); flex-shrink: 0; }
@@ -129,23 +132,31 @@
 </head>
 <body>
 <div id="page">
-  <header>
-    <h1>video-cut</h1>
-    <span class="sub" id="rootPath"></span>
-    <div class="toolbar">
-      <button id="btnSettings">환경설정</button>
-      <button id="btnNewVideo" class="primary">+ 새 영상</button>
-    </div>
-  </header>
-  <div id="updateBanner">
-    <span id="updateBannerText"></span>
-    <div class="actions">
-      <button id="btnUpdateHistory">이력 보기</button>
-      <button id="btnUpdateNow">지금 업데이트</button>
-    </div>
+  <div id="setupGate" style="display:none">
+    <h1>video-cut 시작하기</h1>
+    <p class="note">컷편집 파이프라인을 돌리려면 API 키와 ffmpeg가 필요합니다 - 아래를 먼저 채워주세요</p>
+    <div id="setupGateBox"></div>
+    <p id="setupGateExisting" class="note" style="display:none"></p>
   </div>
-  <div id="list"></div>
-  <div id="empty" style="display:none"></div>
+  <div id="mainView" style="display:none">
+    <header>
+      <h1>video-cut</h1>
+      <span class="sub" id="rootPath"></span>
+      <div class="toolbar">
+        <button id="btnSettings">환경설정</button>
+        <button id="btnNewVideo" class="primary">+ 새 영상</button>
+      </div>
+    </header>
+    <div id="updateBanner">
+      <span id="updateBannerText"></span>
+      <div class="actions">
+        <button id="btnUpdateHistory">이력 보기</button>
+        <button id="btnUpdateNow">지금 업데이트</button>
+      </div>
+    </div>
+    <div id="list"></div>
+    <div id="empty" style="display:none"></div>
+  </div>
 </div>
 
 <div id="modal"><div class="box" id="modalPanel" role="dialog" aria-modal="true"><div class="drag-handle"></div><div id="modalBox"></div></div></div>
@@ -339,7 +350,10 @@ document.addEventListener('keydown', (ev) => {
 });
 
 // --------------------------------------------------------------------------- 설정 (API 키·ffmpeg)
-function renderSetupModal(data) {
+// 설정 UI는 두 곳에서 쓴다: 평소엔 "환경설정" 모달, 설정이 하나라도 빠졌을 땐 첫 화면을
+// 통째로 차지하는 설정 게이트(아래 섹션). 필드 마크업(setupBodyHtml)과 저장/설치 로직을
+// 공유하고, 보여줄 그릇(모달 vs 게이트 박스)과 성공 후 동작만 다르게 간다.
+function setupBodyHtml(data) {
   const keyRows = data.keys.map((k) => `
     <div class="field">
       <div class="field-top">
@@ -355,37 +369,48 @@ function renderSetupModal(data) {
     : data.brew
       ? `<div class="row-line"><span>ffmpeg/ffprobe</span><button id="btnInstallFfmpeg">설치</button></div>`
       : `<div class="row-line"><span>ffmpeg/ffprobe 없음 - <a href="https://brew.sh" target="_blank" rel="noopener">Homebrew</a> 설치 후 다시 열어주세요</span></div>`;
+  return keyRows + ffmpegRow + '<div id="ffmpegInstallProgress"></div>';
+}
+function isSetupComplete(data) { return data.keys.every((k) => k.set) && data.ffmpeg && data.ffprobe; }
+function wireSetupButtons(data, onSave) {
+  if (!(data.ffmpeg && data.ffprobe) && data.brew) $('#btnInstallFfmpeg').addEventListener('click', startFfmpegInstall);
+  onSave && $('#btnSaveKeys')?.addEventListener('click', onSave);
+}
+
+function renderSetupModal(data) {
   showModal(`<h2>환경설정</h2>
     <p class="note">API 키와 ffmpeg는 컷편집 파이프라인을 돌리는 데 필요합니다</p>
-    ${keyRows}
-    ${ffmpegRow}
-    <div id="ffmpegInstallProgress"></div>
+    ${setupBodyHtml(data)}
     <div style="display:flex;gap:8px;margin-top:16px">
       <button id="modalNo">닫기</button>
       <button id="btnSaveKeys" class="primary">저장</button>
     </div>`);
-  if (!ffmpegOk && data.brew) {
-    $('#btnInstallFfmpeg').addEventListener('click', startFfmpegInstall);
-  }
+  wireSetupButtons(data, saveApiKeysFromModal);
   $('#modalNo').addEventListener('click', hideModal);
-  $('#btnSaveKeys').addEventListener('click', saveApiKeys);
 }
 async function openSettingsModal() {
   showModal('<p>불러오는 중…</p>');
-  const data = await (await fetch('/api/setup')).json();
-  renderSetupModal(data);
+  renderSetupModal(await (await fetch('/api/setup')).json());
 }
-async function saveApiKeys() {
+async function saveKeysCommon() {
   const pairs = {};
-  $$('#modalBox input[data-key]').forEach((inp) => { if (inp.value.trim()) pairs[inp.dataset.key] = inp.value.trim(); });
-  if (!Object.keys(pairs).length) { toast('입력된 값이 없습니다'); return; }
+  $$('input[data-key]').forEach((inp) => { if (inp.value.trim()) pairs[inp.dataset.key] = inp.value.trim(); });
+  if (!Object.keys(pairs).length) { toast('입력된 값이 없습니다'); return null; }
   const res = await fetch('/api/setup/keys', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pairs),
   });
   const data = await res.json();
-  if (!data.ok) { toast(data.error || '저장하지 못했습니다'); return; }
+  if (!data.ok) { toast(data.error || '저장하지 못했습니다'); return null; }
   toast('저장했습니다');
-  renderSetupModal(data);
+  return data;
+}
+async function saveApiKeysFromModal() {
+  const data = await saveKeysCommon();
+  if (data) renderSetupModal(data);
+}
+async function saveApiKeysFromGate() {
+  const data = await saveKeysCommon();
+  if (data) { renderSetupGate(data); if (isSetupComplete(data)) checkSetupGate(); }
 }
 async function startFfmpegInstall() {
   const res = await fetch('/api/setup/ffmpeg/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -400,10 +425,46 @@ async function pollFfmpegInstall() {
   catch (e) { setTimeout(pollFfmpegInstall, 1500); return; }
   if (st.running) { setTimeout(pollFfmpegInstall, 1500); return; }
   if (!st.done) return;  // 아직 시작 전
-  if (st.ok) { toast('ffmpeg 설치 완료'); openSettingsModal(); }
+  if (st.ok) { toast('ffmpeg 설치 완료'); refreshSetupView(); }
   else { toast('설치 실패: ' + (st.error || '')); }
 }
+async function refreshSetupView() {
+  const data = await (await fetch('/api/setup')).json();
+  if ($('#setupGate').style.display !== 'none') { renderSetupGate(data); if (isSetupComplete(data)) checkSetupGate(); }
+  else if ($('#modal').style.display === 'flex') renderSetupModal(data);
+}
 $('#btnSettings').addEventListener('click', openSettingsModal);
+
+// --------------------------------------------------------------------------- 설정 게이트 (최초 화면)
+// 키/ffmpeg 중 하나라도 안 끝났으면 프로젝트 목록 대신 이 화면만 보여준다 - "업로드 버튼이
+// 비활성화돼 있는데 왜인지 모르겠다"는 혼란보다, 처음부터 설정만 하도록 화면을 분리하는 쪽이
+// 이해하기 쉽다(사용자 요청, 10-01).
+function renderSetupGate(data) {
+  $('#setupGateBox').innerHTML = `
+    ${setupBodyHtml(data)}
+    <button id="btnSaveKeys" class="primary" style="width:100%;margin-top:6px">저장하고 계속</button>`;
+  wireSetupButtons(data, saveApiKeysFromGate);
+}
+async function checkSetupGate() {
+  let data;
+  try { data = await (await fetch('/api/setup')).json(); } catch (e) { return false; }
+  if (isSetupComplete(data)) {
+    $('#setupGate').style.display = 'none';
+    $('#mainView').style.display = 'block';
+    return true;
+  }
+  $('#mainView').style.display = 'none';
+  $('#setupGate').style.display = 'block';
+  renderSetupGate(data);
+  try {
+    const proj = await (await fetch('/api/projects')).json();
+    const n = (proj.projects || []).length;
+    const hint = $('#setupGateExisting');
+    if (n) { hint.textContent = `videos/ 폴더에 이미 ${n}개의 영상이 있습니다 - 설정을 마치면 바로 보입니다`; hint.style.display = 'block'; }
+    else hint.style.display = 'none';
+  } catch (e) { /* 부가 정보라 실패해도 게이트 자체는 정상 표시 */ }
+  return false;
+}
 
 // --------------------------------------------------------------------------------------- 업데이트
 function $$(s, r = document) { return Array.from(r.querySelectorAll(s)); }
@@ -416,11 +477,16 @@ async function checkUpdate() {
 }
 async function openUpdateHistory() {
   showModal('<p>불러오는 중…</p>');
-  const data = await (await fetch('/api/update/log?limit=30')).json();
-  const rows = (data.commits || []).map((c) => `
-    <div class="commit-row"><span class="sha">${esc(c.sha)}</span><span class="date">${esc(c.date)}</span><span>${esc(c.subject)}</span></div>`).join('');
+  const data = await (await fetch('/api/update/changelog?limit=30')).json();
+  const blocks = (data.versions || []).map((v) => `
+    <div style="margin-bottom:14px">
+      <div style="font-weight:700;font-size:13px">${esc(v.version)} <span style="font-weight:400;color:var(--muted);font-size:12px">${esc(v.date || '')}</span></div>
+      <ul style="margin:4px 0 0;padding-left:18px;font-size:12.5px">
+        ${v.items.map((it) => `<li>${esc(it)}</li>`).join('')}
+      </ul>
+    </div>`).join('');
   showModal(`<h2>업데이트 이력</h2>
-    <div class="commit-list">${rows || '<p class="note">이력이 없습니다</p>'}</div>
+    <div class="commit-list">${blocks || '<p class="note">이력이 없습니다</p>'}</div>
     <div style="margin-top:14px"><button id="modalNo">닫기</button></div>`);
   $('#modalNo').addEventListener('click', hideModal);
 }
@@ -437,8 +503,6 @@ async function runUpdate() {
 }
 $('#btnUpdateNow').addEventListener('click', runUpdate);
 $('#btnUpdateHistory').addEventListener('click', openUpdateHistory);
-checkUpdate();
-setInterval(checkUpdate, 60000);
 
 // --------------------------------------------------------------------------------- 영상 생성
 function renderNewVideoModal() {
@@ -497,8 +561,19 @@ function startUpload() {
 }
 $('#btnNewVideo').addEventListener('click', renderNewVideoModal);
 
-load();
-setInterval(load, 8000);  // 다른 세션이 같은 영상을 검토/확정 중일 수 있어 주기적으로 갱신
+// ------------------------------------------------------------------------------------ bootstrap
+// 설정(키·ffmpeg)이 하나라도 안 끝났으면 설정 게이트만 보여주고 대시보드는 아예 안 띄운다 -
+// 게이트 상태에서도 2초마다 재확인해서(다른 터미널/세션에서 .env를 직접 고쳤을 수도 있음)
+// 완료되는 순간 자동으로 대시보드로 넘어간다.
+async function boot() {
+  const ok = await checkSetupGate();
+  if (!ok) { setTimeout(boot, 2000); return; }
+  load();
+  setInterval(load, 8000);  // 다른 세션이 같은 영상을 검토/확정 중일 수 있어 주기적으로 갱신
+  checkUpdate();
+  setInterval(checkUpdate, 60000);
+}
+boot();
 
 // ------------------------------------------------------------------ help popup (corner, repeatable)
 $('#btnHelp').addEventListener('click', (ev) => {

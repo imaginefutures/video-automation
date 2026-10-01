@@ -362,7 +362,10 @@
     <div id="sidebarHead">
     <div class="pad">
       <div class="title-row">
-        <h1 id="title">video-cut</h1>
+        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+          <a href="http://127.0.0.1:8764/" class="icon-btn" title="프로젝트 홈으로" aria-label="프로젝트 홈으로" style="text-decoration:none">⌂</a>
+          <h1 id="title">video-cut</h1>
+        </div>
         <div class="history-row">
           <button id="btnUndo" class="icon-btn" title="되돌리기 (⌘Z)" aria-label="되돌리기">↺</button>
           <button id="btnRedo" class="icon-btn" title="다시 실행 (⌘⇧Z)" aria-label="다시 실행">↻</button>
@@ -528,12 +531,21 @@ function renderPipelineProgress(st) {
     document.body.appendChild(el);
   }
   const done = st.done || 0, total = st.total || 0;
+  const pct = total ? Math.round((done / total) * 100) : 0;
   const errBlock = st.state === 'error'
     ? `<p style="color:#f66;max-width:480px">오류: ${esc(st.error || '')}</p>` : '';
+  // total을 아직 모르는 초반(pipeline_status.json이 아직 없는 "처리 준비 중")엔 회전 스피너,
+  // 단계 수를 알게 된 뒤부터는 진행률 바로 바꾼다 - 몇 % 왔는지 한눈에 보이게.
+  const indicator = total
+    ? `<div style="width:260px;height:8px;border-radius:999px;background:#2b2e33;overflow:hidden">
+         <div style="width:${pct}%;height:100%;background:#7ab8ff;transition:width 300ms ease"></div>
+       </div>
+       <p style="margin:0;font-size:13px;color:#aaa">${pct}%</p>`
+    : `<div style="width:34px;height:34px;border:3px solid #3a3d42;border-top-color:#7ab8ff;border-radius:50%;
+                   animation:pipelineSpin 0.8s linear infinite"></div>`;
   el.innerHTML = `
     <style>@keyframes pipelineSpin{to{transform:rotate(360deg)}}</style>
-    <div style="width:34px;height:34px;border:3px solid #3a3d42;border-top-color:#7ab8ff;border-radius:50%;
-                animation:pipelineSpin 0.8s linear infinite"></div>
+    ${indicator}
     <p style="margin:0">${esc(st.stage || '처리 준비 중')}${total ? ` (${done}/${total})` : ''}</p>
     ${errBlock}
     <p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>`;
