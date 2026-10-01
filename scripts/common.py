@@ -114,8 +114,44 @@ def norm(text: str) -> str:
     return text.strip().rstrip(".,!?~…。，").lower()
 
 
+# 업데이트·마이그레이션 (docs/업데이트와-마이그레이션.md): edit/ 산출물마다 "지금 코드가 이
+# 파일을 쓰면 몇 버전이 되는가"를 기록해 둔다. 파일 안에 직접 못 넣는 이유는 ng.json처럼
+# 최상위가 list인 산출물이 있어서다(dict 전용 필드로는 못 끼워 넣음) - 그래서 edit/ 폴더
+# 옆에 .schema_versions.json 사이드카로 따로 둔다. 지금은 전부 1(이 체계를 도입하는 시점의
+# 기준선 - 아직 스키마가 바뀐 적은 없음). 스키마를 바꾸는 변경이 생기면 그 파일의 숫자만
+# 올리고 scripts/migrate.py의 MIGRATIONS에 변환 함수를 추가한다.
+SCHEMA_VERSIONS: dict[str, int] = {
+    "transcript.json": 1,
+    "prosody.json": 1,
+    "audio_map.json": 1,
+    "speaker_blocks.json": 1,
+    "ng_candidates.json": 1,
+    "regions.json": 1,
+    "ng_classified.json": 1,
+    "ng.json": 1,
+    "draft_cuts.json": 1,
+    "seams.json": 1,
+    "final_cuts.json": 1,
+    "global_review.json": 1,
+    "pauses.json": 1,
+    "decisions.json": 1,
+    "edl.json": 1,
+}
+
+
+def _stamp_schema_version(path: Path) -> None:
+    version = SCHEMA_VERSIONS.get(path.name)
+    if version is None:
+        return  # 이 체계가 모르는 파일(임시 산출물 등) - 건드리지 않음
+    manifest_path = path.parent / ".schema_versions.json"
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    manifest[path.name] = version
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
+
+
 def write_json(path: Path, data) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    _stamp_schema_version(path)
 
 
 # 점버전 모델(예: Opus 5.5, Fable 5.1)은 thinking.type.disabled를 거부하고 adaptive+effort만

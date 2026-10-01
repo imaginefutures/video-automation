@@ -50,6 +50,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from common import load_env, ensure_api_keys, video_dir, edit_dir  # noqa: E402
+import migrate  # noqa: E402
 
 
 def step(title: str, cmd: list[str]) -> None:
@@ -82,6 +83,8 @@ def main() -> None:
     load_env()
     folder = video_dir(args.folder)
     edit = edit_dir(folder)
+    for msg in migrate.migrate_project(folder):  # 업데이트 뒤 호환 안 되는 캐시만 조용히 정리
+        print(f"[migrate] {msg}")
     raw = folder / "raw.mp4"
     if not raw.exists():
         sys.exit(f"put the source video at {raw}")

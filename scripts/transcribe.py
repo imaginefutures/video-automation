@@ -16,7 +16,7 @@ from pathlib import Path
 
 import requests
 
-from common import load_env, video_dir, edit_dir, source_media
+from common import load_env, video_dir, edit_dir, source_media, write_json
 
 SCRIBE_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 
@@ -65,7 +65,7 @@ def transcribe(folder: Path, language: str | None = "kor", num_speakers: int | N
         extract_audio(media, wav)
         print(f"uploading to Scribe ({wav.stat().st_size / 1e6:.1f} MB)")
         payload = call_scribe(wav, api_key, language, num_speakers)
-    out.write_text(__import__("json").dumps(payload, ensure_ascii=False, indent=2))
+    write_json(out, payload)
     n_words = sum(1 for w in payload.get("words", []) if w.get("type") == "word")
     print(f"wrote {out} ({n_words} words)")
     return out

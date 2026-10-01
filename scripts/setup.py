@@ -28,6 +28,8 @@ from common import ensure_api_keys, load_env, PROJECT_ROOT, REQUIRED_API_KEYS
 import os
 from pathlib import Path
 
+import migrate
+
 FFMPEG_BINS = [
     ("ffmpeg", "brew install ffmpeg   # macOS. 다른 OS는 https://ffmpeg.org/download.html 참고"),
     ("ffprobe", "brew install ffmpeg   # ffmpeg에 포함돼 있어 따로 설치 안 해도 됨"),
@@ -75,6 +77,9 @@ def main() -> None:
         print("ffmpeg/ffprobe 확인됨")
 
     setup_videos_folder(project_dir)
+
+    for msg in migrate.migrate_global():  # 업데이트 뒤 ~/.video-cut/ 호환성 확인 (1회)
+        print(f"[migrate] {msg}")
 
 
 if __name__ == "__main__":
