@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>video-cut 프로젝트 홈</title>
+<style>
+  /* 색상 변수는 web/index.html의 것과 맞췄다(docs/현재-설계/design-system.md 참고 - 같은
+     Vercel풍 라이트 톤) - 검토 화면과 홈 화면이 다른 느낌으로 보이지 않게. */
+  :root {
+    --bg: #ffffff; --panel: #fafafa; --surface-2: #f5f5f5; --ink: #171717; --muted: #666666; --line: #ebebeb; --line-strong: #a1a1a1;
+    --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0066dd;
+    --warn: #ab570a; --warn-soft: #ffefcf;
+    --chip: rgba(0,0,0,0.045); --chip-hover: rgba(0,0,0,0.08);
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 9999px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, "Geist", "Inter", "Pretendard", "Apple SD Gothic Neo", sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; }
+  kbd { display: inline-block; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,0.06); font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  code { background: var(--surface-2); color: var(--ink); font-family: var(--mono); padding: 2px 6px; border-radius: 5px; font-size: 12px; }
+
+  #page { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+  header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  header .sub { font-size: 12.5px; color: var(--muted); }
+
+  #list { display: flex; flex-direction: column; gap: 10px; }
+  .card { display: block; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--r-lg); padding: 14px 18px; transition: border-color 120ms ease, box-shadow 120ms ease; }
+  .card.clickable:hover { border-color: var(--line-strong); box-shadow: 0 6px 18px -10px rgba(0,0,0,0.18); }
+  .card.clickable { cursor: pointer; }
+  .card.loading { opacity: 0.6; pointer-events: none; }
+  .card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .card-name { font-size: 15px; font-weight: 600; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: var(--r-full); white-space: nowrap; }
+  .badge.processing { background: var(--chip); color: var(--muted); }
+  .badge.reviewing { background: var(--warn-soft); color: var(--warn); }
+  .badge.confirmed { background: var(--accent-soft); color: var(--accent-strong); }
+  .card-meta { margin-top: 6px; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .card-meta .preview-chip { background: var(--chip); color: var(--ink); padding: 1px 8px; border-radius: var(--r-full); font-size: 11.5px; }
+  .card-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .card-hint code { font-size: 11.5px; }
+
+  #empty { color: var(--muted); font-size: 13.5px; padding: 30px 4px; }
+  #empty code { font-size: 12.5px; }
+
+  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); background: #171717; color: #ffffff;
+    padding: 9px 16px; border-radius: 9px; font-size: 13px; display: none; z-index: 30; }
+
+  /* ---------------------------------------------------------------- help popup (shortcuts) */
+  /* web/index.html의 #btnHelp/#helpPop과 같은 모양 - 검토 화면 단축키를 들어가기 전에
+     미리 보여준다(R7: "첫 진입 시 단축키 카드를 한 번 보여준다"). */
+  #btnHelp { position: fixed; z-index: 25; right: 20px; bottom: 20px; width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--bg); box-shadow: 0 6px 16px -4px rgba(0,0,0,0.18);
+    color: var(--muted); font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  #btnHelp:hover { border-color: var(--accent); color: var(--accent); }
+  #helpPop { position: fixed; z-index: 25; right: 20px; bottom: 64px; width: 320px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.22); padding: 16px 18px;
+    display: none; opacity: 0; transform: scale(0.92) translateY(6px);
+    transition: opacity 160ms cubic-bezier(.2,.8,.2,1), transform 220ms cubic-bezier(.2,.8,.2,1); }
+  #helpPop.show { display: block; opacity: 1; transform: scale(1) translateY(0); }
+  #helpPop h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+  #helpPop .note { font-size: 11.5px; color: var(--muted); margin-bottom: 10px; }
+  #helpPop .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: var(--ink); }
+  #helpPop .row span:first-child { color: var(--muted); }
+  #helpPop .dismiss { margin-top: 10px; width: 100%; padding: 7px 0; border-radius: var(--r-sm); border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); font-size: 12px; }
+
+  /* first-visit overlay variant: centered modal instead of the corner popup, so it can't be missed */
+  #welcomeOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none; align-items: center;
+    justify-content: center; z-index: 40; }
+  #welcomeOverlay.show { display: flex; }
+  #welcomeOverlay .box { width: 360px; background: var(--bg); border-radius: 16px; padding: 22px 24px;
+    box-shadow: 0 30px 70px -20px rgba(0,0,0,0.35); }
+  #welcomeOverlay h2 { margin: 0 0 6px; font-size: 16px; }
+  #welcomeOverlay .note { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+  #welcomeOverlay .row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; padding: 5px 0; }
+  #welcomeOverlay .row span:first-child { color: var(--muted); }
+  #welcomeOverlay .dismiss { margin-top: 14px; width: 100%; padding: 9px 0; border-radius: var(--r-full); border: none;
+    background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div id="page">
+  <header>
+    <h1>video-cut</h1>
+    <span class="sub" id="rootPath"></span>
+  </header>
+  <div id="list"></div>
+  <div id="empty" style="display:none"></div>
+</div>
+
+<button id="btnHelp" title="검토 화면 단축키" aria-label="검토 화면 단축키">?</button>
+<div id="helpPop" role="complementary" aria-label="검토 화면 단축키 도움말">
+  <h2>검토 화면 단축키</h2>
+  <div class="note">영상을 열면(이어서 검토) 이 키들로 움직입니다</div>
+  <div class="row"><span>다음 제안으로 이동</span><span><kbd>J</kbd></span></div>
+  <div class="row"><span>삭제/살리기 전환</span><span><kbd>↵</kbd></span></div>
+  <div class="row"><span>검토 완료 (지금 상태로 확정)</span><span><kbd>⇧↵</kbd></span></div>
+  <div class="row"><span>판단 보류 (건너뛰기)</span><span><kbd>S</kbd></span></div>
+  <div class="row"><span>재생 / 정지</span><span><kbd>Space</kbd></span></div>
+  <div class="row"><span>이음새 듣기</span><span><kbd>X</kbd></span></div>
+  <div class="row"><span>정밀 조정(파형) 열기</span><span><kbd>Z</kbd></span></div>
+  <div class="row"><span>이음새 릴 (확정 전 전수 점검)</span><span><kbd>R</kbd></span></div>
+  <div class="row"><span>되돌리기 / 다시 실행</span><span><kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd></span></div>
+</div>
+
+<div id="welcomeOverlay" role="dialog" aria-modal="true" aria-label="검토 화면 단축키 안내">
+  <div class="box">
+    <h2>다시 오셨네요</h2>
+    <div class="note">검토 화면에서 쓰는 단축키입니다 - 촬영 공백 뒤라면 다시 보고 가세요</div>
+    <div class="row"><span>다음 제안으로 이동</span><span><kbd>J</kbd></span></div>
+    <div class="row"><span>삭제/살리기 전환</span><span><kbd>↵</kbd></span></div>
+    <div class="row"><span>검토 완료</span><span><kbd>⇧↵</kbd></span></div>
+    <div class="row"><span>재생 / 정지</span><span><kbd>Space</kbd></span></div>
+    <div class="row"><span>이음새 듣기</span><span><kbd>X</kbd></span></div>
+    <button class="dismiss" id="welcomeDismiss">시작하기</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+let toastTimer = null;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = 'none'; }, 2600);
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fmtDuration(sec) {
+  if (sec == null) return null;
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  return m > 0 ? `${m}분 ${s}초` : `${s}초`;
+}
+
+function statusBadge(p) {
+  if (p.status === 'processing') return { cls: 'processing', text: '처리 중' };
+  if (p.status === 'reviewing') return { cls: 'reviewing', text: `검토 중 · ${p.pending}건 남음` };
+  return { cls: 'confirmed', text: '확정' };
+}
+
+function renderCard(p) {
+  const card = document.createElement(p.status === 'processing' ? 'div' : 'button');
+  card.className = 'card' + (p.status === 'processing' ? '' : ' clickable');
+  const badge = statusBadge(p);
+
+  const top = document.createElement('div'); top.className = 'card-top';
+  const name = document.createElement('span'); name.className = 'card-name'; name.textContent = p.name;
+  const b = document.createElement('span'); b.className = `badge ${badge.cls}`; b.textContent = badge.text;
+  top.appendChild(name); top.appendChild(b);
+  card.appendChild(top);
+
+  const meta = document.createElement('div'); meta.className = 'card-meta';
+  if (p.status === 'confirmed') {
+    meta.appendChild(Object.assign(document.createElement('span'), { textContent: `확정일 ${fmtDate(p.confirmed_at)}` }));
+    const rs = fmtDuration(p.review_sec);
+    if (rs) meta.appendChild(Object.assign(document.createElement('span'), { textContent: `검토 시간 ${rs}` }));
+  }
+  if (p.status === 'reviewing' && p.total) {
+    meta.appendChild(Object.assign(document.createElement('span'), { textContent: `검토 대상 ${p.total}건 중 ${p.pending}건 남음` }));
+  }
+  if (p.preview_ready) {
+    const chip = document.createElement('span'); chip.className = 'preview-chip'; chip.textContent = '미리보기 준비됨';
+    meta.appendChild(chip);
+  }
+  if (meta.childNodes.length) card.appendChild(meta);
+
+  if (p.status === 'processing') {
+    const hint = document.createElement('div'); hint.className = 'card-hint';
+    hint.innerHTML = `아직 처리 중입니다 - 터미널에서 <code>uv run python scripts/run.py videos/${p.name}</code> 실행 후 돌아오세요`;
+    card.appendChild(hint);
+  } else {
+    card.addEventListener('click', () => openReview(p.name, card));
+  }
+  return card;
+}
+
+async function openReview(name, card) {
+  card.classList.add('loading');
+  toast('검토 화면을 여는 중...');
+  try {
+    const res = await fetch('/api/open', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(data.error || '열지 못했습니다'); card.classList.remove('loading'); return; }
+    window.location.href = data.url;
+  } catch (e) {
+    toast('서버에 연결할 수 없습니다');
+    card.classList.remove('loading');
+  }
+}
+
+async function load() {
+  let data;
+  try {
+    data = await (await fetch('/api/projects')).json();
+  } catch (e) {
+    $('#empty').style.display = 'block';
+    $('#empty').textContent = '서버에 연결할 수 없습니다';
+    return;
+  }
+  const projects = data.projects || [];
+  const list = $('#list'); list.innerHTML = '';
+  if (!projects.length) {
+    $('#empty').style.display = 'block';
+    $('#empty').innerHTML = '아직 작업한 영상이 없습니다 - <code>videos/&lt;이름&gt;/raw.mp4</code>를 넣고 "videos/&lt;이름&gt; 컷편집 해줘"라고 요청하세요';
+    return;
+  }
+  $('#empty').style.display = 'none';
+  projects.forEach((p) => list.appendChild(renderCard(p)));
+}
+
+load();
+setInterval(load, 8000);  // 다른 세션이 같은 영상을 검토/확정 중일 수 있어 주기적으로 갱신
+
+// ------------------------------------------------------------------ help popup (corner, repeatable)
+$('#btnHelp').addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  $('#helpPop').classList.toggle('show');
+});
+document.addEventListener('click', (ev) => {
+  if (!$('#helpPop').classList.contains('show')) return;
+  if (ev.target.closest('#helpPop') || ev.target.closest('#btnHelp')) return;
+  $('#helpPop').classList.remove('show');
+});
+
+// ------------------------------------------------------------------ first-visit welcome (R7: 첫
+// 진입 시 단축키 카드를 한 번 보여준다) - localStorage는 브라우저 프로필별이라 "한 번"은 이
+// 브라우저 기준. video-cut-help-shown(검토 화면 쪽, web/index.html)과는 별도 키를 쓴다 - 홈
+// 화면과 검토 화면을 서로 다른 진입점으로 열 수도 있어서 하나로 묶지 않는다.
+(function maybeShowWelcome() {
+  let seen = false;
+  try { seen = !!localStorage.getItem('video-cut-home-welcome-shown'); } catch (e) { /* private mode 등 */ }
+  if (seen) return;
+  $('#welcomeOverlay').classList.add('show');
+  try { localStorage.setItem('video-cut-home-welcome-shown', '1'); } catch (e) { /* 저장 안 돼도 화면은 보여줬으니 그대로 둠 */ }
+})();
+$('#welcomeDismiss').addEventListener('click', () => $('#welcomeOverlay').classList.remove('show'));
+</script>
+</body>
+</html>
