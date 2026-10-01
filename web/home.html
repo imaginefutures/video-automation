@@ -23,9 +23,53 @@
   code { background: var(--surface-2); color: var(--ink); font-family: var(--mono); padding: 2px 6px; border-radius: 5px; font-size: 12px; }
 
   #page { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
   header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
-  header .sub { font-size: 12.5px; color: var(--muted); }
+  header .sub { font-size: 12.5px; color: var(--muted); margin-right: auto; margin-left: 10px; }
+  header .toolbar { display: flex; gap: 8px; }
+  header .toolbar button { padding: 6px 12px; border-radius: var(--r-full); border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); font-size: 12.5px; font-weight: 600; }
+  header .toolbar button:hover { border-color: var(--line-strong); }
+  header .toolbar button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  /* -------------------------------------------------------------------------- update banner */
+  #updateBanner { display: none; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--accent-soft); color: var(--accent-strong); border-radius: var(--r-md);
+    padding: 10px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+  #updateBanner.show { display: flex; }
+  #updateBanner .actions { display: flex; gap: 8px; flex-shrink: 0; }
+  #updateBanner button { padding: 5px 12px; border-radius: var(--r-full); border: 1px solid transparent;
+    background: #ffffff; color: var(--accent-strong); font-size: 12px; font-weight: 600; }
+
+  /* -------------------------------------------------------------------------------- modal */
+  /* web/index.html의 #modal/#modalPanel/#modalBox 포팅 - 설정·업데이트 이력·영상 생성이
+     이 모달 하나를 공유한다(동시에 하나만 열림, Esc로 닫힘). */
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 50; }
+  #modal .box { position: fixed; background: var(--bg); border: 1px solid var(--line); padding: 22px 26px; border-radius: 14px;
+    min-width: 420px; max-width: 640px; max-height: 80vh; overflow-y: auto; line-height: 1.6;
+    box-shadow: 0 24px 60px -14px rgba(0,0,0,0.25); }
+  #modal .box .drag-handle { height: 12px; margin: -8px -12px 10px; cursor: move; user-select: none; }
+  #modal .box h2 { margin: 0 0 4px; font-size: 16px; }
+  #modal .box p.note { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
+  #modal .box button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 13px; }
+  #modal .box button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #modal .box button:disabled { opacity: 0.5; cursor: default; }
+  #modal .field { margin-bottom: 14px; }
+  #modal .field-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  #modal .field-label { font-size: 13px; font-weight: 600; }
+  #modal .field-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--r-full); }
+  #modal .field-chip.ok { background: var(--accent-soft); color: var(--accent-strong); }
+  #modal .field-chip.missing { background: var(--warn-soft); color: var(--warn); }
+  #modal .field input[type=text], #modal .field input[type=password] { width: 100%; padding: 7px 10px; border-radius: 8px;
+    border: 1px solid var(--line); font: inherit; font-size: 13px; box-sizing: border-box; }
+  #modal .field a { font-size: 11.5px; color: var(--accent); }
+  #modal .row-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  #modal .commit-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
+  #modal .commit-row { display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  #modal .commit-row .sha { font-family: var(--mono); color: var(--muted); flex-shrink: 0; }
+  #modal .commit-row .date { color: var(--muted); flex-shrink: 0; }
+  #modal .progress-track { height: 6px; border-radius: var(--r-full); background: var(--surface-2); overflow: hidden; margin-top: 10px; }
+  #modal .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 160ms ease; }
 
   #list { display: flex; flex-direction: column; gap: 10px; }
   .card { display: block; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line);
@@ -88,10 +132,23 @@
   <header>
     <h1>video-cut</h1>
     <span class="sub" id="rootPath"></span>
+    <div class="toolbar">
+      <button id="btnSettings">환경설정</button>
+      <button id="btnNewVideo" class="primary">+ 새 영상</button>
+    </div>
   </header>
+  <div id="updateBanner">
+    <span id="updateBannerText"></span>
+    <div class="actions">
+      <button id="btnUpdateHistory">이력 보기</button>
+      <button id="btnUpdateNow">지금 업데이트</button>
+    </div>
+  </div>
   <div id="list"></div>
   <div id="empty" style="display:none"></div>
 </div>
+
+<div id="modal"><div class="box" id="modalPanel" role="dialog" aria-modal="true"><div class="drag-handle"></div><div id="modalBox"></div></div></div>
 
 <button id="btnHelp" title="검토 화면 단축키" aria-label="검토 화면 단축키">?</button>
 <div id="helpPop" role="complementary" aria-label="검토 화면 단축키 도움말">
@@ -147,6 +204,8 @@ function fmtDuration(sec) {
   return m > 0 ? `${m}분 ${s}초` : `${s}초`;
 }
 
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
 function statusBadge(p) {
   if (p.status === 'processing') return { cls: 'processing', text: '처리 중' };
   if (p.status === 'reviewing') return { cls: 'reviewing', text: `검토 중 · ${p.pending}건 남음` };
@@ -154,8 +213,11 @@ function statusBadge(p) {
 }
 
 function renderCard(p) {
-  const card = document.createElement(p.status === 'processing' ? 'div' : 'button');
-  card.className = 'card' + (p.status === 'processing' ? '' : ' clickable');
+  const clickable = p.status !== 'processing' || p.managed;  // 홈 화면에서 "영상 생성"으로
+    // 막 업로드돼 아직 ng.json이 없어도, 이 서버가 그 run.py를 띄워 관리 중(managed)이면
+    // 클릭해서 진행 화면으로 들어갈 수 있다 - CLI로 raw.mp4만 떨궈둔 레거시 케이스만 비활성
+  const card = document.createElement(clickable ? 'button' : 'div');
+  card.className = 'card' + (clickable ? ' clickable' : '');
   const badge = statusBadge(p);
 
   const top = document.createElement('div'); top.className = 'card-top';
@@ -181,11 +243,12 @@ function renderCard(p) {
 
   if (p.status === 'processing') {
     const hint = document.createElement('div'); hint.className = 'card-hint';
-    hint.innerHTML = `아직 처리 중입니다 - 터미널에서 <code>uv run python scripts/run.py videos/${p.name}</code> 실행 후 돌아오세요`;
+    hint.innerHTML = p.managed
+      ? '처리 중입니다 - 클릭하면 진행 상황을 볼 수 있어요'
+      : `아직 처리 중입니다 - 터미널에서 <code>uv run python scripts/run.py videos/${p.name}</code> 실행 후 돌아오세요`;
     card.appendChild(hint);
-  } else {
-    card.addEventListener('click', () => openReview(p.name, card));
   }
+  if (clickable) card.addEventListener('click', () => openReview(p.name, card));
   return card;
 }
 
@@ -225,6 +288,214 @@ async function load() {
   $('#empty').style.display = 'none';
   projects.forEach((p) => list.appendChild(renderCard(p)));
 }
+
+// ------------------------------------------------------------------------------------- modal
+// web/index.html의 #modal/showModal/hideModal/confirmModal/makeDraggable 포팅 - 설정·업데이트
+// 이력·영상 생성 세 가지가 이 모달 하나를 공유한다.
+function showModal(html) {
+  const modal = $('#modal');
+  if (modal.style.display !== 'flex') $('#modalPanel').style.cssText = '';
+  $('#modalBox').innerHTML = html;
+  const heading = $('#modalBox').querySelector('h2, p');
+  $('#modalPanel').setAttribute('aria-label', heading ? heading.textContent.trim().slice(0, 80) : '알림');
+  modal.style.display = 'flex';
+}
+function hideModal() { $('#modal').style.display = 'none'; }
+function confirmModal(message) {
+  return new Promise((resolve) => {
+    showModal(`<p>${esc(message)}</p>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button id="modalNo">취소</button>
+        <button id="modalYes" class="primary">확인</button>
+      </div>`);
+    $('#modalNo').addEventListener('click', () => { hideModal(); resolve(false); });
+    $('#modalYes').addEventListener('click', () => { hideModal(); resolve(true); });
+  });
+}
+function makeDraggable(panel, handle) {
+  handle.addEventListener('mousedown', (ev) => {
+    if (ev.button !== 0) return;
+    if (ev.target.closest('button, input, a, textarea, select')) return;
+    const r = panel.getBoundingClientRect();
+    panel.style.left = `${r.left}px`; panel.style.top = `${r.top}px`;
+    panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    const sx = ev.clientX, sy = ev.clientY, ol = r.left, ot = r.top;
+    ev.preventDefault();
+    const move = (e2) => {
+      const nl = Math.min(Math.max(4, ol + (e2.clientX - sx)), window.innerWidth - panel.offsetWidth - 4);
+      const nt = Math.min(Math.max(4, ot + (e2.clientY - sy)), window.innerHeight - panel.offsetHeight - 4);
+      panel.style.left = `${nl}px`; panel.style.top = `${nt}px`;
+    };
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  });
+}
+makeDraggable($('#modalPanel'), $('#modalPanel .drag-handle'));
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && $('#modal').style.display === 'flex') {
+    ev.preventDefault();
+    if ($('#modalNo')) $('#modalNo').click(); else hideModal();
+  }
+});
+
+// --------------------------------------------------------------------------- 설정 (API 키·ffmpeg)
+function renderSetupModal(data) {
+  const keyRows = data.keys.map((k) => `
+    <div class="field">
+      <div class="field-top">
+        <span class="field-label">${esc(k.key)}</span>
+        <span class="field-chip ${k.set ? 'ok' : 'missing'}">${k.set ? '설정됨' : '미설정'}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${esc(k.desc)} · <a href="${esc(k.url)}" target="_blank" rel="noopener">발급받기</a></div>
+      <input type="password" data-key="${esc(k.key)}" placeholder="${k.set ? '설정됨 · 변경하려면 입력' : '값을 붙여넣으세요'}" autocomplete="off">
+    </div>`).join('');
+  const ffmpegOk = data.ffmpeg && data.ffprobe;
+  const ffmpegRow = ffmpegOk
+    ? `<div class="row-line"><span>ffmpeg/ffprobe</span><span class="field-chip ok">설치됨</span></div>`
+    : data.brew
+      ? `<div class="row-line"><span>ffmpeg/ffprobe</span><button id="btnInstallFfmpeg">설치</button></div>`
+      : `<div class="row-line"><span>ffmpeg/ffprobe 없음 - <a href="https://brew.sh" target="_blank" rel="noopener">Homebrew</a> 설치 후 다시 열어주세요</span></div>`;
+  showModal(`<h2>환경설정</h2>
+    <p class="note">API 키와 ffmpeg는 컷편집 파이프라인을 돌리는 데 필요합니다</p>
+    ${keyRows}
+    ${ffmpegRow}
+    <div id="ffmpegInstallProgress"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button id="modalNo">닫기</button>
+      <button id="btnSaveKeys" class="primary">저장</button>
+    </div>`);
+  if (!ffmpegOk && data.brew) {
+    $('#btnInstallFfmpeg').addEventListener('click', startFfmpegInstall);
+  }
+  $('#modalNo').addEventListener('click', hideModal);
+  $('#btnSaveKeys').addEventListener('click', saveApiKeys);
+}
+async function openSettingsModal() {
+  showModal('<p>불러오는 중…</p>');
+  const data = await (await fetch('/api/setup')).json();
+  renderSetupModal(data);
+}
+async function saveApiKeys() {
+  const pairs = {};
+  $$('#modalBox input[data-key]').forEach((inp) => { if (inp.value.trim()) pairs[inp.dataset.key] = inp.value.trim(); });
+  if (!Object.keys(pairs).length) { toast('입력된 값이 없습니다'); return; }
+  const res = await fetch('/api/setup/keys', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pairs),
+  });
+  const data = await res.json();
+  if (!data.ok) { toast(data.error || '저장하지 못했습니다'); return; }
+  toast('저장했습니다');
+  renderSetupModal(data);
+}
+async function startFfmpegInstall() {
+  const res = await fetch('/api/setup/ffmpeg/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const data = await res.json();
+  if (!data.ok) { toast(data.error || '설치를 시작하지 못했습니다'); return; }
+  $('#ffmpegInstallProgress').innerHTML = '<p class="note">ffmpeg 설치 중… (몇 분 걸릴 수 있습니다)</p>';
+  pollFfmpegInstall();
+}
+async function pollFfmpegInstall() {
+  let st;
+  try { st = await (await fetch('/api/setup/ffmpeg/status')).json(); }
+  catch (e) { setTimeout(pollFfmpegInstall, 1500); return; }
+  if (st.running) { setTimeout(pollFfmpegInstall, 1500); return; }
+  if (!st.done) return;  // 아직 시작 전
+  if (st.ok) { toast('ffmpeg 설치 완료'); openSettingsModal(); }
+  else { toast('설치 실패: ' + (st.error || '')); }
+}
+$('#btnSettings').addEventListener('click', openSettingsModal);
+
+// --------------------------------------------------------------------------------------- 업데이트
+function $$(s, r = document) { return Array.from(r.querySelectorAll(s)); }
+async function checkUpdate() {
+  let st;
+  try { st = await (await fetch('/api/update/status')).json(); } catch (e) { return; }
+  if (st.error || !st.behind) { $('#updateBanner').classList.remove('show'); return; }
+  $('#updateBannerText').textContent = `새 업데이트 ${st.behind}건이 있습니다`;
+  $('#updateBanner').classList.add('show');
+}
+async function openUpdateHistory() {
+  showModal('<p>불러오는 중…</p>');
+  const data = await (await fetch('/api/update/log?limit=30')).json();
+  const rows = (data.commits || []).map((c) => `
+    <div class="commit-row"><span class="sha">${esc(c.sha)}</span><span class="date">${esc(c.date)}</span><span>${esc(c.subject)}</span></div>`).join('');
+  showModal(`<h2>업데이트 이력</h2>
+    <div class="commit-list">${rows || '<p class="note">이력이 없습니다</p>'}</div>
+    <div style="margin-top:14px"><button id="modalNo">닫기</button></div>`);
+  $('#modalNo').addEventListener('click', hideModal);
+}
+async function runUpdate() {
+  const ok = await confirmModal('지금 최신 버전으로 업데이트할까요? 커밋되지 않은 변경사항이 있으면 건너뜁니다.');
+  if (!ok) return;
+  showModal('<p>업데이트하는 중…</p>');
+  const res = await fetch('/api/update/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const data = await res.json();
+  if (!data.ok) { showModal(`<p>${esc(data.error || '업데이트하지 못했습니다')}</p><button onclick="hideModal()">닫기</button>`); return; }
+  showModal(`<h2>업데이트 완료</h2><p class="note">변경사항을 쓰려면 홈 서버를 재시작해주세요 (터미널에서 Ctrl+C 후 다시 실행)</p>
+    <button onclick="hideModal()">닫기</button>`);
+  $('#updateBanner').classList.remove('show');
+}
+$('#btnUpdateNow').addEventListener('click', runUpdate);
+$('#btnUpdateHistory').addEventListener('click', openUpdateHistory);
+checkUpdate();
+setInterval(checkUpdate, 60000);
+
+// --------------------------------------------------------------------------------- 영상 생성
+function renderNewVideoModal() {
+  showModal(`<h2>새 영상</h2>
+    <p class="note">제목을 입력하고 원본 파일을 올리면 처리가 자동으로 시작됩니다</p>
+    <div class="field">
+      <div class="field-label" style="margin-bottom:6px">제목</div>
+      <input type="text" id="newVideoTitle" placeholder="예: 강의1">
+    </div>
+    <div class="field">
+      <div class="field-label" style="margin-bottom:6px">원본 파일</div>
+      <input type="file" id="newVideoFile" accept="video/*">
+    </div>
+    <div id="newVideoProgress"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="modalNo">취소</button>
+      <button id="btnStartUpload" class="primary">업로드 시작</button>
+    </div>`);
+  $('#modalNo').addEventListener('click', hideModal);
+  $('#btnStartUpload').addEventListener('click', startUpload);
+}
+function startUpload() {
+  const title = $('#newVideoTitle').value.trim();
+  const file = $('#newVideoFile').files[0];
+  if (!title) { toast('제목을 입력하세요'); return; }
+  if (!file) { toast('파일을 선택하세요'); return; }
+
+  $('#btnStartUpload').disabled = true;
+  $('#newVideoProgress').innerHTML = `<div class="progress-track"><div class="progress-fill" id="uploadFill"></div></div>
+    <p class="note" id="uploadNote">업로드 중… 0%</p>`;
+
+  const xhr = new XMLHttpRequest();  // fetch에는 업로드 진행률 이벤트가 없어 XHR을 쓴다
+  xhr.open('POST', `/api/videos/create?title=${encodeURIComponent(title)}`);
+  xhr.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round((e.loaded / e.total) * 100);
+    $('#uploadFill').style.width = pct + '%';
+    $('#uploadNote').textContent = `업로드 중… ${pct}%`;
+  };
+  xhr.onload = () => {
+    let data;
+    try { data = JSON.parse(xhr.responseText); } catch (e) { data = { ok: false, error: '응답을 읽지 못했습니다' }; }
+    if (!data.ok) {
+      toast(data.error || '업로드에 실패했습니다');
+      $('#btnStartUpload').disabled = false;
+      $('#newVideoProgress').innerHTML = '';
+      return;
+    }
+    window.location.href = data.url;  // run.py의 진행 화면으로 바로 이동 (CLI 실행 시 자동으로 브라우저가 뜨는 것과 동일)
+  };
+  xhr.onerror = () => {
+    toast('업로드 중 연결이 끊겼습니다');
+    $('#btnStartUpload').disabled = false;
+  };
+  xhr.send(file);
+}
+$('#btnNewVideo').addEventListener('click', renderNewVideoModal);
 
 load();
 setInterval(load, 8000);  // 다른 세션이 같은 영상을 검토/확정 중일 수 있어 주기적으로 갱신

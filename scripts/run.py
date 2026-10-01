@@ -247,7 +247,17 @@ def main() -> None:
     server_proc = start_server(folder, args.port, args.no_open)
     print(f"review server pid {server_proc.pid} (detached) - http://127.0.0.1:{args.port}/")
 
-    ensure_api_keys()  # --serve는 처리 없이 검토 화면만 여니 API 키가 필요 없음
+    # --serve는 처리 없이 검토 화면만 여니 API 키가 필요 없음. 서버를 이미 띄운 뒤라(위) 여기서
+    # 키가 없어 sys.exit()하면 - 사람이 터미널로 직접 돌릴 땐 터미널에 바로 보이지만, 홈 화면
+    # 업로드로 트리거된 백그라운드 프로세스는 아무도 터미널을 안 봐서 진행 화면이 "처리 준비
+    # 중" 스피너로 영원히 멈춘다(10-01 발견). ensure_api_keys()의 SystemExit을
+    # pipeline_status.json에 기록해 server.py의 기존 /api/status 에러 표시가 그대로 집어가게
+    # 한다 - 새 프런트 코드 불필요.
+    try:
+        ensure_api_keys()
+    except SystemExit as e:
+        _write_pipeline_status(folder, "API 키 확인", "error", str(e))
+        raise
     clean = edit / "clean.mp4"
     if not clean.exists():
         step("0/5 clean media", [str(HERE / "clean_media.py"), str(raw), "--out", str(clean)], folder)

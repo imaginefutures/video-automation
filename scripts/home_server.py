@@ -22,7 +22,7 @@ import getpass
 import json
 import mimetypes
 import os
-import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -32,14 +32,18 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
-from common import load_env  # noqa: E402
+from common import (  # noqa: E402
+    api_keys_status, edit_dir, load_env, sanitize_project_name, write_env_keys,
+    RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS,
+)
 
-BACKUP_RE = re.compile(r"\.backup-")
+BACKUP_RE = RESERVED_PROJECT_NAME_RE  # common.py와 공유 - sanitize_project_name() 참고
 
 # scripts/server.py Session의 개인화 상수와 반드시 같은 값이어야 한다 - 저쪽 숫자가 바뀌면
 # 여기 '남은 건수'도 같이 틀어진다.
@@ -59,7 +63,7 @@ def is_project_folder(p: Path) -> bool:
     진행 중인 프로젝트가 아니라 평가용/과거 스냅샷이라 제외한다."""
     if not p.is_dir() or p.name.startswith("."):
         return False
-    if p.name.endswith("_final_gold") or BACKUP_RE.search(p.name):
+    if p.name.endswith(RESERVED_PROJECT_NAME_SUFFIXES) or BACKUP_RE.search(p.name):
         return False
     return (p / "raw.mp4").exists()
 
@@ -188,6 +192,7 @@ def project_status(folder: Path) -> dict:
             continue
         break
     info["last_activity"] = last
+    info["managed"] = _is_managed(folder.name)
 
     if not ng_path.exists():
         info["status"] = "processing"
@@ -238,6 +243,15 @@ def scan_projects() -> list[dict]:
 # 종료 시엔 기존에 `run.py --serve`를 손으로 띄울 때와 마찬가지로 고아 프로세스가 남을 수 있다.
 _active_lock = threading.Lock()
 _active: dict[str, dict] = {}
+_uploading: set[str] = set()  # "영상 생성" 업로드가 진행 중인 이름 - 같은 제목 동시 생성 레이스 방지
+
+
+def _is_managed(name: str) -> bool:
+    """이 홈 서버가 그 이름의 server.py/run.py를 지금 살아서 띄우고 있는지 - project_status()가
+    "처리 중" 카드를 클릭 가능하게 할지(막 업로드해서 아직 ng.json이 없는 경우) 판단하는 데 씀."""
+    with _active_lock:
+        a = _active.get(name)
+        return bool(a and a["proc"].poll() is None)
 
 
 def _port_free(port: int) -> bool:
@@ -273,7 +287,16 @@ def open_review(name: str) -> dict:
     folder = root / name
     if not is_project_folder(folder):
         raise ValueError(f"알 수 없는 영상: {name}")
-    if not (folder / "edit" / "ng.json").exists():
+
+    with _active_lock:
+        active = _active.get(name)
+        if active and active["proc"].poll() is None and _port_listening(active["port"]):
+            return {"url": f"http://127.0.0.1:{active['port']}/"}
+
+    # "영상 생성"으로 막 업로드돼 아직 ng.json이 없어도(= 파이프라인 처리 중), 이 홈 서버가
+    # 이미 그 run.py를 띄워 관리 중이면 그 진행 화면으로 보낸다 - ng.json 유무 체크는 그 뒤,
+    # 즉 "CLI로 raw.mp4만 떨궈놓고 아직 run.py를 한 번도 안 돌린" 레거시 케이스만 거른다.
+    if not (folder / "edit" / "ng.json").exists() and name not in _active:
         raise ValueError("아직 처리 중입니다 - 처리가 끝난 뒤에 검토할 수 있어요")
 
     with _active_lock:
@@ -286,7 +309,7 @@ def open_review(name: str) -> dict:
         log_f = open(log_path, "a")
         proc = subprocess.Popen(
             [sys.executable, str(HERE / "server.py"), str(folder), "--port", str(port), "--no-open"],
-            cwd=str(PROJECT_ROOT), stdout=log_f, stderr=subprocess.STDOUT,
+            cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
         )
         _active[name] = {"port": port, "proc": proc, "log": log_f}
 
@@ -298,6 +321,188 @@ def open_review(name: str) -> dict:
             return {"url": f"http://127.0.0.1:{port}/"}
         time.sleep(0.2)
     raise RuntimeError("검토 서버가 제시간에 뜨지 않았습니다")
+
+
+# --------------------------------------------------------------------------- 영상 생성 (업로드)
+
+def create_project(title: str, content_length: int, rfile) -> dict:
+    """"영상 생성" 폼 하나를 처리한다 - 제목 검증 → API 키 보유 확인 → 중복 확인까지 전부
+    바이트를 읽기 **전에** 끝낸 뒤에만 rfile을 청크 단위로 raw.mp4.part에 스트리밍 쓰기하고
+    (대용량 영상을 한 번에 메모리에 올리지 않음), 완료되면 원자적 rename으로 raw.mp4를
+    확정하고 run.py를 백그라운드로 기동한다. 실패는 ValueError(그대로 사용자에게 보여줄 메시지)
+    또는 RuntimeError로 던진다."""
+    name = sanitize_project_name(title)
+
+    missing = [k["key"] for k in api_keys_status() if not k["set"]]
+    if missing:
+        raise ValueError(f"API 키가 없습니다 - 설정 패널에서 먼저 등록하세요 ({', '.join(missing)})")
+
+    folder = videos_root() / name
+    if (folder / "raw.mp4").exists():
+        raise ValueError("이미 같은 이름의 영상이 있습니다 - 다른 제목을 입력하세요")
+
+    with _active_lock:
+        if name in _uploading:
+            raise ValueError("이미 같은 이름으로 업로드가 진행 중입니다")
+        _uploading.add(name)
+
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        part = folder / "raw.mp4.part"
+        try:
+            _stream_to_file(rfile, part, content_length)
+            part.rename(folder / "raw.mp4")
+        except Exception:
+            part.unlink(missing_ok=True)
+            try:
+                if folder.is_dir() and not any(folder.iterdir()):
+                    folder.rmdir()
+            except OSError:
+                pass
+            raise
+
+        edit_dir(folder)  # run.py가 edit/run.log를 열 수 있도록 미리 만들어 둠
+        port = _alloc_port()
+        log_path = folder / "edit" / "run.log"
+        log_f = open(log_path, "a")
+        proc = subprocess.Popen(
+            [sys.executable, str(HERE / "run.py"), str(folder), "--port", str(port), "--no-open"],
+            cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        with _active_lock:
+            _active[name] = {"port": port, "proc": proc, "log": log_f}
+    finally:
+        with _active_lock:
+            _uploading.discard(name)
+
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"처리가 바로 종료됐습니다 - {log_path} 확인")
+        if _port_listening(port):
+            return {"name": name, "url": f"http://127.0.0.1:{port}/"}
+        time.sleep(0.2)
+    raise RuntimeError("처리 서버가 제시간에 뜨지 않았습니다")
+
+
+def _stream_to_file(rfile, dest: Path, length: int, chunk_size: int = 4 * 1024 * 1024) -> None:
+    remaining = length
+    with dest.open("wb") as f:
+        while remaining > 0:
+            chunk = rfile.read(min(chunk_size, remaining))
+            if not chunk:
+                raise ConnectionError("업로드가 중간에 끊겼습니다")
+            f.write(chunk)
+            remaining -= len(chunk)
+
+
+# ------------------------------------------------------------------------------ 설정: ffmpeg 설치
+# brew install ffmpeg는 몇 분 걸릴 수 있어 POST로 기동만 하고(즉시 응답), 별도 스레드가
+# proc.wait()하며 아래 상태를 갱신 - 프런트는 /api/setup/ffmpeg/status를 폴링한다
+# (web/index.html의 pipelineBoot()와 같은 재귀 setTimeout 폴링 패턴).
+_ffmpeg_install_lock = threading.Lock()
+_ffmpeg_install_state: dict = {"running": False, "done": False, "ok": None, "error": None}
+
+
+def ffmpeg_status() -> dict:
+    return {"ffmpeg": shutil.which("ffmpeg") is not None,
+            "ffprobe": shutil.which("ffprobe") is not None,
+            "brew": shutil.which("brew") is not None}
+
+
+def start_ffmpeg_install() -> dict:
+    if shutil.which("brew") is None:
+        raise ValueError("Homebrew가 설치돼 있지 않습니다 - https://brew.sh 에서 먼저 설치해주세요")
+    with _ffmpeg_install_lock:
+        if _ffmpeg_install_state["running"]:
+            return {"started": True}  # 이미 진행 중 - 새로 기동하지 않고 그대로 진행 상태 알림
+        _ffmpeg_install_state.update(running=True, done=False, ok=None, error=None)
+
+    def _run():
+        try:
+            proc = subprocess.run(["brew", "install", "ffmpeg"], capture_output=True, text=True, timeout=600)
+            ok = proc.returncode == 0 and shutil.which("ffmpeg") is not None
+            with _ffmpeg_install_lock:
+                _ffmpeg_install_state.update(running=False, done=True, ok=ok,
+                                              error=None if ok else (proc.stderr or proc.stdout)[-800:])
+        except Exception as e:
+            with _ffmpeg_install_lock:
+                _ffmpeg_install_state.update(running=False, done=True, ok=False, error=str(e))
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"started": True}
+
+
+# ----------------------------------------------------------------------------------- 업데이트
+# 이 저장소는 claude plugin 마켓플레이스 설치가 아니라 ~/.claude/skills/video-cut 심볼릭 링크의
+# 실제 대상이다(SKILL.md "설치와 업데이트" 참고) - 그래서 "업데이트"는 곧 git pull. fetch는
+# 네트워크 호출이라 폴링마다 부르지 않고 백그라운드 스레드가 5분 간격으로 갱신해 캐시한다.
+_update_cache_lock = threading.Lock()
+_update_cache: dict = {"behind": 0, "checked_at": None}
+_pull_lock = threading.Lock()
+
+
+def _run_git(args: list[str], timeout: int = 15) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=timeout)
+
+
+def git_is_dirty() -> bool:
+    r = _run_git(["status", "--porcelain"])
+    return bool(r.stdout.strip())
+
+
+def git_current() -> dict:
+    r = _run_git(["log", "-1", "--pretty=format:%h|%s"])
+    sha, _, subject = r.stdout.partition("|")
+    return {"sha": sha, "subject": subject}
+
+
+def git_recent_log(limit: int = 20) -> list[dict]:
+    r = _run_git(["log", f"-{limit}", "--pretty=format:%h|%ad|%an|%s", "--date=short"])
+    out = []
+    for line in r.stdout.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) == 4:
+            out.append({"sha": parts[0], "date": parts[1], "author": parts[2], "subject": parts[3]})
+    return out
+
+
+def _update_refresh_loop() -> None:
+    while True:
+        try:
+            _run_git(["fetch", "origin"], timeout=30)
+            r = _run_git(["rev-list", "--count", "HEAD..origin/main"])
+            behind = int(r.stdout.strip() or 0)
+            with _update_cache_lock:
+                _update_cache.update(behind=behind, checked_at=datetime.now().isoformat(timespec="seconds"))
+        except Exception:
+            pass  # 네트워크 없음 등 - 다음 주기에 재시도, 배너는 그냥 안 뜬 채로 둠
+        time.sleep(300)
+
+
+def update_status() -> dict:
+    with _update_cache_lock:
+        cached = dict(_update_cache)
+    cur = git_current()
+    return {"dirty": git_is_dirty(), "behind": cached["behind"], "checked_at": cached["checked_at"],
+            "current_sha": cur["sha"], "current_subject": cur["subject"]}
+
+
+def git_pull() -> dict:
+    if not _pull_lock.acquire(blocking=False):
+        raise ValueError("이미 업데이트가 진행 중입니다")
+    try:
+        if git_is_dirty():
+            raise ValueError("커밋되지 않은 변경사항이 있어 건너뜁니다 - 터미널에서 직접 정리한 뒤 다시 시도하세요")
+        r = _run_git(["pull", "--ff-only"], timeout=60)
+        if r.returncode != 0:
+            raise ValueError((r.stderr or r.stdout).strip()[-800:] or "git pull 실패")
+        with _update_cache_lock:
+            _update_cache.update(behind=0, checked_at=datetime.now().isoformat(timespec="seconds"))
+        return {"output": r.stdout.strip()}
+    finally:
+        _pull_lock.release()
 
 
 @atexit.register
@@ -320,6 +525,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(WEB_DIR / "home.html", "text/html; charset=utf-8")
         if path == "/api/projects":
             return self._json({"projects": scan_projects()})
+        if path == "/api/setup":
+            return self._json({"keys": api_keys_status(), **ffmpeg_status()})
+        if path == "/api/setup/ffmpeg/status":
+            with _ffmpeg_install_lock:
+                return self._json(dict(_ffmpeg_install_state))
+        if path == "/api/update/status":
+            try:
+                return self._json(update_status())
+            except Exception as e:
+                return self._json({"error": str(e)}, 500)
+        if path == "/api/update/log":
+            q = parse_qs(urlsplit(self.path).query)
+            limit = int((q.get("limit") or ["20"])[0])
+            return self._json({"commits": git_recent_log(limit)})
         if path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
@@ -331,15 +550,49 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        path = self.path.split("?")[0]
+        if path == "/api/videos/create":
+            return self._handle_create_project()
+
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
-        if self.path == "/api/open":
+        if path == "/api/open":
             try:
                 result = open_review(str(body.get("name", "")))
                 return self._json({"ok": True, **result})
             except Exception as e:  # surface to the UI instead of a silent 500
                 return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/setup/keys":
+            valid_keys = {key for key, _, _ in REQUIRED_API_KEYS}
+            pairs = {k: v for k, v in body.items()
+                     if k in valid_keys and isinstance(v, str) and v.strip() and "\n" not in v}
+            if not pairs:
+                return self._json({"ok": False, "error": "등록할 키가 없습니다"}, 400)
+            write_env_keys({k: v.strip() for k, v in pairs.items()})
+            return self._json({"ok": True, "keys": api_keys_status(), **ffmpeg_status()})
+        if path == "/api/setup/ffmpeg/install":
+            try:
+                return self._json({"ok": True, **start_ffmpeg_install()})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/update/pull":
+            try:
+                return self._json({"ok": True, **git_pull()})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 409)
         self.send_error(404)
+
+    def _handle_create_project(self):
+        q = parse_qs(urlsplit(self.path).query)
+        title = (q.get("title") or [""])[0]
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            result = create_project(title, length, self.rfile)
+            return self._json({"ok": True, **result})
+        except ValueError as e:
+            return self._json({"ok": False, "error": str(e)}, 400)
+        except Exception as e:
+            return self._json({"ok": False, "error": str(e)}, 500)
 
     def _json(self, data, status: int = 200):
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -364,6 +617,7 @@ def serve(port: int, open_browser: bool) -> None:
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
     print(f"project home: {url}   (videos: {videos_root()})")
+    threading.Thread(target=_update_refresh_loop, daemon=True).start()
     if open_browser:
         webbrowser.open(url)
     try:

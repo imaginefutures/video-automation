@@ -3,6 +3,7 @@ from __future__ import annotations
 import getpass
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,31 @@ REQUIRED_API_KEYS = [
     ("ANTHROPIC_API_KEY", "Claude API 키 - NG 판별·분류·전체 검토에 씀", "https://console.anthropic.com/settings/keys"),
     ("ELEVENLABS_API_KEY", "ElevenLabs API 키 - Scribe 전사에 씀", "https://elevenlabs.io/app/settings/api-keys"),
 ]
+
+# 10-01 (홈 화면 영상 생성): *_final_gold/*.backup-*는 평가용/과거 스냅샷 접미사라 실제
+# 프로젝트로 취급하지 않는다 - scripts/home_server.py의 is_project_folder()와 여기
+# sanitize_project_name()이 같은 규칙을 공유해야, 웹에서 만든 이름이 우연히 이 패턴과 겹쳐
+# "카드에 안 뜨는 유령 프로젝트"가 되는 사고를 막는다.
+RESERVED_PROJECT_NAME_SUFFIXES = ("_final_gold",)
+RESERVED_PROJECT_NAME_RE = re.compile(r"\.backup-")
+
+
+def sanitize_project_name(raw: str) -> str:
+    """홈 화면 "영상 생성" 폼의 제목 -> `videos/<name>` 폴더명. 경로 탈출·예약 패턴을 막는다
+    (기존에 이런 검증 함수가 없었음 - video_dir() 등은 전부 사람이 직접 만든 폴더명을 그대로
+    신뢰하는 전제라 새로 만듦)."""
+    name = raw.strip()
+    if not name:
+        raise ValueError("제목을 입력하세요")
+    if len(name) > 150:
+        raise ValueError("제목이 너무 깁니다 (150자 이하)")
+    if "/" in name or "\\" in name or ".." in name:
+        raise ValueError("폴더 이름에 쓸 수 없는 문자가 있습니다 (/, \\, ..)")
+    if name.startswith("."):
+        raise ValueError("점(.)으로 시작하는 이름은 쓸 수 없습니다")
+    if name.endswith(RESERVED_PROJECT_NAME_SUFFIXES) or RESERVED_PROJECT_NAME_RE.search(name):
+        raise ValueError("이 이름은 내부적으로 예약돼 있어 쓸 수 없습니다 - 다른 제목을 입력하세요")
+    return name
 
 
 def load_env() -> None:
@@ -32,18 +58,59 @@ def load_env() -> None:
             os.environ[k] = v
 
 
+def api_keys_status() -> list[dict]:
+    """홈 화면 설정 패널의 `GET /api/setup`이 쓰는 상태 조회 - 값 자체는 절대 포함하지 않는다
+    (네트워크 응답/devtools에 비밀값이 찍히는 걸 막음, `set`만 알려줌)."""
+    load_env()
+    return [
+        {"key": k, "desc": desc, "url": url, "set": bool(os.environ.get(k))}
+        for k, desc, url in REQUIRED_API_KEYS
+    ]
+
+
+def write_env_keys(pairs: dict[str, str]) -> None:
+    """`.env`에 키=값들을 쓴다 - 같은 키로 시작하는 기존 줄은 새 값으로 치환(단순 append가
+    아님, 웹 설정 폼에서 키를 바꿀 때마다 중복 줄이 쌓이는 걸 막음), 없던 키만 새 줄로 추가.
+    `os.environ`에도 즉시 반영한다. `ensure_api_keys()`의 CLI 저장 블록과
+    `POST /api/setup/keys`(home_server.py)가 이 함수 하나를 공유 - `.env` 파싱/쓰기 로직이
+    두 곳에 따로 생기지 않게."""
+    env_path = PROJECT_ROOT / ".env"
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    remaining = dict(pairs)
+    out_lines = []
+    for line in lines:
+        stripped = line.strip()
+        key = None
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+        if key and key in remaining:
+            out_lines.append(f"{key}={remaining.pop(key)}")
+        else:
+            out_lines.append(line)
+    for key, value in remaining.items():
+        out_lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(out_lines) + "\n")
+    for key, value in pairs.items():
+        os.environ[key] = value
+
+
 def ensure_api_keys() -> None:
     """`load_env()`로 이미 있는 키는 그대로 쓰고, 없는 키만 채운다.
 
-    두 가지 실행 맥락을 구분한다:
+    세 가지 실행 맥락을 구분한다:
     - **사람이 직접 터미널에서 실행** (`python scripts/run.py ...`를 손으로 침): 표준입력이
       진짜 터미널이라 `getpass`로 그 자리에서 대화식으로 물어보고 `.env`에 저장한다.
-    - **에이전트(클로드 코드)가 스킬로 대신 실행**: Bash 도구는 표준입력이 터미널이
-      아니라서(`sys.stdin.isatty()`가 항상 False, 2026-09-30 직접 확인) `getpass`가 아예
-      작동하지 않는다 - 예전엔 여기서 조용히 넘어가 버려서 한참 뒤 `transcribe.py`가 뜬금없이
-      에러를 냈다. 지금은 **필요한 키·설명·발급 링크·`.env`의 절대경로를 명확히 출력하고 즉시
-      종료**한다 - 에이전트가 이 출력을 읽고 사용자에게 대화로 물어본 뒤 그 경로에 직접
-      `.env`를 써주는 게 실제 온보딩 경로다(`SKILL.md` "에이전트가 지킬 것" 참고)."""
+    - **홈 화면(웹) 설정 패널**: 10-01부터 1차 경로 - `web/home.html`의 설정 모달에서
+      `POST /api/setup/keys`로 등록하면 `write_env_keys()`를 직접 불러 저장한다(이 함수를
+      거치지 않음, 브라우저 폼 제출은 애초에 대화식 프롬프트가 필요 없다).
+    - **에이전트(클로드 코드)가 스킬로 대신 실행, 또는 브라우저를 쓸 수 없는 환경**: Bash
+      도구는 표준입력이 터미널이 아니라서(`sys.stdin.isatty()`가 항상 False, 2026-09-30 직접
+      확인) `getpass`가 아예 작동하지 않는다 - 예전엔 여기서 조용히 넘어가 버려서 한참 뒤
+      `transcribe.py`가 뜬금없이 에러를 냈다. 지금은 **필요한 키·설명·발급 링크·`.env`의
+      절대경로·홈 화면 안내를 출력하고 즉시 종료**한다 - 에이전트는 이 출력을 읽으면 먼저
+      "홈 화면을 열어 설정에서 등록해 주세요"라고 안내하고, 사용자가 브라우저를 쓸 수 없다고
+      하면 대화로 물어서 직접 `.env`에 써주는 게 대안 경로다(`SKILL.md` "에이전트가 지킬 것"
+      참고)."""
     load_env()
     missing = [(k, desc, url) for k, desc, url in REQUIRED_API_KEYS if not os.environ.get(k)]
     if not missing:
@@ -52,21 +119,21 @@ def ensure_api_keys() -> None:
     env_path = PROJECT_ROOT / ".env"
 
     if not sys.stdin.isatty():
-        lines = [f"필요한 API 키가 없습니다 - {env_path}에 아래 형식으로 한 줄씩 추가해야 합니다:"]
+        lines = [f"필요한 API 키가 없습니다 - 홈 화면(http://127.0.0.1:8764/) 설정 패널에서 등록하거나,"
+                  f" {env_path}에 아래 형식으로 한 줄씩 직접 추가해야 합니다:"]
         for key, desc, url in missing:
             lines.append(f"  {key}=<값>   # {desc}, 발급: {url}")
         sys.exit("\n".join(lines))
 
     print("\n처음 실행하시는군요 - 필요한 API 키를 한 번만 물어볼게요. 저장되면 다음부터는 안 물어봅니다.\n")
-    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    pairs = {}
     for key, desc, url in missing:
         print(f"- {key}: {desc}\n  발급: {url}")
         value = ""
         while not value:
             value = getpass.getpass(f"  {key} 입력(화면에 안 보임): ").strip()
-        lines.append(f"{key}={value}")
-        os.environ[key] = value
-    env_path.write_text("\n".join(lines) + "\n")
+        pairs[key] = value
+    write_env_keys(pairs)
     print(f"\n{env_path}에 저장했습니다. 다음부터는 안 물어봅니다.\n")
 
 
