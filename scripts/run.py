@@ -58,6 +58,28 @@ def step(title: str, cmd: list[str]) -> None:
     subprocess.run([sys.executable, *cmd], check=True, cwd=HERE.parent)
 
 
+def run_ng_pipeline(folder: Path, edit: Path, no_llm: bool = False) -> None:
+    """발음 실수 후보 -> Stage 1 -> Stage 2 -> NG route -> filler -> assemble -> seam refine ->
+    global review. `edit/ng.json` 캐시 게이팅은 호출하는 쪽 책임(여기선 무조건 처음부터 돈다) -
+    `main()`은 `ng.json` 없을 때만 부르고, `redetect.py`(새 모델로 재분석)는 기존 산출물을
+    백업해 지운 뒤 매번 이 함수를 그대로 재사용한다 - 두 경로가 서로 다른 스텝 목록으로
+    갈라지지 않게 하려고 로직을 여기 한 곳에만 둔다."""
+    step("4/7 pronunciation candidates", [str(HERE / "detect_pronunciation_candidates.py"), str(folder)])
+    step("4/7 Stage 1 (전체를 넓게)", [str(HERE / "detect_regions.py"), str(folder),
+                                    *(["--no-llm"] if no_llm else [])])
+    step("4/7 Stage 2 (부분을 좁게)", [str(HERE / "classify_region.py"), str(folder),
+                                    *(["--no-llm"] if no_llm else [])])
+    step("4/7 NG route", [str(HERE / "route_candidates.py"), str(edit / "ng_classified.json"),
+                          "--out", str(edit / "ng.json")])
+    step("4/7 filler", [str(HERE / "detect_filler_candidates.py"), str(folder)])  # deterministic, always runs
+    if not no_llm:
+        step("4/7 assemble draft", [str(HERE / "assemble_draft.py"), str(folder)])
+        step("4/7 seam refine", [str(HERE / "seam_refine.py"), str(folder)])
+        # global_review.py가 내부적으로 1회 재투입(missed_cut 반영 -> assemble_draft.py/
+        # seam_refine.py를 한 번만 다시 부름)까지 다 하므로 여기선 한 번만 호출
+        step("4/7 global review", [str(HERE / "global_review.py"), str(folder)])
+
+
 def notify(title: str, message: str) -> None:
     """백로그/R2-시작-마찰-제거.md: 전사·분류가 끝나면 macOS 알림 - 처리 중 다른 일을 하다
     잊어버리는 이탈 순간(백로그/왜-이탈하는가.md) 대응. macOS가 아니거나 알림 권한이 없어도
@@ -116,20 +138,7 @@ def main() -> None:
             print("3/6 speaker blocks: cached")
 
         if not (edit / "ng.json").exists():
-            step("4/7 pronunciation candidates", [str(HERE / "detect_pronunciation_candidates.py"), str(folder)])
-            step("4/7 Stage 1 (전체를 넓게)", [str(HERE / "detect_regions.py"), str(folder),
-                                            *(["--no-llm"] if args.no_llm else [])])
-            step("4/7 Stage 2 (부분을 좁게)", [str(HERE / "classify_region.py"), str(folder),
-                                            *(["--no-llm"] if args.no_llm else [])])
-            step("4/7 NG route", [str(HERE / "route_candidates.py"), str(edit / "ng_classified.json"),
-                                  "--out", str(edit / "ng.json")])
-            step("4/7 filler", [str(HERE / "detect_filler_candidates.py"), str(folder)])  # deterministic, always runs
-            if not args.no_llm:
-                step("4/7 assemble draft", [str(HERE / "assemble_draft.py"), str(folder)])
-                step("4/7 seam refine", [str(HERE / "seam_refine.py"), str(folder)])
-                # global_review.py가 내부적으로 1회 재투입(missed_cut 반영 -> assemble_draft.py/
-                # seam_refine.py를 한 번만 다시 부름)까지 다 하므로 여기선 한 번만 호출
-                step("4/7 global review", [str(HERE / "global_review.py"), str(folder)])
+            run_ng_pipeline(folder, edit, args.no_llm)
         else:
             print("4/7 NG: cached")
 
