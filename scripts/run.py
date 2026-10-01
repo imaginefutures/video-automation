@@ -3,6 +3,13 @@
     python scripts/run.py <videos/NAME>            # full pipeline, then opens the review UI
     python scripts/run.py <videos/NAME> --serve    # skip processing, just open the UI
     python scripts/run.py <videos/NAME> --no-llm   # deterministic layers only (no API cost)
+    python scripts/run.py                          # no folder: auto-detect a loose mp4 dropped
+                                                    # straight into videos/ and create its project
+                                                    # folder (백로그/R2-시작-마찰-제거.md)
+
+A project folder's raw.mp4 can also be several split-recording segments (e.g. 01_intro.mp4,
+02_main.mp4) instead of one file - run.py concats them in name order before step 0 if raw.mp4
+is missing (같은 백로그, "여러 파일 분할 촬영 지원").
 
 Steps (each cached on its output file; delete a file in edit/ to redo that step):
   0 clean_media      raw.mp4 -> edit/clean.mp4      (tmcd/metadata stripped, faststart)
@@ -49,13 +56,80 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import load_env, ensure_api_keys, video_dir, edit_dir  # noqa: E402
+from common import load_env, ensure_api_keys, video_dir, edit_dir, PROJECT_ROOT  # noqa: E402
 import migrate  # noqa: E402
 
 
-def step(title: str, cmd: list[str]) -> None:
+def step(title: str, cmd: list[str], *, llm_fallback: bool = False) -> None:
+    """한 파이프라인 단계를 돈다. 실패하면(백로그/R8-실패-대응.md) 흔한 원인과 "캐시돼 있으니
+    원인 해결 후 같은 명령으로 다시 실행하면 이 단계부터 이어서 진행된다"는 안내를 더해 다시
+    던진다 - 처리 중엔 아직 브라우저가 안 열려 있어(R2 "브라우저 먼저 열기"는 회귀 위험으로
+    미착수) 버튼을 놓을 화면 자체가 없으므로, 지금 할 수 있는 동등한 조치다.
+
+    `llm_fallback=True`는 이 단계에 LLM 호출이 들어있고 `--no-llm` 결정론적 경로가 있다는
+    뜻(Stage 1/2, 화자 블록) - 이미 `--no-llm`으로 도는 게 아니면 실패 시 자동으로 그걸 붙여
+    한 번 더 시도한다. "검토는 항상 가능해야 한다"는 방침 - LLM이 막혀도 파이프라인 자체가
+    멈추지 않는다."""
     print(f"\n== {title}")
-    subprocess.run([sys.executable, *cmd], check=True, cwd=HERE.parent)
+    try:
+        subprocess.run([sys.executable, *cmd], check=True, cwd=HERE.parent)
+    except subprocess.CalledProcessError:
+        if not llm_fallback or "--no-llm" in cmd:
+            print(f"\n[실패] {title} - 위 에러 메시지가 원인입니다(API 키 만료, 네트워크 오류, "
+                  f"ffmpeg 문제가 흔함). 각 단계는 결과 파일로 캐시되므로, 원인을 해결한 뒤 "
+                  f"같은 명령으로 다시 실행하면 이 단계부터 이어서 진행됩니다.")
+            raise
+        print(f"\n[자동 대체] {title} - LLM 호출이 실패한 것으로 보여 결정론적 모드(--no-llm)로 "
+              f"다시 시도합니다. 검토 항목이 평소보다 많을 수 있습니다.")
+        subprocess.run([sys.executable, *cmd, "--no-llm"], check=True, cwd=HERE.parent)
+
+
+def auto_create_project(videos_root: Path) -> Path | None:
+    """백로그/R2-시작-마찰-제거.md 2순위: `videos/` 바로 아래(하위 폴더 아님)에 이름 상관없이
+    mp4 하나를 던져놓고 폴더 인자 없이 부르면, 그 파일 이름으로 프로젝트 폴더를 만들고
+    `raw.mp4`로 옮긴 뒤 그 폴더를 반환한다. 여러 개면 어느 걸 하나의 영상으로 봐야 할지
+    애매하므로(분할 촬영일 수도, 서로 다른 영상일 수도) 추측하지 않고 사용자에게 정리를
+    요청한다 - 조용히 잘못 묶는 것보다 안전하다."""
+    loose = sorted(p for p in videos_root.glob("*.mp4") if p.is_file())
+    if not loose:
+        return None
+    if len(loose) > 1:
+        names = ", ".join(p.name for p in loose)
+        sys.exit(f"videos/ 바로 아래에 영상이 여러 개 있습니다({names}) - 폴더를 자동으로 "
+                 f"만들 수 없음. 한 영상이면 videos/<이름>/raw.mp4로, 분할 촬영이면 "
+                 f"videos/<이름>/ 폴더를 만들어 그 안에 01_, 02_... 순서로 넣어주세요.")
+    src = loose[0]
+    name = src.stem
+    folder = videos_root / name
+    folder.mkdir(exist_ok=True)
+    dest = folder / "raw.mp4"
+    if dest.exists():
+        sys.exit(f"videos/{name}/raw.mp4가 이미 있어서 videos/{src.name}을 자동으로 옮길 "
+                 f"수 없음 - 직접 정리해주세요.")
+    src.rename(dest)
+    print(f"videos/{src.name} -> videos/{name}/raw.mp4로 옮기고 프로젝트 폴더를 만들었습니다.")
+    return folder
+
+
+def concat_segments(folder: Path) -> Path | None:
+    """백로그/R2-시작-마찰-제거.md 2순위: `raw.mp4`가 없을 때, 폴더에 흩어진 여러 mp4(분할
+    촬영 - 촬영-가이드가 허용하는 01_intro.mp4/02_main.mp4 식)를 이름 순으로 이어붙여
+    `raw.mp4`로 만든다. 세그먼트가 1개 이하면 분할 촬영이 아니므로 손대지 않는다."""
+    segments = sorted(p for p in folder.glob("*.mp4") if p.name != "raw.mp4")
+    if len(segments) < 2:
+        return None
+    print(f"raw.mp4 없음 - 분할 촬영 {len(segments)}개를 이름 순으로 이어붙입니다: "
+          f"{', '.join(p.name for p in segments)}")
+    raw = folder / "raw.mp4"
+    filelist = folder / ".concat_list.txt"
+    filelist.write_text("\n".join(f"file '{p.resolve()}'" for p in segments))
+    try:
+        subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(filelist),
+                        "-c", "copy", str(raw)], check=True)
+    finally:
+        filelist.unlink(missing_ok=True)
+    print(f"wrote {raw}")
+    return raw
 
 
 def run_ng_pipeline(folder: Path, edit: Path, no_llm: bool = False) -> None:
@@ -66,9 +140,9 @@ def run_ng_pipeline(folder: Path, edit: Path, no_llm: bool = False) -> None:
     갈라지지 않게 하려고 로직을 여기 한 곳에만 둔다."""
     step("4/7 pronunciation candidates", [str(HERE / "detect_pronunciation_candidates.py"), str(folder)])
     step("4/7 Stage 1 (전체를 넓게)", [str(HERE / "detect_regions.py"), str(folder),
-                                    *(["--no-llm"] if no_llm else [])])
+                                    *(["--no-llm"] if no_llm else [])], llm_fallback=True)
     step("4/7 Stage 2 (부분을 좁게)", [str(HERE / "classify_region.py"), str(folder),
-                                    *(["--no-llm"] if no_llm else [])])
+                                    *(["--no-llm"] if no_llm else [])], llm_fallback=True)
     step("4/7 NG route", [str(HERE / "route_candidates.py"), str(edit / "ng_classified.json"),
                           "--out", str(edit / "ng.json")])
     step("4/7 filler", [str(HERE / "detect_filler_candidates.py"), str(folder)])  # deterministic, always runs
@@ -95,7 +169,8 @@ def notify(title: str, message: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("folder")
+    ap.add_argument("folder", nargs="?", default=None,
+                    help="videos/<이름>. 생략하면 videos/ 바로 아래 떨어진 mp4를 찾아 자동으로 폴더를 만든다")
     ap.add_argument("--serve", action="store_true", help="skip processing, open the review UI")
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--port", type=int, default=8765)
@@ -103,12 +178,19 @@ def main() -> None:
     args = ap.parse_args()
 
     load_env()
-    folder = video_dir(args.folder)
+    if args.folder is None:
+        videos_root = PROJECT_ROOT / "videos"
+        folder = auto_create_project(videos_root)
+        if folder is None:
+            sys.exit(f"videos/ 바로 아래에 처리할 mp4가 없습니다 - videos/<이름>/raw.mp4로 넣거나, "
+                     f"폴더/파일 이름을 인자로 주세요.")
+    else:
+        folder = video_dir(args.folder)
     edit = edit_dir(folder)
     for msg in migrate.migrate_project(folder):  # 업데이트 뒤 호환 안 되는 캐시만 조용히 정리
         print(f"[migrate] {msg}")
     raw = folder / "raw.mp4"
-    if not raw.exists():
+    if not raw.exists() and concat_segments(folder) is None:
         sys.exit(f"put the source video at {raw}")
 
     if not args.serve:
@@ -133,7 +215,7 @@ def main() -> None:
 
         if not (edit / "speaker_blocks.json").exists():
             step("3/6 speaker blocks", [str(HERE / "detect_speaker_blocks.py"), str(folder),
-                                        *(["--no-llm"] if args.no_llm else [])])
+                                        *(["--no-llm"] if args.no_llm else [])], llm_fallback=True)
         else:
             print("3/6 speaker blocks: cached")
 

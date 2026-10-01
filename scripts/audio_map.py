@@ -167,6 +167,31 @@ def is_quiet_enough(amap: dict, t: float, margin_db: float = 6.0) -> bool:
     return energy_db_at(amap, t) <= amap["room_tone_db"] + margin_db
 
 
+ONSET_LAG_MAX_SEC = 0.2  # observed Scribe word-start lag on Korean plosive/fricative onsets
+ONSET_MARGIN_DB = 6.0    # same margin as is_quiet_enough's G1 check
+
+
+def true_onset(amap: dict, reported_t: float, max_pull_sec: float = ONSET_LAG_MAX_SEC,
+               margin_db: float = ONSET_MARGIN_DB) -> float:
+    """Pull a reported word-start time back to the real acoustic onset when the ASR timestamp
+    already lands inside speech (energy above room tone + margin) - Scribe's word boundaries can
+    trail the true onset by ~0.15-0.2s (user-reported, 2026-10-01), and plan_pauses.py's pause
+    trim otherwise trusts that timestamp verbatim, clipping the start of almost every sentence.
+    Walks backward frame-by-frame until energy drops back to room tone, capped at max_pull_sec
+    so a timestamp that's already correct is left untouched."""
+    threshold = amap["room_tone_db"] + margin_db
+    if energy_db_at(amap, reported_t) <= threshold:
+        return reported_t
+    hop = amap["hop_sec"]
+    rms_db = amap["rms_db"]
+    i0 = _frame_idx(amap, reported_t)
+    max_steps = max(1, round(max_pull_sec / hop))
+    i = i0
+    while i > 0 and i0 - i < max_steps and rms_db[i] > threshold:
+        i -= 1
+    return round(i * hop, 3)
+
+
 def breath_at(amap: dict, t: float) -> dict | None:
     for b in amap.get("breaths", []):
         if b["start"] <= t < b["end"]:

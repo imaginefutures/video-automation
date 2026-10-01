@@ -12,17 +12,12 @@
 
 2026-09-29 2차 구현 - "축소분 제대로 구현해" 반영:
   - **ng.json 역전파**: `draft_cuts.json`의 `sources`(각 병합 컷이 어느 ng 항목/화자블록 줄에서
-    왔는지)를 거슬러 올라가, over_cut·outtake·시청자 jump/unclear를 실제 ng 항목의 flag까지
+    왔는지)를 거슬러 올라가, over_cut·시청자 jump/unclear를 실제 ng 항목의 flag까지
     반영한다. 이제 검토 화면에 뜬다(ng.json을 읽는 건 이미 server.py가 하니까).
   - **재투입, 정확히 1회** (2026-09-30 하향식 재설계로 단순화 - 예전엔 최대 2라운드 재투입이었으나
     세션에 걸쳐 반복 실행하면 ng.json에 판단이 누적되는 문제를 겪어 "끝나면 한 번 더"로 단순화):
     missed_cut으로 새 후보가 생기면 assemble_draft.py -> seam_refine.py를 1회만 다시 돌려
     반영하고 종료한다 - PD·시청자를 다시 부르지 않는다.
-  - **outtake**: `ng.json` 항목에 `outtake_suggested`/`outtake_reason`으로 남긴다.
-    `server.py`의 `payload()`가 이 두 필드를 프론트엔드로 그대로 전달한다(2026-09-29 추가).
-    `decisions.json`의 `outtakes`(별표) 리스트는 사용자가 직접 켜고 끄는 것이라 자동으로
-    채우지 않음 - "제안됨"과 "사용자가 확정한 별"을 구분해야 해서다. 이 제안을 화면에
-    배지 등으로 표시하는 건 검토 화면 자체를 다루는 세션 몫으로 남아 있다.
 
 Usage:
     python scripts/global_review.py <videos/NAME> [--max-rounds 2]
@@ -129,8 +124,8 @@ def build_viewer_view(words: list[dict], final_cuts: list[dict]) -> tuple[str, l
 # --------------------------------------------------------------------------------- PD
 
 class PDFinding(BaseModel):
-    type: Literal["missed_cut", "over_cut", "outtake"]
-    cut_id: Optional[int] = None      # over_cut/outtake: final_cuts의 cut_id
+    type: Literal["missed_cut", "over_cut"]
+    cut_id: Optional[int] = None      # over_cut: final_cuts의 cut_id
     wi_start: Optional[int] = None    # missed_cut: 원본 단어 id (반열림)
     wi_end: Optional[int] = None
     final_attempt_wi_start: Optional[int] = None  # missed_cut 안에 실패한 시도가 여럿이고 그중
@@ -164,7 +159,6 @@ missed_cut으로 다시 보고하지 마라** - 이미 처리 중이다.
   안 되니까).
 - over_cut: CUT 표시된 구간인데, 그 안에 결과에서 사라지면 안 되는 정보(새 사실·수치·예시·조건)가
   있어서 과하게 잘린 것. **반드시** 그 ⟦CUT id=N⟧의 N을 cut_id에 그대로 채워라.
-- outtake: 재미있거나 웃긴 NG로, 엔딩 아웃테이크 코너에 쓸 만한 것. 마찬가지로 cut_id를 채워라.
 
 각 finding: type, (해당 필드), reason(한국어 한 문장), confidence(0-1), severity(high/medium/low).
 """
@@ -175,6 +169,43 @@ def pd_review(pd_view: str) -> list[PDFinding]:
     client = anthropic.Anthropic()
     resp = client.messages.parse(model=PD_MODEL, max_tokens=6000, system=PD_SYSTEM,
                                  messages=[{"role": "user", "content": pd_view}],
+                                 output_format=PDReview, **thinking_kwargs(PD_MODEL))
+    return resp.parsed_output.findings
+
+
+# 2026-10-01 (docs/기획/03-두-관점-평가.md 4장 "없음|repetition" 행): 시청자만 repetition을
+# 지적하고 PD는 그 자리를 안 걸렸을 때, PD에게 "이거 missed_cut 맞냐"고 좁혀서 재질의한다.
+# PDFinding/PDReview 스키마를 그대로 재사용 - 결과가 missed_cut이면 기존 missed_cut 처리
+# 경로(new_ng_items)에 그대로 합류시킬 수 있다.
+REPETITION_RECHECK_SYSTEM = """\
+너는 같은 채널의 전담 편집자다. 시청자 평가가 아래 결과물의 특정 구간들을 "방금 들은 말을 또
+듣는 느낌"이라고 지적했다 - PD(너)는 전체 검토에서 이 구간들을 놓쳤었다. 각 구간이 실제로
+지웠어야 할 불필요한 재진술(missed_cut)인지, 의도된 강조·교육적 재진술이라 살려야 하는지
+다시 판단하라.
+
+지워야 한다고 판단되면 missed_cut finding 하나로 보고하라 - wi_start/wi_end는 주어진
+"[구간, 단어 N-M]" 표시 그대로 채워라(반드시). 살려야 한다고 판단되면 그 구간에 대해 아무
+finding도 내지 마라 - 이건 재질의 전용이니 다른 missed_cut/over_cut은 보고하지 마라.
+"""
+
+
+def recheck_repetitions(words: list[dict], repetition_vfs: list["ViewerFinding"],
+                        seg_by_id: dict[int, dict]) -> list[PDFinding]:
+    blocks = []
+    for vf in repetition_vfs:
+        seg = seg_by_id.get(vf.segment_id)
+        if not seg:
+            continue
+        before = " ".join(w["text"] for w in words[max(0, seg["wi_start"] - 40):seg["wi_start"]])
+        text = " ".join(w["text"] for w in seg["words"])
+        blocks.append(f"[구간, 단어 {seg['wi_start']}-{seg['wi_end']}]\n앞 맥락: …{before}\n"
+                      f"지적된 구간: {text}\n시청자 지적: {vf.reason}")
+    if not blocks:
+        return []
+    import anthropic
+    client = anthropic.Anthropic()
+    resp = client.messages.parse(model=PD_MODEL, max_tokens=3000, system=REPETITION_RECHECK_SYSTEM,
+                                 messages=[{"role": "user", "content": "\n\n".join(blocks)}],
                                  output_format=PDReview, **thinking_kwargs(PD_MODEL))
     return resp.parsed_output.findings
 
@@ -259,6 +290,14 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
     seg_by_id = {s["id"]: s for s in segments}
     final_by_id = {c["cut_id"]: c for c in final_cuts}
 
+    # repetition(시청자만 지적, PD는 놓침) -> PD에게 "missed_cut 맞냐"고 좁혀 재질의
+    # (docs/기획/03-두-관점-평가.md 4장). 결과는 missed_cut이면 아래 new_ng_items 처리에 합류.
+    repetition_vfs = [vf for vf in viewer_result.findings if vf.type == "repetition"]
+    repetition_findings = recheck_repetitions(words, repetition_vfs, seg_by_id) if repetition_vfs else []
+    if repetition_vfs:
+        print(f"  repetition 재질의: {len(repetition_vfs)}건 중 {len(repetition_findings)}건 missed_cut으로 확인")
+    pd_findings = pd_findings + repetition_findings
+
     # missed_cut -> 새 ng 후보 (항상 flag=restore - 검증 안 된 새 경로라 보수적으로)
     # 2026-09-30: "이미 처리된 구간과 겹치면 버린다"는 가드를 시도했다가 되돌림 - ng_items가
     # 이 시점엔 이미 문서 전체에 밀도 높게 깔려 있어서, 진짜 missed_cut까지도 "근처에 뭔가
@@ -291,27 +330,20 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
             "llm_classification": None, "llm_model": PD_MODEL,
         })
 
-    # over_cut/outtake (PD) -> final_cuts.json + ng.json 역전파
-    flag_updates, outtake_marks, ng_backprop = 0, 0, 0
+    # over_cut (PD) -> final_cuts.json + ng.json 역전파
+    flag_updates, ng_backprop = 0, 0
     for f in pd_findings:
-        if f.type not in ("over_cut", "outtake") or f.cut_id not in final_by_id:
+        if f.type != "over_cut" or f.cut_id not in final_by_id:
             continue
         c = final_by_id[f.cut_id]
-        if f.type == "over_cut":
-            reason = f"전체 루프 PD: 정보 손실 의심 - {f.reason}"
-            if c.get("flag") != "restore":
-                flag_updates += 1
-            c["flag"] = "restore"
-            c["flag_reason"] = f"{c.get('flag_reason') or ''}; {reason}".strip("; ")
-            for idx in trace_to_ng_indices(f.cut_id, draft_cuts):
-                if apply_flag_to_ng(ng_items, idx, reason):
-                    ng_backprop += 1
-        else:  # outtake
-            for idx in trace_to_ng_indices(f.cut_id, draft_cuts):
-                if idx < len(ng_items):
-                    ng_items[idx]["outtake_suggested"] = True
-                    ng_items[idx]["outtake_reason"] = f.reason
-                    outtake_marks += 1
+        reason = f"전체 루프 PD: 정보 손실 의심 - {f.reason}"
+        if c.get("flag") != "restore":
+            flag_updates += 1
+        c["flag"] = "restore"
+        c["flag_reason"] = f"{c.get('flag_reason') or ''}; {reason}".strip("; ")
+        for idx in trace_to_ng_indices(f.cut_id, draft_cuts):
+            if apply_flag_to_ng(ng_items, idx, reason):
+                ng_backprop += 1
 
     # 시청자 jump/unclear -> 구조적으로 걸 수 있는 인접 컷에 flag (final_cuts + ng.json 역전파)
     for vf in viewer_result.findings:
@@ -338,7 +370,7 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
 
     print(f"  적용: 새 컷 후보 {len(new_ng_items)}건, "
           f"final_cuts flag 갱신 {flag_updates}건, "
-          f"ng.json 역전파 {ng_backprop}건(검토 화면에 반영됨), outtake 표시 {outtake_marks}건")
+          f"ng.json 역전파 {ng_backprop}건(검토 화면에 반영됨)")
 
     return {
         "pd_model": PD_MODEL, "viewer_model": viewer_model_used,
@@ -346,7 +378,8 @@ def one_round(folder: Path, words: list[dict], edit: Path) -> dict:
         "viewer_findings": [f.model_dump() for f in viewer_result.findings],
         "viewer_overall": viewer_result.overall.model_dump(),
         "new_ng_items": len(new_ng_items), "flag_updates": flag_updates,
-        "ng_backprop": ng_backprop, "outtake_marks": outtake_marks,
+        "ng_backprop": ng_backprop,
+        "repetition_rechecked": len(repetition_vfs), "repetition_confirmed": len(repetition_findings),
     }
 
 

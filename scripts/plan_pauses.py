@@ -2,15 +2,22 @@
 
 Every gap between consecutive words of at least SHOW_MIN gets a RECOMMENDED keep length:
 
-    NORMAL                keep 0.25s   ordinary sentence boundary
+    NORMAL_INTER          keep 0.25s   ordinary gap between sentences (prev word ends with . ! ? …)
+    NORMAL_INTRA          keep 0.15s   ordinary gap inside a sentence (no sentence-ending punctuation)
     ENUMERATION           keep 0.11s   items in a list - tighter
     QUOTE_TO_EXPLANATION  keep 0.40s   quoting then explaining - more air
     TRANSITION            keep all     topic change - intentional breath
     QUESTION_TO_ANSWER    keep all     rhetorical question then answer
     SPEAKER_CHANGE        keep all     handled by the speaker-block layer, not here
 
+NORMAL_INTER vs NORMAL_INTRA is decided structurally (sentence-ending punctuation on the
+preceding word), not by the LLM - the LLM's NORMAL label just means "no special discourse
+function", and gets resolved to one of the two afterward (see `resolve_style`). This way the
+two keep lengths each get their own lever in the review UI, instead of one NORMAL target that
+had to compromise between mid-sentence breaths and sentence-boundary pauses.
+
 Gaps of LLM_MIN or longer are classified by one LLM call (with a few words of context on
-each side); shorter ones are NORMAL. Model: claude-haiku-4-5 (PLAN.md 12장 모델 선택) - this
+each side); shorter ones default to NORMAL. Model: claude-haiku-4-5 (PLAN.md 12장 모델 선택) - this
 is high-volume categorical labeling driven almost entirely by lexical discourse markers
 ("다시 말하면", "첫째", question marks), not the harder semantic judgment NG classification
 needs, so the cheapest tier is the cost-effective choice here. A wrong label only changes
@@ -40,15 +47,19 @@ from typing import Literal
 from pydantic import BaseModel
 
 from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json
+from audio_map import load_audio_map, true_onset
 
 SHOW_MIN = 0.12       # below this a gap is articulation, not a pause; Scribe jitter is 50-100ms
-LLM_MIN = 0.35        # gaps this long get context-classified; shorter ones are NORMAL
+LLM_MIN = 0.35        # gaps this long get context-classified; shorter ones default to NORMAL
 PROTECT_SEC = 0.02    # never cut within this of a word boundary
 MIN_TRIM = 0.05       # don't bother removing less than this
 LONG_GAP_FALLBACK = 1.5  # without an LLM, gaps this long are assumed intentional
+SENTENCE_ENDERS = (".", "!", "?", "…")
+TRAILING_WRAPPERS = "\"'”’)]}」』》"  # closing quotes/parens that can follow sentence punctuation
 
 PRESETS = {
-    "NORMAL":               {"target": 0.25, "trim": True},
+    "NORMAL_INTER":         {"target": 0.25, "trim": True},
+    "NORMAL_INTRA":         {"target": 0.15, "trim": True},
     "ENUMERATION":          {"target": 0.11, "trim": True},
     "QUOTE_TO_EXPLANATION": {"target": 0.40, "trim": True},
     "TRANSITION":           {"target": None, "trim": False},
@@ -57,6 +68,18 @@ PRESETS = {
 }
 
 Style = Literal["NORMAL", "ENUMERATION", "QUOTE_TO_EXPLANATION", "TRANSITION", "QUESTION_TO_ANSWER"]
+
+
+def ends_sentence(text: str) -> bool:
+    return text.rstrip(TRAILING_WRAPPERS).endswith(SENTENCE_ENDERS)
+
+
+def resolve_style(style: str, gap: dict) -> str:
+    """Split the LLM's/fallback's plain NORMAL into NORMAL_INTER/NORMAL_INTRA by sentence
+    boundary. Already-split styles (reused from a prior run's pauses.json) pass through."""
+    if style != "NORMAL":
+        return style
+    return "NORMAL_INTER" if gap["sentence_boundary"] else "NORMAL_INTRA"
 
 
 class GapLabel(BaseModel):
@@ -108,19 +131,27 @@ def trim_for_keep(gap: dict, keep_sec: float) -> dict | None:
     return {"start": round(us + half, 3), "end": round(ue - half, 3)}
 
 
-def build_gaps(words: list[dict]) -> list[dict]:
+def build_gaps(words: list[dict], amap: dict | None = None) -> list[dict]:
     gaps = []
     for i in range(len(words) - 1):
         a, b = words[i], words[i + 1]
-        dur = b["start"] - a["end"]
-        if dur < SHOW_MIN:
+        raw_dur = b["start"] - a["end"]
+        if raw_dur < SHOW_MIN:
             continue
+        # Only correct the boundary of a gap that already qualifies as a real pause - running
+        # true_onset() against every consecutive word pair (including ordinary mid-sentence
+        # micro-gaps) reads continuous speech's own energy as "already started" almost
+        # everywhere, the same 83%-false-positive failure mode docs/결정-이력.md 09-29 already
+        # found with a flat dB threshold.
+        gap_end = true_onset(amap, b["start"]) if amap else b["start"]
+        dur = gap_end - a["end"]
         gaps.append({
             "id": len(gaps),
             "prev_wi": a["wi"], "next_wi": b["wi"],
-            "gap_start": round(a["end"], 3), "gap_end": round(b["start"], 3),
+            "gap_start": round(a["end"], 3), "gap_end": round(gap_end, 3),
             "duration": round(dur, 3),
             "speaker_change": a.get("speaker_id") != b.get("speaker_id"),
+            "sentence_boundary": ends_sentence(a["text"]),
             "before": " ".join(w["text"] for w in words[max(0, i - 7):i + 1]),
             "after": " ".join(w["text"] for w in words[i + 1:i + 8]),
         })
@@ -154,7 +185,11 @@ def previous_labels(folder: Path) -> dict[tuple[int, int], str]:
 
 def plan(folder: Path, use_llm: bool = True) -> Path:
     words = words_only(load_transcript(folder))
-    gaps = build_gaps(words)
+    amap = load_audio_map(folder)
+    if not amap:
+        print("no audio_map.json - pause trims will trust Scribe's word-start timestamps as-is "
+              "(run audio_map.py first to correct for ASR onset lag)")
+    gaps = build_gaps(words, amap)
     reuse = previous_labels(folder)
 
     labels: dict[int, str] = {}
@@ -177,11 +212,11 @@ def plan(folder: Path, use_llm: bool = True) -> Path:
         if g["speaker_change"]:
             style = "SPEAKER_CHANGE"
         elif g["id"] in labels:
-            style = labels[g["id"]]
+            style = resolve_style(labels[g["id"]], g)
         elif g["duration"] >= LLM_MIN:
-            style = "TRANSITION" if g["duration"] >= LONG_GAP_FALLBACK else "NORMAL"
+            style = "TRANSITION" if g["duration"] >= LONG_GAP_FALLBACK else resolve_style("NORMAL", g)
         else:
-            style = "NORMAL"
+            style = resolve_style("NORMAL", g)
         g["style"] = style
         g["llm_labeled"] = g["id"] in labels
         g["rec_keep"] = recommended_keep(g, targets)
