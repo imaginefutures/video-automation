@@ -232,7 +232,7 @@
   #scrollProgress .tick.done::after { background: var(--line-strong); }
   #scrollProgress:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  .para { margin: 0 0 14px; font-size: 17px; line-height: 1.85; }
+  .para { margin: 0; font-size: 17px; line-height: 1.85; }
   .tok { border-radius: 3px; padding: 1px 0; }
   .w { cursor: text; }
   .w.cut { text-decoration: line-through; text-decoration-color: var(--cut); color: var(--cut); cursor: pointer; }
@@ -762,29 +762,26 @@ function gaugeWidth(dur) { return Math.max(G_MIN, Math.min(G_MAX, Math.round(dur
 // end up - its parentElement is the <p>, not a .tok, so closestTok() returned null and the
 // whole selection silently vanished. Keeping the space inside the token fixes that at the
 // source instead of working around it in the selection code.
+// 10-02(사용자 피드백 - "스크립트는 무조건 한줄씩"): 문단이 화면에서 2줄 이상으로 접히면
+// 그 밑의 파형 스트립도 2줄치 단어를 한꺼번에 담아 복잡해지고, 어느 단어가 파형 어디에
+// 해당하는지 찾기 어려워진다. 그래서 "문단"이 아니라 "실제로 화면에 그려지는 한 줄"을 파형
+// 스트립의 단위로 삼는다 - 모든 토큰을 임시 컨테이너 하나에 넣어 실제 줄바꿈 지점(offsetTop이
+// 바뀌는 지점)을 먼저 측정한 뒤, 그 측정대로 한 줄짜리 <p>를 하나씩 만들어 순서대로 넣는다.
 function renderTranscript() {
   const root = $('#transcript'); root.innerHTML = '';
   const spacer = document.createElement('div'); spacer.id = 'topSpacer'; root.appendChild(spacer);
-  let para = document.createElement('p'); para.className = 'para';
-  let paraFirstWi = null, paraLastWi = null;  // 10-02: 문단 하나가 끝날 때 그 범위로 파형 스트립을 만들기 위해 추적
-  const flushPara = () => {
-    root.appendChild(para);
-    if (paraFirstWi != null) createWaveStrip(root, paraFirstWi, paraLastWi);
-    para = document.createElement('p'); para.className = 'para';
-    paraFirstWi = paraLastWi = null;
-  };
+  sizeTopSpacer();  // 줄바꿈 측정 전에 영상 썸네일이 차지하는 폭부터 반영(안 그러면 첫 줄들의 측정이 틀어짐)
+
+  const measurePara = document.createElement('p'); measurePara.className = 'para';
+  root.appendChild(measurePara);
+  const els = [];
   toks.forEach((t, ti) => {
     if (t.type === 'w') {
       const w = S.words[t.wi];
-      if (t.wi > 0) {
-        const prev = S.words[t.wi - 1]; const gap = w.s - prev.e;
-        if (gap >= 1.2 || (gap >= 0.5 && /[.?!]$/.test(prev.t))) flushPara();
-      }
       const el = document.createElement('span');
       el.className = 'tok w'; el.dataset.t = ti; el.dataset.wi = w.wi; el.textContent = w.t + ' '; el.title = fmt(w.s);
-      para.appendChild(el);
-      if (paraFirstWi == null) paraFirstWi = w.wi;
-      paraLastWi = w.wi;
+      measurePara.appendChild(el);
+      els.push(el);
     } else {
       const el = document.createElement('span');
       el.className = 'tok g'; el.dataset.t = ti; el.dataset.gid = t.gid;
@@ -794,10 +791,27 @@ function renderTranscript() {
       el.addEventListener('dblclick', (ev) => { ev.preventDefault(); decide({ type: 'pause_gap', gap_id: t.gid, keep_sec: null }); toast('추천값으로'); });
       el.addEventListener('mousemove', (ev) => showGtip(t, ev));
       el.addEventListener('mouseleave', hideGtip);
-      para.appendChild(el);
+      measurePara.appendChild(el);
+      els.push(el);
     }
   });
-  flushPara();
+  const lineGroups = [];
+  let curTop = null, curGroup = null;
+  els.forEach((el) => {
+    const top = el.offsetTop;
+    if (top !== curTop) { curGroup = []; lineGroups.push(curGroup); curTop = top; }
+    curGroup.push(el);
+  });
+  measurePara.remove();
+
+  lineGroups.forEach((group) => {
+    const p = document.createElement('p'); p.className = 'para';
+    group.forEach((el) => p.appendChild(el));  // 이미 만든 엘리먼트를 그대로 옮김 - 이벤트 리스너 유지
+    root.appendChild(p);
+    const wordEls = group.filter((el) => el.classList.contains('w'));
+    if (wordEls.length) createWaveStrip(root, +wordEls[0].dataset.wi, +wordEls[wordEls.length - 1].dataset.wi);
+  });
+
   applyStates();
   root.addEventListener('mouseup', onMouseUp);
   root.addEventListener('dblclick', onDblClick);

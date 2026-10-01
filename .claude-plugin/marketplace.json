@@ -9,7 +9,7 @@
       "name": "video-cut",
       "source": ".",
       "description": "한국어 강의·토킹헤드 원본 영상의 컷편집 러프컷을 자동 생성하는 스킬",
-      "version": "1.8.0"
+      "version": "1.9.0"
     }
   ]
 }
