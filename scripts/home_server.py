@@ -18,7 +18,6 @@ Usage:
 from __future__ import annotations
 import argparse
 import atexit
-import getpass
 import json
 import mimetypes
 import os
@@ -30,6 +29,7 @@ import sys
 import threading
 import time
 import webbrowser
+import zlib
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -45,11 +45,6 @@ from common import (  # noqa: E402
 )
 
 BACKUP_RE = RESERVED_PROJECT_NAME_RE  # common.py와 공유 - sanitize_project_name() 참고
-
-# scripts/server.py Session의 개인화 상수와 반드시 같은 값이어야 한다 - 저쪽 숫자가 바뀌면
-# 여기 '남은 건수'도 같이 틀어진다.
-PREFS_MIN_SAMPLES = 3
-PREFS_MIN_RATIO = 0.75
 
 
 def videos_root() -> Path:
@@ -78,33 +73,6 @@ def _read_json(path: Path, default):
         return default
 
 
-def _user_prefs() -> dict:
-    """scripts/server.py의 prefs_path()/user_id()와 같은 경로 - 케이스별(A/B/E...) 누적
-    cut/keep 비율로 REVIEW 항목을 사람 손 없이 미리 채우는 "정답지"(영상을 넘어 누적, 홈 화면
-    쪽은 이걸 적용 안 하면 아직 한 번도 안 연 영상의 '남은 건수'가 실제 검토 화면보다 훨씬
-    커 보인다 - BS183으로 직접 확인: 이 적용 없이는 33건, 적용하면 실제 화면과 같은 12건)."""
-    user = os.environ.get("VIDEO_CUT_USER") or getpass.getuser()
-    return _read_json(Path.home() / ".video-cut" / "prefs" / f"{user}.json", {"ng_case": {}})
-
-
-def _pref_action_for_case(case: str | None, prefs: dict) -> str | None:
-    """scripts/server.py Session._pref_action_for_case()와 동일 - 같이 고칠 것."""
-    if not case:
-        return None
-    counts = prefs.get("ng_case", {}).get(case)
-    if not counts:
-        return None
-    total = counts.get("cut", 0) + counts.get("keep", 0)
-    if total < PREFS_MIN_SAMPLES:
-        return None
-    cut_ratio = counts.get("cut", 0) / total
-    if cut_ratio >= PREFS_MIN_RATIO:
-        return "cut"
-    if cut_ratio <= 1 - PREFS_MIN_RATIO:
-        return "keep"
-    return None
-
-
 def _display_route(item: dict) -> str:
     """scripts/server.py의 Session._display_route()와 같은 규칙이어야 한다(route/flag를
     AUTO_SAFE/REVIEW/KEEP으로 바꾸는 09-29 max-delete 라우팅) - 저쪽이 바뀌면 여기도 같이
@@ -116,13 +84,13 @@ def _display_route(item: dict) -> str:
     return "REVIEW" if item.get("flag") == "restore" else "AUTO_SAFE"
 
 
-def _ng_pending(ng: list[dict], dec: dict, prefs: dict) -> int:
+def _ng_pending(ng: list[dict], dec: dict) -> int:
     """scripts/server.py Session._review_estimate()의 ng 쪽과 같은 셈 - REVIEW로 분류됐지만
     아직 사람이 손대지 않은(skip도 아닌) 항목 수. decisions.json에 그 인덱스가 아직 없으면(=
     한 번도 열어본 적 없는 영상, 또는 그 뒤에 새로 생긴 항목) Session._default_decisions()와
-    같은 길로 개인화 정답지를 라이브로 적용해야 한다 - 이미 저장된 decisions.json은 그 안의
-    'by' 값을 그대로 믿는다(한 번 'auto'로 저장되면 그 뒤 정답지가 쌓여도 다시 안 바뀐다 -
-    server.py _merge_defaults()가 실제로 그렇게 동작함)."""
+    같은 길로 "auto"로 본다 - 2026-10-01부로 그쪽에 개인화 정답지 적용이 전면 폐기됐으니((removed)
+    personalization 주석 참고) 여기서도 더는 prefs.json을 보지 않는다. 이미 저장된
+    decisions.json은 그 안의 'by' 값을 그대로 믿는다."""
     n = 0
     ng_dec = dec.get("ng", {})
     for i, item in enumerate(ng):
@@ -130,13 +98,12 @@ def _ng_pending(ng: list[dict], dec: dict, prefs: dict) -> int:
             continue
         d = ng_dec.get(str(i))
         if d is None:
-            case = (item.get("llm_classification") or {}).get("case")
-            by = "personalized" if _pref_action_for_case(case, prefs) else "auto"
+            by = "auto"
         else:
             if d.get("skipped"):
                 continue
             by = d.get("by")
-        if by in ("personalized", "pattern_suggestion", "user", "gold"):
+        if by in ("pattern_suggestion", "user", "gold"):
             continue
         n += 1
     return n
@@ -238,7 +205,7 @@ def project_status(folder: Path) -> dict:
 
     blocks = _read_json(edit / "speaker_blocks.json", {"blocks": []}).get("blocks", [])
     info["status"] = "reviewing"
-    info["pending"] = _ng_pending(ng, dec, _user_prefs()) + _block_pending(blocks, dec)
+    info["pending"] = _ng_pending(ng, dec) + _block_pending(blocks, dec)
     info["total"] = sum(1 for it in ng if _display_route(it) == "REVIEW") + len(blocks)
     return info
 
@@ -289,9 +256,23 @@ def _port_listening(port: int) -> bool:
             return False
 
 
-def _alloc_port() -> int:
+_PORT_LO, _PORT_HI = 8766, 8900  # [lo, hi)
+
+
+def _preferred_port(name: str) -> int:
+    """프로젝트 이름에서 결정적으로 포트를 하나 뽑는다 - 같은 영상을 다시 열면 가능하면 같은
+    포트를 쓰게 해서, 그 origin에 달린 localStorage(검토 화면 단축키 패널의 '한 번 봤음'
+    플래그 등)가 그 영상에 한해서는 세션을 넘어 안정적으로 유지된다. 전에는 '지금 비어있는
+    가장 낮은 포트'를 매번 새로 골라서, 같은 영상도 열 때마다 다른 포트(= 다른 origin)를
+    받을 수 있었다."""
+    return _PORT_LO + (zlib.crc32(name.encode()) % (_PORT_HI - _PORT_LO))
+
+
+def _alloc_port(prefer: int | None = None) -> int:
     taken = {a["port"] for a in _active.values()}
-    for port in range(8766, 8900):
+    if prefer is not None and prefer not in taken and _port_free(prefer):
+        return prefer
+    for port in range(_PORT_LO, _PORT_HI):
         if port not in taken and _port_free(port):
             return port
     raise RuntimeError("빈 포트를 못 찾았습니다")
@@ -319,7 +300,7 @@ def open_review(name: str) -> dict:
         if active is None or active["proc"].poll() is not None:
             if active is None and not (folder / "edit" / "ng.json").exists():
                 raise ValueError("아직 처리 중입니다 - 처리가 끝난 뒤에 검토할 수 있어요")
-            port = _alloc_port()
+            port = _alloc_port(_preferred_port(name))
             log_path = folder / "edit" / "server.log"
             log_f = open(log_path, "a")
             proc = subprocess.Popen(
@@ -386,7 +367,7 @@ def create_project(title: str, content_length: int, rfile) -> dict:
             raise
 
         edit_dir(folder)  # run.py가 edit/run.log를 열 수 있도록 미리 만들어 둠
-        port = _alloc_port()
+        port = _alloc_port(_preferred_port(name))
         log_path = folder / "edit" / "run.log"
         log_f = open(log_path, "a")
         proc = subprocess.Popen(

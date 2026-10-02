@@ -231,6 +231,12 @@
     transform: translateX(-50%); border-radius: 1px; background: var(--proposal-line); }
   #scrollProgress .tick.done::after { background: var(--line-strong); }
   #scrollProgress:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* A bare full-width 3px accent-colored bar reads as a page-loading indicator at a glance
+     (same visual convention as NProgress/GitHub/YouTube's top bar), especially once it's
+     pinned at 100% with no ticks (short or fully-clean transcript). The label makes it legible
+     as "reading position" without hovering for the title tooltip. */
+  #scrollProgressLabel { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 10.5px; color: var(--muted); pointer-events: none; white-space: nowrap; }
 
   .para { margin: 0; font-size: 17px; line-height: 1.85; }
   .tok { border-radius: 3px; padding: 1px 0; }
@@ -375,7 +381,7 @@
         </div>
       </div>
       <div id="searchRow">
-        <input id="searchBox" type="text" aria-label="대본 검색" placeholder="검색 · 문구 또는 '화자 이탈만' 같은 설명"
+        <input id="searchBox" type="text" aria-label="대본 검색" placeholder="검색 (Enter)"
                title="정확한 문구는 즉시 찾습니다. 못 찾으면 의미로 찾습니다(AI, 몇 초 걸림). Enter로 다음 결과, Esc로 닫기">
         <span id="searchStatus"></span>
       </div>
@@ -429,6 +435,7 @@
       <div class="track"></div>
       <div id="scrollProgressFill"></div>
       <div id="scrollProgressTicks"></div>
+      <span id="scrollProgressLabel"></span>
     </div>
     <div id="transcript"></div>
   </main>
@@ -530,10 +537,15 @@ function renderPipelineProgress(st) {
       + `</ul>`
     : `<div style="width:34px;height:34px;border:3px solid #3a3d42;border-top-color:#7ab8ff;border-radius:50%;
                    animation:pipelineSpin 0.8s linear infinite"></div>`;
+  // 몇 분 걸릴지는 영상 길이·API 응답 속도에 따라 널뛰어 섣불리 추정하면 틀렸을 때 더
+  // 불안해진다(없는 것보다 나쁨) - 대신 항상 정확한 "몇 단계 중 몇 번째"만 보여준다.
+  const countText = stages.length && Number.isFinite(st.done) && Number.isFinite(st.total)
+    ? `<p style="margin:-8px 0 0;font-size:12px;color:#666">${st.done}/${st.total}단계</p>` : '';
   el.innerHTML = `
     <style>@keyframes pipelineSpin{to{transform:rotate(360deg)}}</style>
     ${indicator}
     <p style="margin:0;font-size:12.5px;color:#888">${esc(st.stage || '처리 준비 중')}</p>
+    ${countText}
     ${errBlock}
     <p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>`;
 }
@@ -730,6 +742,12 @@ function nextSearchMatch() {
   $('#searchStatus').textContent = `${searchIdx + 1}/${searchMatches.length}`;
   markCurrentSearchMatch();
 }
+$('#searchBox').addEventListener('focus', (e) => {
+  if (!e.target.value.trim()) $('#searchStatus').textContent = 'Enter로 검색';
+});
+$('#searchBox').addEventListener('blur', (e) => {
+  if (!e.target.value.trim()) $('#searchStatus').textContent = '';
+});
 $('#searchBox').addEventListener('keydown', (e) => {
   e.stopPropagation();  // keep the global J/Space/⌘Z shortcuts from firing while typing here
   if (e.key === 'Enter') {
@@ -856,6 +874,10 @@ function updateScrollProgress() {
   bar.setAttribute('aria-valuetext', scrollProgressPending
     ? `${pctInt}퍼센트 읽음 · 검토 대기 ${scrollProgressPending}건`
     : `${pctInt}퍼센트 읽음`);
+  const label = $('#scrollProgressLabel');
+  if (label) label.textContent = scrollProgressPending
+    ? `${pctInt}% 읽음 · 대기 ${scrollProgressPending}건`
+    : `${pctInt}% 읽음`;
 }
 function scheduleScrollProgress() { if (scrollProgressRaf == null) scrollProgressRaf = requestAnimationFrame(updateScrollProgress); }
 $('#main').addEventListener('scroll', scheduleScrollProgress, { passive: true });
