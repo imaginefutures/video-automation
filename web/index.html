@@ -85,11 +85,22 @@
   .suggestion-card .sg-btns button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
   /* review panel: 본문 ↑/↓ + C/V가 모든 판단을 담당한다(10-02 카드 큐 완전 제거) - 여기는
-     "몇 건 중 몇 건 완료"라는 진행 상황 숫자와 안내 문구만 보여준다. */
+     "몇 건 중 몇 건 완료"라는 진행 상황 숫자와, 그 판단을 누르기만 하면 되는 툴바를 보여준다. */
   #reviewPanel { padding: 0 16px 4px; }
   #reviewPanel .empty-hint { font-size: 12px; color: var(--muted); padding: 2px 0 8px; }
   #reviewProgress { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
   #reviewEstimate { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
+  /* 10-02(사용자 지적 - "이거 어떤 기능인지 인식이 안됨"): ↑/↓·C/V·1·3·⇧Enter 키보드 단축키가
+     전부 안 보여서 발견이 안 됐다 - 같은 동작을 가리키는 버튼을 추가한다(팝업으로 또 판단하는
+     중복이 아니라, 하나뿐인 흐름을 보이게만 만드는 것). 키보드는 그대로 둔다. */
+  #reviewToolbar { padding: 4px 0 10px; display: flex; flex-direction: column; gap: 6px; }
+  #rtPos { font-size: 11.5px; color: var(--muted); min-height: 14px; }
+  .rt-row { display: flex; gap: 6px; }
+  .rt-row button, #rtLock { flex: 1; font-size: 12px; padding: 6px 4px; border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  .rt-row button:hover:not(:disabled), #rtLock:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .rt-row button:disabled, #rtLock:disabled { opacity: 0.4; cursor: default; }
+  #rtAltRow { display: none; }
 
   /* ---------------------------------------------------------------- 빠른 확인 (docs/기획/05-검토-화면.md 2장)
      flag는 있지만 두 평가 모두 통과한, 한 번도 복원한 적 없는 유형 - 카드 목록 없이 이음새를
@@ -336,7 +347,25 @@
     </div>
     <div id="sidebarScroll">
       <div id="suggestionPanel"></div>
-      <div id="reviewPanel"></div>
+      <div id="reviewPanel">
+        <div id="reviewEmpty" class="empty-hint">판단이 필요한 항목이 없습니다</div>
+        <div id="reviewToolbar">
+          <div id="rtPos"></div>
+          <div class="rt-row">
+            <button id="rtPrev" title="이전 (↑)">◀ 이전</button>
+            <button id="rtNext" title="다음 (↓)">다음 ▶</button>
+          </div>
+          <div class="rt-row">
+            <button id="rtKeep" title="살리기 (V)">살리기</button>
+            <button id="rtCut" title="삭제 유지 (C)">삭제 유지</button>
+          </div>
+          <div class="rt-row" id="rtAltRow">
+            <button id="rtFront" title="앞부분만 살리기 (1)">앞부분만 살리기</button>
+            <button id="rtBack" title="뒷부분만 살리기 (3)">뒷부분만 살리기</button>
+          </div>
+          <button id="rtLock" title="확정 - 더 이상 건드리지 않음 (⇧Enter)">확정</button>
+        </div>
+      </div>
       <div id="quickSection">
         <div class="divider"></div>
         <div class="section-title">빠른 확인 <span id="quickCount"></span></div>
@@ -1188,6 +1217,7 @@ function select(x, y) {
   // currently selected), so 삭제/살리기 never need two different shortcuts.
   selAllCut = allCut;
   syncActiveStripToSelection();  // 10-02: 이 선택이 속한 문단의 스트립만 active로 전환
+  syncReviewToolbar();  // 사이드바 판단 필요 툴바를 지금 선택 상태로 갱신
 }
 function selRange() {
   const a = toks[sel.a], b = toks[sel.b];
@@ -1200,9 +1230,9 @@ function clearSel(hide = true) {
   document.querySelectorAll('.tok.sel').forEach((el) => el.classList.remove('sel'));
   sel = null; selReviewMatch = null; selExtendAnchorTi = null;
   // hide=false는 select() 내부에서 "새 선택을 세팅하기 직전" 초기화용으로만 쓰인다 - 그 직후
-  // select()가 끝에서 syncActiveStripToSelection()을 어차피 다시 부르므로, 여기서는
-  // hide=true(진짜 선택 해제)일 때만 동기화해 낭비되는 재전환을 건너뛴다.
-  if (hide) syncActiveStripToSelection();
+  // select()가 끝에서 syncActiveStripToSelection()/syncReviewToolbar()를 어차피 다시 부르므로,
+  // 여기서는 hide=true(진짜 선택 해제)일 때만 동기화해 낭비되는 재전환을 건너뛴다.
+  if (hide) { syncActiveStripToSelection(); syncReviewToolbar(); }
 }
 // A selection that exactly spans a pending 검토 필요 item's words (or a whole pending
 // block) resolves THAT item via its own decision type - which drops it from the sidebar -
@@ -1295,6 +1325,16 @@ async function applyUnlock() {
   toast('잠금 해제');
 }
 function playSelJoin() { if (sel) { const r = selRange(); playRange(Math.max(0, r.start - 1.5), r.end + 1.5, { skip: true, extra: [{ start: r.start, end: r.end }] }); } }
+// 사이드바 "판단 필요" 툴바 - ◀이전/다음▶은 언제나 눌릴 수 있고(선택 없어도 "다음"이 곧 시작),
+// 나머지 액션은 지금 선택이 실제 판단 필요 항목일 때만(syncReviewToolbar가 disabled로 막음).
+// 각 액션 뒤에 다음 항목으로 자동 이동 - "쭉 한번에 검토"가 목적이라 매번 다시 ▶을 안 눌러도 된다.
+$('#rtPrev').addEventListener('click', () => jumpToReviewItem(-1));
+$('#rtNext').addEventListener('click', () => jumpToReviewItem(1));
+$('#rtKeep').addEventListener('click', async () => { if (!selReviewMatch) return; await applySel('keep'); jumpToReviewItem(1); });
+$('#rtCut').addEventListener('click', async () => { if (!selReviewMatch) return; await applySel('cut'); jumpToReviewItem(1); });
+$('#rtFront').addEventListener('click', async () => { if (selReviewMatch?.kind !== 'ng') return; await applyAltRestore(selReviewMatch.ref, 'front'); clearSel(); jumpToReviewItem(1); });
+$('#rtBack').addEventListener('click', async () => { if (selReviewMatch?.kind !== 'ng') return; await applyAltRestore(selReviewMatch.ref, 'back'); clearSel(); jumpToReviewItem(1); });
+$('#rtLock').addEventListener('click', async () => { if (!selReviewMatch) return; await applyLock(); jumpToReviewItem(1); });
 // The toast names what was undone and the view scrolls to it - an undo that lands off-screen
 // used to look like nothing happened (or like the wrong thing happened, UX audit H4).
 function historyToast(verb, d) {
@@ -1740,6 +1780,27 @@ function jumpToCutSpan(dir) {  // dir: +1 = 다음(↓) · -1 = 이전(↑)
   document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'auto' });
   select(item.a, item.b);
 }
+// 사이드바 "판단 필요" 툴바(◀ 이전/다음 ▶)의 전용 탐색 - pendingList()와 같은 범위(judge layer
+// NG + 발화 블록)지만 이미 결정한 항목도 포함한다("쭉 한번에 검토"하다 마음이 바뀌어도 다시
+// 들를 수 있어야 하므로). cutSpanList()와 달리 지금 잘려 있는지 여부로 걸러내지 않는다 - 그래야
+// 버튼을 눌러 도착한 자리는 항상 selReviewMatch가 채워져 즉시 판단 버튼들이 동작한다.
+function reviewNavList() {
+  const out = [];
+  for (const n of judgeNgItems()) out.push([n.wi_start, n.wi_end - 1]);
+  for (const b of reviewBlocks()) out.push([b.wi_start, b.wi_end]);
+  return out.map(([wa, wb]) => ({ a: findTokIndex(wa), b: findTokIndex(wb), start: S.words[wa].s }))
+    .filter((p) => p.a >= 0 && p.b >= 0).sort((x, y) => x.start - y.start);
+}
+function jumpToReviewItem(dir) {  // dir: +1 = 다음 · -1 = 이전
+  const cur = sel ? toks[sel.a].s : (cursorTime || -1);
+  const list = reviewNavList();
+  if (!list.length) { toast('판단이 필요한 항목이 없습니다'); return; }
+  let item;
+  if (dir > 0) item = list.find((p) => p.start > cur + 0.01) || list[0];
+  else { const rev = [...list].reverse(); item = rev.find((p) => p.start < cur - 0.01) || rev[0]; }
+  document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'auto' });
+  select(item.a, item.b);
+}
 // 화살표 좌우 = 단어 단위 커서 이동(읽는 속도로 훑기, 무음) - Shift면 선택을 그 방향으로
 // 확장한다(구 단위 일괄 삭제/살리기용). 잠긴 단어도 지나가며 볼 수는 있게 그대로 둔다 -
 // 재편집은 onMouseUp과 동일하게 더블클릭/u로만.
@@ -1990,7 +2051,9 @@ function selectWordRange(wiStart, wiEndIncl) {
 }
 // 10-02(검토 큐 제거): 예전엔 여기가 "판단 필요" 카드 목록(건너뛰기·검토 완료 버튼 포함)을
 // 그렸다 - 1단계(본문 ↑/↓ + C/V)가 이미 완전히 흡수한 동작이라 그대로 두면 같은 판단을 두
-// 군데서 할 수 있는 중복 인터페이스였다(사용자 지적). 이제 여기는 진행 상황 숫자만 보여준다.
+// 군데서 할 수 있는 중복 인터페이스였다(사용자 지적). 이제 여기는 진행 상황 숫자 + 그 ↑/↓·C/V
+// 를 그대로 가리키는 툴바를 보여준다(10-02 2차: "이게 뭔지 인식이 안 된다" 피드백 - 키보드
+// 단축키뿐이라 발견이 안 됨, 버튼은 팝업처럼 또 판단하는 게 아니라 같은 동작을 보이게만 함).
 function renderReviewPanel() {
   const blocks = reviewBlocks();
   const judgeNg = judgeNgItems(), quickNg = quickNgItems();
@@ -1999,11 +2062,31 @@ function renderReviewPanel() {
     + blocks.filter((b) => blockStatus(b) !== 'pending').length;
   $('#reviewCount').textContent = total ? `· ${total}` : '';
   $('#reviewProgress').textContent = total ? `${done}/${total} 완료` : '';
-  $('#reviewPanel').innerHTML = total
-    ? '<div class="empty-hint">본문에서 <kbd>↓</kbd>로 잘린 곳을 훑으며 <kbd>C</kbd>/<kbd>V</kbd>로 판단하세요</div>'
-    : '<div class="empty-hint">판단이 필요한 항목이 없습니다</div>';
+  syncReviewToolbar();
   renderQuickPanel(quickNg);
   renderScrollTicks();
+}
+// select()/clearSel()(선택이 바뀔 때)와 renderReviewPanel()(결정으로 목록 자체가 바뀔 때, 예:
+// 0건이 되는 순간) 양쪽에서 호출 - 지금 선택이 "판단 필요" 항목 하나와 정확히 겹칠 때만 그
+// 항목의 액션 버튼들이 눌려진다(앞/뒤부분 살리기는 쉼이 있는 항목일 때만 추가로 보임).
+function syncReviewToolbar() {
+  const list = reviewNavList();
+  const total = list.length;
+  $('#reviewEmpty').style.display = total ? 'none' : '';
+  $('#reviewToolbar').style.display = total ? '' : 'none';
+  if (!total) return;
+  const match = selReviewMatch;
+  const locked = match?.kind === 'ng' ? !!S.decisions.ng[String(match.ref.i)]?.locked
+    : match?.kind === 'block' ? !!S.decisions.blocks[String(match.ref.id)]?.locked : false;
+  const active = !!match && !locked;
+  $('#rtKeep').disabled = $('#rtCut').disabled = $('#rtLock').disabled = !active;
+  const alt = active && match.kind === 'ng' ? match.ref.review?.split_wi : null;
+  $('#rtAltRow').style.display = alt != null ? 'flex' : 'none';
+  $('#rtFront').disabled = $('#rtBack').disabled = alt == null;
+  const idx = sel ? list.findIndex((p) => p.a === sel.a && p.b === sel.b) : -1;
+  $('#rtPos').textContent = idx >= 0
+    ? `${idx + 1}/${total} · ${match.kind === 'ng' ? ngTypeLabel(match.ref) : '발화 블록'} · ${STATUS_KO[matchStatus(match)]}${locked ? ' (잠김 - 더블클릭으로 해제)' : ''}`
+    : `${total}건 - 다음 ▶으로 시작`;
 }
 // 10-02(사용자 지적 - "카드로 보기는 왜 남아있어"): 빠른 확인 층은 두 평가를 이미 통과한
 // 항목이라 릴로 훑어 듣는 게 기본 동선인데, 카드 목록까지 같이 두면 "또 다른 카드 큐"로
