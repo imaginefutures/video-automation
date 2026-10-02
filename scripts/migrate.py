@@ -16,7 +16,7 @@
      그 단계부터 다시 돈다)이 자연히 재생성을 유도한다. 비싼 단계(트랜스크립션 등)라도 스키마가
      안 바뀌었으면 손대지 않는다.
 
-전역 `~/.video-cut/` 쪽(`prefs/`, `history.jsonl`, `cases/`, `reported_bad_cuts.jsonl`)은 전부
+전역 `~/.video-cut/` 쪽(`prefs/`, `history.jsonl`, `cases/`)은 전부
 사람이 쌓은 데이터라 "재생성"이라는 개념이 없다 - 그래서 버전이 안 맞아도 지우거나 옮기지 않고,
 변환 함수가 없으면 경고만 출력하고 그대로 둔다. 원칙(`docs/서비스-개요와-철학.md`): 정정 데이터는
 사람이 쌓은 것이고, 자동으로 손대지 않는다.
@@ -41,7 +41,6 @@ GLOBAL_CURRENT: dict[str, int] = {
     "prefs": 1,
     "history": 1,
     "cases": 1,
-    "reported_bad_cuts": 1,
 }
 
 # (파일명, 이전 버전, 다음 버전) -> 그 자리에서 data를 변환해 반환하는 함수. 지금은 스키마가

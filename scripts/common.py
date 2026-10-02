@@ -204,7 +204,6 @@ SCHEMA_VERSIONS: dict[str, int] = {
     "pauses.json": 1,
     "decisions.json": 1,
     "edl.json": 1,
-    "structural_suspects.json": 1,  # 2026-10-01: 구조적 의심 탐지 (개인화 대체, 기획/04 3장)
 }
 
 

@@ -44,9 +44,8 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # 전면 폐기 - docs/채택하지-않은-것.md, docs/기획/04-지식-층과-학습.md 참고. 사용자의 모든
 # 복원/추가삭제를 "개인 취향"으로 똑같이 취급했는데, 실제로는 상당수가 엔진이 보편적으로 틀린
 # 것(접속사 삼킴 버그 사례)이라 구분이 안 됐다 - 보편적 버그가 개인 계정 통계에 조용히 흡수돼
-# 묻히는 결함. 사용자 피드백은 이제 구조적 의심 탐지(docs/남은-개발.md)로만 쓴다 - 자동 라우팅은
-# 바꾸지 않는다. (counting-only 절충안도 검토됐으나 기획/04 3장의 구조적 태그 기반 탐지로
-# 완전히 대체하기로 함 - _record_structural_signal 참고, prefs.json 자체를 더 안 씀.)
+# 묻히는 결함. (그 대체로 시도했던 구조적 태그 기반 집계도 2026-10-02 걷어냄 - 소비하는
+# 파이프라인이 끝내 없었다. prefs.json 자체를 더 안 씀.)
 UNDO_LIMIT = 200  # decision snapshots kept for ⌘Z (each is a few KB)
 
 # ----------------------------------------------------------------------------- 두 관점 평가 배지
@@ -75,14 +74,6 @@ def history_path() -> Path:
     return d / "history.jsonl"
 
 
-def bad_cut_reports_path() -> Path:
-    """백로그/R3-신뢰-장치.md의 '오삭제 신고'가 쌓이는 곳. 정식 gold fixture 포맷은 아직
-    미정이라, 지금은 나중에 그 설계가 나오면 바로 소비할 수 있을 만큼만(영상·케이스·본문·시각) 남긴다."""
-    d = Path.home() / ".video-cut"
-    d.mkdir(parents=True, exist_ok=True)
-    return d / "reported_bad_cuts.jsonl"
-
-
 # ----------------------------------------------------------------------------- session
 
 class Session:
@@ -100,7 +91,6 @@ class Session:
         self.gaps = pauses["gaps"]
         blocks = self._load("speaker_blocks.json", {"blocks": []})
         self.blocks = blocks["blocks"]
-        self.structural_suspects = self._load("structural_suspects.json", {"tags": {}})
         self.decisions = self._merge_defaults(self._load("decisions.json", None))
         self.redo_stack: list[dict] = []  # popped overrides, replayable via "redo_override" - not persisted
         # Whole-decision snapshots so ⌘Z undoes the LAST decision of any kind (NG/block/range/
@@ -129,38 +119,6 @@ class Session:
         self.global_review_ran = (self.edit / "global_review.json").exists()
         self._ng_to_cut_ids, self._cut_info_lost = self._load_seam_info()
         self._review_meta_cache: list[dict | None] = [self._review_meta(i, it) for i, it in enumerate(self.ng)]
-
-    # ---- structural suspect detection (개인화 대체, docs/기획/04-지식-층과-학습.md 3장)
-
-    def _record_structural_signal(self, i: int, action: str) -> None:
-        """route_candidates.py/structural_tags.py가 이 NG 후보에 붙여둔 구조적 태그별로 사용자
-        결정 방향(cut/keep)을 누적한다. 2회 이상 쌓였는데 전부 같은 방향이면 "버그일 수 있음"으로
-        영수증에만 보여준다(receipt() 참고) - 이 집계는 어떤 경우에도 자동 라우팅을 바꾸지 않는다.
-        개인화(_pref_action_for_case, 2026-10-01 제거)와의 결정적 차이: 여기서 쌓이는 건 사용자
-        정답지가 아니라 "개발자가 봐야 할 패턴 후보"일 뿐이다."""
-        if action not in ("cut", "keep") or not (0 <= i < len(self.ng)):
-            return
-        tags = self.ng[i].get("structural_tags") or []
-        if not tags:
-            return
-        for tag in tags:
-            bucket = self.structural_suspects["tags"].setdefault(tag, {"cut": 0, "keep": 0})
-            bucket[action] = bucket.get(action, 0) + 1
-        write_json(self.structural_suspects_path(), self.structural_suspects)
-
-    def structural_suspects_path(self) -> Path:
-        return self.edit / "structural_suspects.json"
-
-    def flagged_structural_suspects(self) -> list[dict]:
-        """2회 이상 쌓였고 전부 같은 방향인 태그만 - 하나라도 반대 방향이 섞이면 그냥 케이스별로
-        갈리는 정상 판단이지 버그 의심이 아니다(04 문서 3.2)."""
-        out = []
-        for tag, counts in self.structural_suspects.get("tags", {}).items():
-            cut, keep = counts.get("cut", 0), counts.get("keep", 0)
-            total = cut + keep
-            if total >= 2 and min(cut, keep) == 0:
-                out.append({"tag": tag, "direction": "keep" if keep else "cut", "count": total})
-        return out
 
     # ---- live pattern-generalization suggestions (PLAN.md 사용자 프로세스 LLM 적용 #2)
 
@@ -562,7 +520,7 @@ class Session:
         return {"ng": ng,
                 "pause": {"enabled": True, "targets": {k: v["target"] for k, v in self.pause_presets.items()},
                           "gaps": {}},
-                "blocks": blocks, "overrides": [], "reported_bad_cuts": [],
+                "blocks": blocks, "overrides": [],
                 "history": [], "confirmed_at": None}
 
     def _merge_defaults(self, saved: dict | None) -> dict:
@@ -596,10 +554,12 @@ class Session:
         saved["pause"].setdefault("gaps", {})
         self._migrate_gap_keys(saved["pause"]["gaps"])
         saved["pause"].setdefault("enabled", True)
-        for k in ("overrides", "reported_bad_cuts", "history"):
+        for k in ("overrides", "history"):
             saved.setdefault(k, [])
         saved.pop("outtakes", None)  # 2026-10-01: outtake 기능 전체 제거 (★ 버튼, 배지, 큐) - 남은
         # decisions.json에 옛 outtakes 리스트가 있어도 그냥 버린다, 안 읽는다
+        saved.pop("reported_bad_cuts", None)  # 2026-10-02: 오삭제 신고 기능 전체 제거(ⓘ 패널과
+        # 함께) - 반례 로깅이 끝내 아무 데도 소비되지 않아 효용 없이 복잡도만 있었다
         for m in saved.pop("manual_cuts", []):  # pre-overrides format
             saved["overrides"].append({"op": "cut", "wi_start": m["wi_start"], "wi_end": m["wi_end"]})
         saved.setdefault("confirmed_at", None)
@@ -802,9 +762,6 @@ class Session:
             return {"label": "쉼 조정", "at": g["gap_start"] if g else None}
         if t in ("pause_target", "pause_enabled"):
             return {"label": "무음 리듬 설정", "at": None}
-        if t == "report_bad_cut":
-            item = self.ng[int(msg["i"])] if 0 <= int(msg["i"]) < len(self.ng) else {}
-            return {"label": "오삭제 신고", "at": item.get("start")}
         if t == "suggestion":
             return {"label": "패턴 적용", "at": None}
         return {"label": "편집", "at": None}
@@ -866,13 +823,11 @@ class Session:
                 if 0 <= i < len(self.ng):
                     clf = self.ng[i].get("llm_classification") or {}
                     self._maybe_suggest_pattern(clf.get("case"), d["ng"][str(i)].get("action"))
-                    self._record_structural_signal(i, d["ng"][str(i)].get("action"))
             else:
                 d["ng"][str(i)] = {"action": action, "by": "user", "skipped": False, "wi": self._ng_wi(i)}
                 if 0 <= i < len(self.ng):
                     clf = self.ng[i].get("llm_classification") or {}
                     self._maybe_suggest_pattern(clf.get("case"), action)
-                    self._record_structural_signal(i, action)
         elif t == "pause_enabled":
             d["pause"]["enabled"] = bool(msg["enabled"])
         elif t == "pause_target":
@@ -933,28 +888,6 @@ class Session:
                 pruned = self._prune_contained(prev["start"], prev["end"])
                 d["overrides"].append(self._build_range_override(prev["op"], prev["start"], prev["end"],
                                                                    prev.get("wi_start"), prev.get("wi_end"), pruned))
-        elif t == "report_bad_cut":
-            # 백로그/R3-신뢰-장치.md: 자동으로 잘못 잘렸다는 신고 - 복원 + 그 케이스를 한 단계
-            # 보수적으로(평범한 살리기의 2배 가중 - 실수를 적극적으로 고친 신호라서) + 나중에
-            # gold fixture로 쓸 수 있게 반례를 남긴다.
-            i = int(msg["i"])
-            if not (0 <= i < len(self.ng)):
-                raise ValueError("bad ng index")
-            item = self.ng[i]
-            clf = item.get("llm_classification") or {}
-            case = clf.get("case")
-            d["ng"][str(i)] = {"action": "keep", "by": "user", "skipped": False, "wi": self._ng_wi(i)}
-            record = {"video": self.name, "ref": f"ng:{i}", "case": case, "label": item.get("label"),
-                      "text": item.get("deleted_text", ""), "route_reason": item.get("route_reason", ""),
-                      "at": datetime.now().isoformat(timespec="seconds")}
-            d["reported_bad_cuts"].append(record)
-            self._record_structural_signal(i, "keep")
-            self._record_structural_signal(i, "keep")  # 2배 가중 - 위 주석 참고
-            try:
-                with open(bad_cut_reports_path(), "a") as f:
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            except OSError:
-                pass
         else:
             raise ValueError(f"unknown decision type {t}")
         d["history"].append({**msg, "at": datetime.now().isoformat(timespec="seconds")})
@@ -1185,12 +1118,8 @@ class Session:
             "cuts_ng": cuts_ng, "cuts_pause": cuts_pause, "cuts_block": cuts_block, "cuts_manual": cuts_manual,
             "flagged": flagged, "restored": restored,
             "judge_flagged": judge_flagged, "judge_restored": judge_restored, "quick_total": quick_total,
-            "reported_bad_cuts": len(d.get("reported_bad_cuts", [])),
             "review_sec": review_sec, "seam_flag_rate": seam_flag_rate, "cost_est_usd": cost_est_usd,
             "decided_by": by_counts,
-            # 2026-10-01: 개인화를 대체하는 구조적 의심 탐지(기획/04 3장) - 자동 라우팅엔 영향 없고
-            # 영수증에만 보임. 빈 리스트가 정상(의심 패턴이 없다는 뜻).
-            "structural_suspects": self.flagged_structural_suspects(),
         }
 
     def _last_history_entry(self, exclude_video: str | None = None) -> dict | None:

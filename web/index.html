@@ -84,75 +84,22 @@
   .suggestion-card .sg-btns button { font-size: 12px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
   .suggestion-card .sg-btns button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
-  /* review panel: the sidebar's queue of every REVIEW-routed NG item + speaker block, always
-     shown (decided or not) with its own status - a queue you can audit, not a list that
-     silently empties. Clicking the card body selects its words and opens the work panel
-     (#pop) for listening/precision editing, but the decisions - 건너뛰기 / 검토 완료 / ★
-     (ng cards only) - live on the card as its own buttons (.rc-actions), not in the popup:
-     검토 완료 accepts whatever state the item is in right now (even a partial 정밀 조정 edit)
-     without requiring an exact-range reselect, which a popup-only decide button couldn't do. */
+  /* review panel: 본문 ↑/↓ + C/V가 모든 판단을 담당한다(10-02 카드 큐 완전 제거) - 여기는
+     "몇 건 중 몇 건 완료"라는 진행 상황 숫자와 안내 문구만 보여준다. */
   #reviewPanel { padding: 0 16px 4px; }
   #reviewPanel .empty-hint { font-size: 12px; color: var(--muted); padding: 2px 0 8px; }
-  /* Completed/skipped cards recede into this drawer instead of sitting inline among what's
-     still open - the queue you actually work from (via J) stays short, and anything already
-     decided is still one click away, not gone. Sits first in #reviewPanel, i.e. at the top of
-     the 검토 필요 list (user request 2026-09-29). display:none (not max-height/overflow) when
-     collapsed so its cards' buttons drop out of Tab order for free - see the H-FOCUS lesson on
-     #pausePanel above. */
-  #reviewDoneDrawer { margin-bottom: 8px; }
-  #reviewDoneHead { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel);
-    color: var(--ink); font-size: 12.5px; font-weight: 600; text-align: left; }
-  #reviewDoneHead:hover { border-color: var(--line-strong); }
-  #reviewDoneHead .n { color: var(--muted); font-weight: 400; margin-left: 5px; }
-  #reviewDoneHead .chev { color: var(--muted); font-size: 11px; transition: transform 160ms ease; }
-  #reviewDoneHead[aria-expanded="true"] .chev { transform: rotate(90deg); }
-  #reviewDoneBody { display: none; }
-  #reviewDoneBody.open { display: block; margin-top: 8px; }
-  .review-card { border: 1px solid var(--proposal-line); background: var(--proposal-bg); border-radius: var(--r-md);
-    padding: 8px 9px; margin-bottom: 8px; font-size: 12.5px; cursor: pointer; transition: box-shadow 120ms ease, opacity 120ms ease; }
-  .review-card.active { box-shadow: 0 0 0 2px var(--accent); }
-  .review-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .review-card.st-done_cut, .review-card.st-done_keep, .review-card.st-auto, .review-card.st-skipped, .review-card.st-pattern {
-    background: var(--panel); border-color: var(--line); }
-  /* resolved cards recede through colour, not opacity - 0.7 opacity took the muted labels
-     below AA contrast (UX audit a11y) */
-  .review-card.st-done_cut .rc-text, .review-card.st-done_keep .rc-text, .review-card.st-auto .rc-text,
-  .review-card.st-skipped .rc-text, .review-card.st-pattern .rc-text { color: var(--muted); }
-  .review-card .rc-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
-  .review-card .rc-type { font-size: 10.5px; font-weight: 700; color: var(--proposal-line); }
-  .review-card.st-done_cut .rc-type, .review-card.st-done_keep .rc-type,
-  .review-card.st-auto .rc-type, .review-card.st-skipped .rc-type,
-  .review-card.st-pattern .rc-type { color: var(--muted); }
-  .review-card .rc-status { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
-  /* docs/기획/03-두-관점-평가.md 5장 / 05-검토-화면.md 3장: PD·시청자 배지. 누르면(클릭 =
-     터치에서도 되게, title만으론 모바일/터치에서 사유를 못 봄) 평가자의 reason을 토스트로 보여준다. */
-  .rc-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
-  .badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-full); border: 1px solid transparent;
-    white-space: nowrap; cursor: help; }
-  .badge.ok { background: rgba(0,0,0,0.045); color: var(--muted); }
-  .badge.warn { background: var(--proposal-bg); color: var(--proposal-line); border-color: var(--proposal-line); }
-  .badge.clash { background: var(--danger-soft); color: #9a0000; border-color: var(--danger); }
-  .review-card .rc-text { color: var(--ink); line-height: 1.4;
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .review-card .rc-actions { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
-  .review-card .rc-actions button { font-size: 11.5px; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--ink); white-space: nowrap; flex: 0 0 auto; }
-  .review-card .rc-actions button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-  .review-card .rc-actions button:hover { filter: brightness(1.06); }
   #reviewProgress { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
   #reviewEstimate { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
 
   /* ---------------------------------------------------------------- 빠른 확인 (docs/기획/05-검토-화면.md 2장)
-     flag는 있지만 두 평가 모두 통과한, 한 번도 복원한 적 없는 유형 - 카드를 하나씩 보는 대신
-     이음새를 이어 재생하는 릴로 소비한다. 개별 카드는 감사용으로 접어서만 둔다(기본 닫힘). */
+     flag는 있지만 두 평가 모두 통과한, 한 번도 복원한 적 없는 유형 - 카드 목록 없이 이음새를
+     이어 재생하는 릴로만 소비한다(10-02: 카드로 보기 제거 - 판단 필요 층 카드와 같은 문제). */
   #quickSection:empty { display: none; }
   #quickEstimate { font-size: 11px; color: var(--muted); margin: -2px 16px 8px; }
   #btnQuickReel { width: calc(100% - 32px); margin: 0 16px 10px; padding: 8px; border-radius: var(--r-md);
     border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; font-size: 12.5px; }
   #btnQuickReel:hover { filter: brightness(1.03); }
   #btnQuickReel:disabled { opacity: 0.45; cursor: default; filter: none; }
-  #quickPanel { padding: 0 16px 4px; }
 
   /* accordion: one compact line up near the title/confirm button - most sessions never need
      to touch the tuning inputs, so the header alone (name + live summary) is all that shows */
@@ -274,35 +221,6 @@
   .drag-handle::after { content: ''; width: 28px; height: 3px; border-radius: 2px; background: var(--line); }
   .drag-handle:hover::after { background: var(--muted); }
 
-  /* ---------------------------------------------------------------- popup */
-  /* Anchored in the empty column under the video rather than floating next to whatever was
-     clicked: one predictable spot, and it reuses space nothing else was using. The selected
-     text scrolls up to meet it (see positionPopUnderVideo/select) instead of the popup
-     chasing the selection around the page. */
-  #pop { position: fixed; display: none; z-index: 10; background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
-    box-shadow: 0 16px 40px -12px rgba(0,0,0,0.18); padding: 10px 12px; flex-direction: column; gap: 8px; overflow-y: auto; }
-  #pop .hint { font-size: 12px; color: var(--muted); }
-  #pop .why { font-size: 13px; line-height: 1.5; }
-  #pop .btns { display: flex; gap: 6px; flex-wrap: wrap; }
-  #pop .btns button { font-size: 12px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
-  #pop .btns button.danger { background: var(--danger); color: var(--danger-ink); border-color: var(--danger); }
-  #pop .btns button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  #pop .btns button:hover { filter: brightness(1.1); }
-  /* docs/기획/05-검토-화면.md 3장/4.2절: 번호 키 대안 - seam_refine.py가 실제로 기록한 내부
-     쉼(gap) 하나를 기준으로 앞/뒤 중 한쪽만 살리는 대안. 그런 쉼이 이 항목 안에 없으면(흔함 -
-     한 단어짜리 필러 등) 아예 안 보인다 - 없는 대안을 있는 척하지 않는다. */
-  #popAlts { display: none; gap: 6px; flex-wrap: wrap; padding-top: 2px; border-top: 1px dashed var(--line); }
-  #popAlts button { font-size: 12px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
-  #popAlts button:hover { filter: brightness(1.05); }
-  /* review-mode: opened from a 검토 필요 card. The work panel is the same panel a plain
-     manual selection uses - every tool (듣기/이음새/정밀 조정/★) stays available either way,
-     so nothing about how you refine a cut differs by where the selection came from. The only
-     review-specific addition is the type/status row - 건너뛰기/검토 완료 live on the sidebar
-     card itself (.rc-actions below), not here. */
-  #pop .rc-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
-  #pop .rc-meta .rc-type { font-weight: 700; color: var(--proposal-line); }
-  #pop .rc-meta .rc-status { color: var(--muted); }
-
   #gtip { position: fixed; display: none; z-index: 11; background: #171717; color: #ffffff; font-size: 12px; padding: 5px 9px;
     border-radius: 7px; pointer-events: none; white-space: nowrap; line-height: 1.5; font-family: var(--mono); }
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 20; }
@@ -341,14 +259,20 @@
      대체 - 이번엔 "한 곳에 고정"이 아니라 "본문과 같이 흐르는" 구조로. */
   .waveStrip { margin: 2px 0 14px; max-width: 880px; }
   .waveStripCanvas { width: 100%; height: 44px; display: block; border-radius: 6px; background: var(--surface-2); cursor: text; }
+  /* 10-02(사용자 피드백 - "선택 패널이 구분되어 보이게"): active 상태는 본문 글자를 고른 뒤
+     "지금부터 여기서 편집 중"이라는 걸 바로 알아볼 수 있어야 한다 - 캔버스만 커지는 걸로는
+     주변 문장들과 잘 구분 안 됨. #pop(기존 팝업 패널)과 같은 카드 언어(배경·테두리·그림자)를
+     둘러 하나의 패널로 묶는다. */
+  .waveStrip.active { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 10px 10px 12px; margin: 10px 0 20px; box-shadow: 0 10px 28px -16px rgba(0,0,0,0.3); }
   .waveStrip.active .waveStripCanvas { height: 92px; cursor: ew-resize; box-shadow: 0 0 0 2px var(--accent-soft); }
   .waveStripControls { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
-  .waveStrip.active .waveStripControls { display: flex; }
+  .waveStrip.active .waveStripControls { display: flex; padding-top: 8px; border-top: 1px solid var(--line); }
   #waveStatus { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   #waveStatus .key { display: inline-flex; align-items: center; gap: 5px; }
   #waveStatus .sw { width: 18px; height: 10px; border-radius: 2px; display: inline-block; }
   #waveStatus .sw.cut { background: repeating-linear-gradient(-45deg, #bdbdbd 0 1.5px, #f2f2f2 1.5px 5px); border: 1px solid var(--gauge-fill); }
-  #waveStatus .sw.risk { background: repeating-linear-gradient(-45deg, #ffb27a 0 1.5px, #fff1e4 1.5px 5px); border: 1px solid var(--proposal-line); }
+  #waveStatus .sw.risk { background: repeating-linear-gradient(-45deg, #ff5622 0 1.5px, #ffd9cc 1.5px 5px); border: 1px solid #ad2200; }
   #waveStatus .sw.sel { background: rgba(0,112,243,0.14); border: 1.5px solid var(--accent); }
   #waveStatus b { color: var(--ink); font-weight: 600; }
   .zoom-btns button:disabled { opacity: 0.35; cursor: default; filter: none; }
@@ -418,7 +342,6 @@
         <div class="section-title">빠른 확인 <span id="quickCount"></span></div>
         <div id="quickEstimate"></div>
         <button id="btnQuickReel" title="두 평가 모두 통과한 자동 컷만 앞뒤 1.5초씩 이어서 훑어 듣는다 - 거슬리는 곳에서 Enter">▶ 빠른 확인 릴 재생</button>
-        <div id="quickPanel"></div>
       </div>
     </div>
   </aside>
@@ -443,22 +366,6 @@
 
 <button id="btnHelp" title="키보드 단축키" aria-label="키보드 단축키">?</button>
 
-<div id="pop">
-  <div class="drag-handle"></div>
-  <div class="rc-meta" id="popMeta" style="display:none">
-    <span class="rc-type" id="popType"></span>
-    <span class="rc-status" id="popStatus"></span>
-  </div>
-  <div class="hint" id="popHint"></div>
-  <div class="why" id="popWhy"></div>
-  <div class="btns">
-    <button id="popPlay">▶ 듣기</button>
-    <button id="popJoin" title="이음새 듣기: 자르기 전/후 경계를 1.5초씩 이어서 재생 - 잘라낸 부분이 티 안 나게 자연스럽게 이어지는지 확인용">▶ 이음새 <kbd>X</kbd></button>
-    <button id="popToggle"><kbd>↵</kbd></button>
-    <button id="popReport" class="danger" title="자동으로 잘못 잘렸습니다 - 즉시 복원하고, 같은 유형을 앞으로 더 보수적으로 판단하도록 기록합니다">⚠ 잘못 잘렸음</button>
-  </div>
-  <div class="btns" id="popAlts"></div>
-</div>
 <div id="gtip"></div>
 <div id="modal"><div class="box" id="modalPanel" role="dialog" aria-modal="true"><div class="drag-handle"></div><div id="modalBox"></div></div></div>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -488,7 +395,7 @@ let toks = [];        // {type:'w', wi, s, e} | {type:'g', gid, g, s, e}
 let gv = new Map();   // gap id -> {usable, rec, keep, user}
 let sel = null;       // {a, b} token index range
 let selReviewMatch = null;  // {kind:'ng'|'block', ref} when `sel` exactly covers a pending review item
-let selAllCut = false;      // whether the current selection is currently all cut (Enter/popToggle flips it)
+let selAllCut = false;      // whether the current selection is currently all cut (Enter/C/V flips it)
 let cursorTime = 0;   // last clicked position - where Space/재생 starts playing from
 let gdrag = null;     // gauge drag state
 const $ = (s) => document.querySelector(s);
@@ -663,6 +570,27 @@ async function applySuggestion(id, accept) {
   toast(accept ? '패턴 적용됨' : '무시함');
 }
 
+// ------------------------------------------------------------------ fast scroll helper
+// 10-02(직접 써보며 발견): 크로미움 smooth 스크롤은 거리에 비례해 오래 걸린다 - 문서가 길어진
+// 뒤로(문단마다 파형이 붙어 전체 스크롤 높이가 수십만 px) 사이드바 카드 클릭 1번에 최대 2초
+// 넘게, ↓ 한 번에도 최대 1.5초까지 걸리는 게 실측으로 확인됐다("10분 영상 10분 편집" 목표와
+// 직접 충돌). 가까운 이동(화면 안에서의 자잘한 보정)은 smooth가 자연스럽지만, 먼 지점으로의
+// "점프"는 즉시 이동(behavior:'auto')이 맞다 - #main 뷰포트 높이의 3배 넘게 떨어져 있으면
+// 그냥 즉시 이동한다. 실제로 어떤 behavior를 썼는지 돌려줘서, 호출부가 "스크롤이 끝난 뒤"에
+// 할 일(select 등)을 거리에 맞는 지연으로 안전하게 이어붙일 수 있게 한다.
+function scrollIntoViewFast(el, { block = 'center' } = {}) {
+  if (!el) return 'auto';
+  const main = $('#main'); const mr = main.getBoundingClientRect(); const er = el.getBoundingClientRect();
+  const dist = Math.abs(er.top - (mr.top + mr.height / 2));
+  const behavior = dist > mr.height * 3 ? 'auto' : 'smooth';
+  el.scrollIntoView({ block, behavior });
+  return behavior;
+}
+function scrollByFast(main, delta) {
+  const behavior = Math.abs(delta) > main.clientHeight * 3 ? 'auto' : 'smooth';
+  main.scrollBy({ top: delta, behavior });
+}
+
 // ------------------------------------------------------------------ transcript search (12장 #4)
 // Literal substring match is instant and free (client-side only). Only when that finds
 // nothing does it fall back to a server-side semantic search (transcript_search.py) for
@@ -692,7 +620,9 @@ function markCurrentSearchMatch() {
     const el = document.querySelector(`.tok.w[data-wi="${wi}"]`);
     if (el) { el.classList.add('search-cur'); first = first || el; }
   }
-  first?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  // 검색 결과로 가는 건 "다른 곳으로 점프"지 자연스럽게 이어지는 움직임이 아니다 - 거리와
+  // 무관하게 항상 즉시 이동(크로미움 smooth 스크롤은 거리 비례라 먼 결과일수록 느려짐).
+  if (first) first.scrollIntoView({ block: 'center', behavior: 'auto' });
 }
 // Literal match ignores spacing and runs across word boundaries, so "자존감은 크게" or "자존 감"
 // is found instantly instead of falling through to the slow AI search.
@@ -780,55 +710,72 @@ function gaugeWidth(dur) { return Math.max(G_MIN, Math.min(G_MAX, Math.round(dur
 // end up - its parentElement is the <p>, not a .tok, so closestTok() returned null and the
 // whole selection silently vanished. Keeping the space inside the token fixes that at the
 // source instead of working around it in the selection code.
-// 10-02(사용자 피드백 - "스크립트는 무조건 한줄씩"): 문단이 화면에서 2줄 이상으로 접히면
-// 그 밑의 파형 스트립도 2줄치 단어를 한꺼번에 담아 복잡해지고, 어느 단어가 파형 어디에
-// 해당하는지 찾기 어려워진다. 그래서 "문단"이 아니라 "실제로 화면에 그려지는 한 줄"을 파형
-// 스트립의 단위로 삼는다 - 모든 토큰을 임시 컨테이너 하나에 넣어 실제 줄바꿈 지점(offsetTop이
-// 바뀌는 지점)을 먼저 측정한 뒤, 그 측정대로 한 줄짜리 <p>를 하나씩 만들어 순서대로 넣는다.
+// 10-02(사용자 피드백 - "문장 파형은 그 문장 바로 아래"): 파형을 전부 본문 맨 밑에 몰아
+// 쌓지 않는다 - 문장(긴 침묵, 또는 침묵+문장부호로 끊기는 경계)마다 <p> 하나를 만들고 그
+// 문장이 끝나는 즉시 그 문장만의 파형 스트립을 바로 이어 붙인다("문장/파형/문장/파형…").
+// 10-02(이어서 - "문장이 두 줄이 안 됐으면, 창 크기가 달라지니 근본적으로"): 문장 하나가
+// 한 줄에 안 들어가면 그 문장만 글자를 줄여보고(fitSentenceOneLine), 가독성 하한까지
+// 줄여도 여전히 꺾이면 - 그 문장은 그냥 너무 길다는 뜻이니 쉼표/연결어미 같은 절 경계
+// 중 중간 지점에 가장 가까운 곳에서 둘로 쪼개 각각을 다시 같은 방식으로 맞춘다(재귀 -
+// findSplitPoint/buildOne). 그 결과 "문장"이 아니라 "한 줄에 들어가는 절"이 본문의 실제
+// 단위가 되지만, 평소 길이의 문장은 쪼개지지 않고 그대로 한 덩어리로 남는다.
 function renderTranscript() {
   const root = $('#transcript'); root.innerHTML = '';
   const spacer = document.createElement('div'); spacer.id = 'topSpacer'; root.appendChild(spacer);
-  sizeTopSpacer();  // 줄바꿈 측정 전에 영상 썸네일이 차지하는 폭부터 반영(안 그러면 첫 줄들의 측정이 틀어짐)
 
-  const measurePara = document.createElement('p'); measurePara.className = 'para';
-  root.appendChild(measurePara);
-  const els = [];
-  toks.forEach((t, ti) => {
+  function appendTok(p, ti) {
+    const t = toks[ti];
     if (t.type === 'w') {
       const w = S.words[t.wi];
       const el = document.createElement('span');
       el.className = 'tok w'; el.dataset.t = ti; el.dataset.wi = w.wi; el.textContent = w.t + ' '; el.title = fmt(w.s);
-      measurePara.appendChild(el);
-      els.push(el);
-    } else {
-      const el = document.createElement('span');
-      el.className = 'tok g'; el.dataset.t = ti; el.dataset.gid = t.gid;
-      el.style.width = `${gaugeWidth(t.g.duration)}px`;
-      el.innerHTML = '<span class="fill"></span><span class="lbl"></span>';
-      el.addEventListener('mousedown', onGaugeDown);
-      el.addEventListener('dblclick', (ev) => { ev.preventDefault(); decide({ type: 'pause_gap', gap_id: t.gid, keep_sec: null }); toast('추천값으로'); });
-      el.addEventListener('mousemove', (ev) => showGtip(t, ev));
-      el.addEventListener('mouseleave', hideGtip);
-      measurePara.appendChild(el);
-      els.push(el);
+      p.appendChild(el);
+      return w.wi;
     }
-  });
-  const lineGroups = [];
-  let curTop = null, curGroup = null;
-  els.forEach((el) => {
-    const top = el.offsetTop;
-    if (top !== curTop) { curGroup = []; lineGroups.push(curGroup); curTop = top; }
-    curGroup.push(el);
-  });
-  measurePara.remove();
+    const el = document.createElement('span');
+    el.className = 'tok g'; el.dataset.t = ti; el.dataset.gid = t.gid;
+    el.style.width = `${gaugeWidth(t.g.duration)}px`;
+    el.innerHTML = '<span class="fill"></span><span class="lbl"></span>';
+    el.addEventListener('mousedown', onGaugeDown);
+    el.addEventListener('dblclick', (ev) => { ev.preventDefault(); decide({ type: 'pause_gap', gap_id: t.gid, keep_sec: null }); toast('추천값으로'); });
+    el.addEventListener('mousemove', (ev) => showGtip(t, ev));
+    el.addEventListener('mouseleave', hideGtip);
+    p.appendChild(el);
+    return null;
+  }
 
-  lineGroups.forEach((group) => {
+  // 1) 1차로 "문장" 단위로 toks 배열을 끊는다(긴 침묵, 또는 문장부호+짧은 침묵) - 이전과 같은
+  //    임계값. 아직 DOM은 안 만듦 - toks 인덱스 범위[시작,끝]만 모은다.
+  const coarse = [];
+  let tiStart = 0;
+  for (let ti = 0; ti < toks.length; ti++) {
+    const t = toks[ti];
+    if (t.type === 'w' && t.wi > 0) {
+      const w = S.words[t.wi], prev = S.words[t.wi - 1]; const gap = w.s - prev.e;
+      if (gap >= 1.2 || (gap >= 0.5 && /[.?!]$/.test(prev.t))) { coarse.push([tiStart, ti - 1]); tiStart = ti; }
+    }
+  }
+  coarse.push([tiStart, toks.length - 1]);
+
+  // 2) 각 문장을 실제로 만들어보고 한 줄에 들어가는지 확인 - 안 들어가면 절 경계에서 쪼개
+  //    재귀적으로 다시 시도한다.
+  function buildOne(tiLo, tiHi) {
     const p = document.createElement('p'); p.className = 'para';
-    group.forEach((el) => p.appendChild(el));  // 이미 만든 엘리먼트를 그대로 옮김 - 이벤트 리스너 유지
+    let firstWi = null, lastWi = null;
+    for (let ti = tiLo; ti <= tiHi; ti++) {
+      const wi = appendTok(p, ti);
+      if (wi != null) { if (firstWi == null) firstWi = wi; lastWi = wi; }
+    }
+    if (firstWi == null) return;  // 구간에 단어가 하나도 없음(이론상 안 생김) - 방어적 가드
     root.appendChild(p);
-    const wordEls = group.filter((el) => el.classList.contains('w'));
-    if (wordEls.length) createWaveStrip(root, +wordEls[0].dataset.wi, +wordEls[wordEls.length - 1].dataset.wi);
-  });
+    if (fitSentenceOneLine(p)) { createWaveStrip(root, firstWi, lastWi); return; }
+    const split = findSplitPoint(tiLo, tiHi);
+    if (!split) { createWaveStrip(root, firstWi, lastWi); return; }  // 더 쪼갤 데가 없으면 포기(드물게 2줄 허용)
+    p.remove();
+    buildOne(tiLo, split.leftEnd);
+    buildOne(split.rightStart, tiHi);
+  }
+  coarse.forEach(([lo, hi]) => buildOne(lo, hi));
 
   applyStates();
   root.addEventListener('mouseup', onMouseUp);
@@ -836,7 +783,60 @@ function renderTranscript() {
   sizeTopSpacer();
   armWaveStripObserver();
 }
+// 쉼표, 또는 흔한 한국어 연결어미(-고/-며/-면서/-는데/-니까/-지만/-거나/-다가)로 끝나는 단어를
+// "절 경계 후보"로 보고, 구간의 중간 지점에 가장 가까운 후보에서 자른다. 후보가 전혀 없으면
+// (문장부호 없는 긴 나열 등) 그냥 기하학적 중간 단어에서 자른다 - 문법적으로 완벽하진 않아도
+// "한 줄에 들어간다"는 목표에는 항상 도달한다(단어가 1개뿐이면 더 못 쪼갬 - null 반환).
+const CLAUSE_END_RE = /(,|고|며|면서|는데|니까|지만|거나|다가)$/;
+function findSplitPoint(tiLo, tiHi) {
+  const wordTis = [];
+  for (let ti = tiLo; ti <= tiHi; ti++) if (toks[ti].type === 'w') wordTis.push(ti);
+  if (wordTis.length < 2) return null;
+  const mid = (wordTis.length - 1) / 2;
+  let bestK = null, bestDist = Infinity;
+  for (let k = 0; k < wordTis.length - 1; k++) {
+    const w = S.words[toks[wordTis[k]].wi];
+    if (CLAUSE_END_RE.test(w.t)) {
+      const dist = Math.abs(k - mid);
+      if (dist < bestDist) { bestDist = dist; bestK = k; }
+    }
+  }
+  const k = bestK != null ? bestK : Math.max(0, Math.min(wordTis.length - 2, Math.round(mid)));
+  let leftEnd = wordTis[k];
+  if (toks[leftEnd + 1] && toks[leftEnd + 1].type === 'g') leftEnd += 1;  // 그 단어 바로 뒤 pause gauge는 왼쪽 절에 포함(문장 경계와 같은 관례)
+  return { leftEnd, rightStart: leftEnd + 1 };
+}
 function findTokIndex(wi) { return toks.findIndex((t) => t.type === 'w' && t.wi === wi); }
+
+// 10-02(사용자 피드백 - "문장이 두 줄이 안 됐으면 좋겠다, 창 크기 달라지니 근본적으로"): 문장
+// 길이는 들쭉날쭉하고 창 너비도 사람마다/리사이즈할 때마다 다르니, 고정된 글자 크기로는 "항상
+// 한 줄"을 보장할 수 없다 - 그래서 문단마다 실제로 몇 줄로 꺾였는지 직접 재서(scrollHeight가
+// 한 줄 높이보다 크면 꺾인 것), 꺾였으면 그 문단 하나만 글자 크기를 줄여가며 한 줄에 들어갈
+// 때까지(또는 가독성 하한에 닿을 때까지) 다시 잰다. 하한까지 줄여도 안 들어가면 false를
+// 돌려줘 - renderTranscript()의 buildOne()이 그걸 보고 절 경계에서 쪼갠다(findSplitPoint).
+// 리사이즈 시에는 글자 크기만 다시 재고(fitAllSentences) 쪼개기는 다시 안 함 - 만든 직후
+// 한 번 쪼개 넣은 걸 창 크기가 바뀔 때마다 다시 합치고 쪼개려면 로드된 파형(peaks)까지 다시
+// 받아와야 해서(스트립마다 서버 왕복) 비용이 크다 - 초기 렌더 시점 창 너비 기준으로 확정.
+const SENT_FONT_BASE = 17, SENT_FONT_FLOOR = 13;
+function fitSentenceOneLine(p) {
+  const fitsAt = (px) => {
+    p.style.fontSize = px + 'px';
+    const lh = parseFloat(getComputedStyle(p).lineHeight);
+    return p.scrollHeight <= lh + 1;
+  };
+  if (fitsAt(SENT_FONT_BASE)) { p.style.fontSize = ''; return true; }  // 기본 크기로 이미 한 줄이면 그대로(인라인 스타일 안 남김)
+  if (!fitsAt(SENT_FONT_FLOOR)) return false;  // 하한까지 줄여도 두 줄 - 호출한 쪽이 쪼갤 차례
+  let lo = SENT_FONT_FLOOR, hi = SENT_FONT_BASE;
+  while (hi - lo > 0.5) {
+    const mid = (lo + hi) / 2;
+    if (fitsAt(mid)) lo = mid; else hi = mid;
+  }
+  fitsAt(lo);
+  return true;
+}
+function fitAllSentences() {
+  $('#transcript').querySelectorAll('.para').forEach(fitSentenceOneLine);
+}
 
 // The video panel is fixed to the viewport's top-right corner, not to #transcript's own box,
 // so how much (if any) of the first lines it actually covers depends on window width - not
@@ -850,7 +850,7 @@ function sizeTopSpacer() {
   spacer.style.cssText = `float:right;width:${overlap}px;height:${vr.height + 24}px`;
   scheduleScrollProgress();
 }
-window.addEventListener('resize', () => { clearTimeout(window.__rsz); window.__rsz = setTimeout(() => { sizeTopSpacer(); renderScrollTicks(); }, 120); });
+window.addEventListener('resize', () => { clearTimeout(window.__rsz); window.__rsz = setTimeout(() => { sizeTopSpacer(); fitAllSentences(); renderScrollTicks(); }, 120); });
 
 // ------------------------------------------------------------------ scroll progress (script reading position)
 // #main is the only element that scrolls (the page itself never does), so its own
@@ -916,12 +916,10 @@ function renderScrollTicks() {
     tick.className = 'tick' + (it.status !== 'pending' ? ' done' : '');
     tick.style.left = `${pct}%`;
     tick.title = `${it.label} · ${STATUS_KO[it.status]}`;
-    // Same two-step as J's nextPending(): scroll first, select once the smooth-scroll has
-    // roughly landed - selecting immediately fights the still-animating scroll position.
     tick.addEventListener('mousedown', (ev) => {
       ev.stopPropagation();
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      setTimeout(() => selectWordRange(it.wiStart, it.wiEnd), 250);
+      el.scrollIntoView({ block: 'center', behavior: 'auto' });  // 먼 지점 점프 - 항상 즉시
+      selectWordRange(it.wiStart, it.wiEnd);
     });
     layer.appendChild(tick);
   }
@@ -975,7 +973,7 @@ function highlightAt(t) {
   if (el) {
     el.classList.add('playing');
     const r = el.getBoundingClientRect(); const mr = $('#main').getBoundingClientRect();
-    if (r.top < mr.top + 90 || r.bottom > mr.bottom - 40) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (r.top < mr.top + 90 || r.bottom > mr.bottom - 40) scrollIntoViewFast(el, { block: 'center' });
   }
 }
 video.addEventListener('timeupdate', () => highlightAt(video.currentTime));
@@ -1178,74 +1176,18 @@ function select(x, y) {
   const states = words.map((t) => S.word_states[t.wi]);
   let allCut = words.length > 0 ? states.every((st) => st.startsWith('cut'))
     : toks.slice(x, y + 1).every((t) => gapCut(t.g));
-  const item = words.length ? S.ng.find((n) => n.wi_start <= words[0].wi && words[words.length - 1].wi < n.wi_end) : null;
-  const nGaps = toks.slice(x, y + 1).filter((t) => t.type === 'g').length;
-  const nPart = words.filter((t) => partSet.has(t.wi)).length;
-  $('#popHint').textContent = `${words.length}단어${nGaps ? ` · 쉼 ${nGaps}개` : ''} · ${fmt(range.start)}–${fmt(range.end)} · ${(range.end - range.start).toFixed(1)}초`
-    + (nPart ? ` · 일부 정밀 편집됨 — Z로 확인` : '');
-  // A selection that exactly matches a 검토 필요 item's words (word-for-word, or a whole
-  // block) resolves THAT item's own decision (updates its status in the sidebar) instead of
-  // a generic manual override - see applySel(). 건너뛰기/검토 완료/★
-  // live on the sidebar card itself (renderReviewPanel) since they're decisions, not edits -
-  // this popup only holds tools that touch content (듣기/이음새/정밀 조정) plus the generic
-  // 삭제/살리기 toggle, which doubles as the fast path for a matched review item too.
+  // 10-02: 매 선택마다 뜨던 작업 패널(#pop)을 없앴다 - 판단은 팝업 없이 C/V/Enter로 바로
+  // 적용된다. 여기서는 C/V/Enter가 무엇을 할지 결정하는 데 필요한 상태만 남긴다.
   selReviewMatch = matchedReview(words);
-  const why = item ? `${esc(item.clf?.reasoning || '')} <span style="color:var(--muted)">(신뢰도 ${item.clf?.confidence ?? '-'})</span>` : '';
-  $('#popWhy').innerHTML = why; $('#popWhy').style.display = why ? 'block' : 'none';
-  let reviewStatus = null;
-  if (selReviewMatch) {
-    const m = selReviewMatch;
-    reviewStatus = m.kind === 'ng' ? ngStatus(m.ref) : blockStatus(m.ref);
-    $('#popType').textContent = m.kind === 'ng' ? ngTypeLabel(m.ref) : '발화 블록';
+  if (selReviewMatch?.kind === 'block') {
     // a block's own FINAL/content lines are never cut, so "every word cut" is never true for a
-    // whole-block selection - what the toggle flips there is whether the proposal is applied
-    if (m.kind === 'block') allCut = !!S.decisions.blocks[String(m.ref.id)]?.approved;
-    $('#popStatus').textContent = STATUS_KO[reviewStatus];
-    $('#popMeta').style.display = 'flex';
-  } else {
-    $('#popMeta').style.display = 'none';
+    // whole-block selection - what Enter flips there is whether the proposal is applied.
+    allCut = !!S.decisions.blocks[String(selReviewMatch.ref.id)]?.approved;
   }
-  renderPopAlts(selReviewMatch?.kind === 'ng' ? selReviewMatch.ref : null);
-  // One toggle button, not two - it always names the action Enter will take (the opposite
-  // of what's currently selected), so 삭제/살리기 never need two different shortcuts again.
+  // One flag, not two - it always names the action Enter will take (the opposite of what's
+  // currently selected), so 삭제/살리기 never need two different shortcuts.
   selAllCut = allCut;
-  const toggleBtn = $('#popToggle');
-  toggleBtn.innerHTML = `${allCut ? '살리기' : '삭제'} <kbd>↵</kbd>`;
-  toggleBtn.className = allCut ? 'ok' : 'danger';
-  // 백로그/R3-신뢰-장치.md 오삭제 신고: 지금 선택이 정확히 NG 항목 하나와 겹치고 현재 잘린
-  // 상태일 때만 의미가 있다 - 신고는 ng 인덱스 단위 결정이라 일반 수동 선택에는 못 붙인다.
-  const reportHere = item && allCut;
-  $('#popReport').style.display = reportHere ? '' : 'none';
-  $('#popReport').dataset.i = reportHere ? item.i : '';
-  const pop = $('#pop'); pop.style.display = 'flex';
-  positionPopUnderVideo();
-  // Scroll AFTER the popup is positioned (its top edge is the alignment target), and after
-  // layout has settled from pop.style.display just changing - one frame is enough.
-  requestAnimationFrame(() => {
-    const target = document.querySelector(`.tok[data-t="${x}"]`);
-    if (!target) return;
-    const popTop = pop.getBoundingClientRect().top;
-    const elTop = target.getBoundingClientRect().top;
-    $('#main').scrollBy({ top: elTop - popTop, behavior: 'smooth' });
-  });
   syncActiveStripToSelection();  // 10-02: 이 선택이 속한 문단의 스트립만 active로 전환
-}
-// The popup always lands in the same place - the empty column under the video - instead of
-// hunting for room next to whatever was clicked. Falls back to a corner on narrow viewports
-// where the video (and this column) is hidden entirely (see the #videoWrap media query).
-function positionPopUnderVideo() {
-  const pop = $('#pop'); const vw = $('#videoWrap');
-  if (getComputedStyle(vw).display === 'none') {
-    pop.style.left = '16px'; pop.style.right = 'auto'; pop.style.top = '16px';
-    pop.style.width = 'min(90vw, 420px)'; pop.style.maxHeight = '70vh';
-    return;
-  }
-  const vr = vw.getBoundingClientRect();
-  pop.style.left = 'auto';
-  pop.style.right = `${Math.max(0, window.innerWidth - vr.right)}px`;
-  pop.style.width = `${vr.width}px`;
-  pop.style.top = `${vr.bottom + 16}px`;
-  pop.style.maxHeight = `${Math.max(160, window.innerHeight - vr.bottom - 32)}px`;
 }
 function selRange() {
   const a = toks[sel.a], b = toks[sel.b];
@@ -1260,10 +1202,7 @@ function clearSel(hide = true) {
   // hide=false는 select() 내부에서 "새 선택을 세팅하기 직전" 초기화용으로만 쓰인다 - 그 직후
   // select()가 끝에서 syncActiveStripToSelection()을 어차피 다시 부르므로, 여기서는
   // hide=true(진짜 선택 해제)일 때만 동기화해 낭비되는 재전환을 건너뛴다.
-  if (hide) {
-    $('#pop').style.display = 'none'; document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active'));
-    syncActiveStripToSelection();
-  }
+  if (hide) syncActiveStripToSelection();
 }
 // A selection that exactly spans a pending 검토 필요 item's words (or a whole pending
 // block) resolves THAT item via its own decision type - which drops it from the sidebar -
@@ -1282,7 +1221,9 @@ function matchStatus(match) {
   return match.kind === 'ng' ? ngStatus(match.ref) : blockStatus(match.ref);
 }
 async function applySel(op, { advance = false } = {}) {
-  if (!sel) return;
+  // 10-02(직접 써보며 발견): 선택 없이 C/V를 누르면 예전엔 완전히 조용히 무시돼서, 화살표로
+  // 먼저 커서를 옮기지 않고 도움말만 보고 바로 눌러본 사람은 "고장났나?"로 느끼기 쉬웠다.
+  if (!sel) { toast('먼저 커서를 이동하세요 (↑↓ 또는 단어 클릭)'); return; }
   const match = selReviewMatch;
   // 10-01: 확정 잠긴 항목은 c/v/Enter로 재편집 못 하게 막는다(더블클릭/u로 먼저 잠금 해제).
   const locked = match?.kind === 'ng' ? S.decisions.ng[String(match.ref.i)]?.locked
@@ -1309,35 +1250,22 @@ function toggleSel() { if (sel) applySel(selAllCut ? 'keep' : 'cut'); }
 // docs/기획/05-검토-화면.md 3장/4.2절: 번호 키 대안. n.review.split_wi는 server.py가 seams.json/
 // pauses.json에서 찾은 이 항목 "안"의 실제 쉼 하나 - 세 번째 대안을 지어내는 대신, 그 쉼을
 // 기준으로 앞/뒤 중 한쪽만 살리는 것과 전부 살리는 것(= Enter와 동일) 두세 개만 보여준다.
-// split_wi가 없으면(대부분의 한 단어짜리 필러 등) 아무 버튼도 없다 - 없는 대안을 꾸며내지 않는다.
-function renderPopAlts(n) {
-  const box = $('#popAlts'); box.innerHTML = '';
-  const sp = n?.review?.split_wi;
-  if (sp == null) { box.style.display = 'none'; return; }
-  box.style.display = 'flex';
-  const mk = (key, label, title, fn) => {
-    const b = document.createElement('button');
-    b.innerHTML = `<kbd>${key}</kbd> ${esc(label)}`; if (title) b.title = title;
-    b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
-    box.appendChild(b);
-  };
-  mk('1', '앞만 살림', '이 구간의 앞부분만 복원하고 뒷부분은 계속 삭제', () => applyAltRestore(n, 'front'));
-  mk('2', '전부 살림', 'Enter와 동일', () => applySel('keep'));
-  mk('3', '뒤만 살림', '이 구간의 뒷부분만 복원하고 앞부분은 계속 삭제', () => applyAltRestore(n, 'back'));
-}
+// split_wi가 없으면(대부분의 한 단어짜리 필러 등) 아무 반응도 없다 - 없는 대안을 꾸며내지
+// 않는다. 10-02: 버튼은 텍스트를 선택한 상태에서의 키보드(1/2/3, 아래 keydown 핸들러)뿐 - ⓘ
+// 정보 패널에도 같은 버튼을 또 넣었더니 "빠르게 봐야 하는데 뭐부터 할지 모르겠다"는 피드백을
+// 받아서 치웠다(중복은 오히려 느려짐).
 async function applyAltRestore(n, which) {
   const sp = n?.review?.split_wi; if (sp == null) return;
   const a = which === 'front' ? n.wi_start : sp + 1;
   const b = which === 'front' ? sp : n.wi_end - 1;
   if (a > b) return;
   const wa = S.words[a], wb = S.words[b];
-  clearSel();
   if (!(await decide({ type: 'range', op: 'keep', start: wa.s + S.pad_sec, end: wb.e - S.pad_sec, wi_start: a, wi_end: b }))) return;
   toast(which === 'front' ? '앞부분만 살림' : '뒷부분만 살림');
 }
-// The one place both the sidebar card's buttons and the keyboard shortcuts (⇧↵/S) route a
-// 건너뛰기/검토 완료 decision through - takes a {kind, ref} match directly, no selection needed.
-// Returns decide()'s result (falsy on failure) so callers can skip their own success toast.
+// The one place the keyboard shortcuts (⇧↵/U/S) route 건너뛰기/확정잠금 decision - {kind, ref}
+// match를 직접 받는다(선택 불필요). Returns decide()'s result (falsy on failure) so callers can
+// skip their own success toast.
 async function reviewAction(match, action) {
   if (!match) return null;
   return decide({ type: match.kind, [match.kind === 'ng' ? 'i' : 'block_id']: match.kind === 'ng' ? match.ref.i : match.ref.id, action });
@@ -1366,17 +1294,7 @@ async function applyUnlock() {
   if (!(await reviewAction(match, 'unlock'))) return;
   toast('잠금 해제');
 }
-function playSel() { if (sel) { const r = selRange(); playRange(r.start, r.end, { skip: false }); } }
 function playSelJoin() { if (sel) { const r = selRange(); playRange(Math.max(0, r.start - 1.5), r.end + 1.5, { skip: true, extra: [{ start: r.start, end: r.end }] }); } }
-$('#popToggle').addEventListener('click', toggleSel);
-$('#popPlay').addEventListener('click', playSel);
-$('#popJoin').addEventListener('click', playSelJoin);
-$('#popReport').addEventListener('click', async (e) => {
-  const i = e.target.dataset.i; if (i === '' || i == null) return;
-  clearSel();
-  if (!(await decide({ type: 'report_bad_cut', i: Number(i) }))) return;
-  toast('오삭제 신고 - 복원했고, 이 유형을 앞으로 더 보수적으로 판단합니다');
-});
 // The toast names what was undone and the view scrolls to it - an undo that lands off-screen
 // used to look like nothing happened (or like the wrong thing happened, UX audit H4).
 function historyToast(verb, d) {
@@ -1384,7 +1302,8 @@ function historyToast(verb, d) {
   toast(`${verb}: ${d.label}${d.at != null ? ` · ${fmt(d.at)}` : ''}`);
   if (d.at != null) {
     const w = S.words.find((x) => x.e >= d.at);
-    if (w) document.querySelector(`.tok.w[data-wi="${w.wi}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // 되돌리기/다시 실행도 "다른 곳으로 점프" - 거리와 무관하게 항상 즉시 이동.
+    if (w) document.querySelector(`.tok.w[data-wi="${w.wi}"]`)?.scrollIntoView({ block: 'center', behavior: 'auto' });
   }
 }
 $('#btnUndo').addEventListener('click', async () => {
@@ -1420,7 +1339,6 @@ function makeDraggable(panel, handle) {
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
   });
 }
-makeDraggable($('#pop'), $('#pop .drag-handle'));
 makeDraggable($('#helpPop'), $('#helpPop .drag-handle'));
 makeDraggable($('#modalPanel'), $('#modalPanel .drag-handle'));
 
@@ -1512,17 +1430,22 @@ function drawStrip(strip) {
     });
   }
   // audio_ok===false(가장 조용한 지점으로 스냅해도 여전히 시끄러움 - 잔음/절단 의심)인 구간은
-  // 주황으로, 나머지 잘린 구간은 회색 해치로 - 2단계 "위험지점 추적"의 시각 신호. 이 데이터
-  // (cut_spans[i].audio_ok)는 서버가 공짜로 계산해 보내는 것(audio_map.choose_boundary 기반).
+  // 진한 주황-빨강으로, 나머지 잘린 구간은 회색 해치로 - 2단계 "위험지점 추적"의 시각 신호. 이
+  // 데이터(cut_spans[i].audio_ok)는 서버가 공짜로 계산해 보내는 것(audio_map.choose_boundary
+  // 기반). 10-02(사용자 피드백 - "오류 의심 구간이 색으로 잘 보이게"): 스트립 하나가 문장 하나
+  // 전체(수 초)를 담다 보니 의심 구간이 몇십 ms짜리면 줌아웃 상태에서 1px도 안 돼 안 보일 수
+  // 있다 - 최소 폭(4px)을 보장하고, 바닥에 진한 마커 바를 깔아 스크롤하며 쭉 훑어도 눈에 띄게.
   for (const sp of S.cut_spans) {
     if (sp.end <= strip.start || sp.start >= strip.end) continue;
-    const a = Math.max(0, xOf(sp.start)), b = Math.min(w, xOf(sp.end));
     const risky = sp.audio_ok === false;
+    let a = Math.max(0, xOf(sp.start)), b = Math.min(w, xOf(sp.end));
+    if (risky && b - a < 4) { const c = (a + b) / 2; a = Math.max(0, c - 2); b = Math.min(w, c + 2); }
     ctx.save(); ctx.beginPath(); ctx.rect(a, waveTop, b - a, waveH); ctx.clip();
-    ctx.fillStyle = risky ? 'rgba(255,178,122,0.45)' : 'rgba(245,245,245,0.78)'; ctx.fillRect(a, waveTop, b - a, waveH);
-    ctx.strokeStyle = risky ? 'rgba(171,87,10,0.45)' : 'rgba(0,0,0,0.16)'; ctx.lineWidth = 1;
+    ctx.fillStyle = risky ? 'rgba(255,86,34,0.55)' : 'rgba(245,245,245,0.78)'; ctx.fillRect(a, waveTop, b - a, waveH);
+    ctx.strokeStyle = risky ? 'rgba(173,34,0,0.9)' : 'rgba(0,0,0,0.16)'; ctx.lineWidth = risky ? 1.5 : 1;
     for (let x = a - waveH; x < b; x += 6) { ctx.beginPath(); ctx.moveTo(x, h); ctx.lineTo(x + waveH, waveTop); ctx.stroke(); }
     ctx.restore();
+    if (risky) { ctx.fillStyle = '#e63900'; ctx.fillRect(a, h - 3, Math.max(4, b - a), 3); }
   }
   if (strip.hs != null) {
     const x1 = xOf(strip.hs), x2 = xOf(strip.he);
@@ -1646,7 +1569,7 @@ function activateStrip(strip, hs, he) {
   renderStripControls(strip);
   drawStrip(strip);
   if (!strip.loaded) fetchStripPeaks(strip);
-  strip.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  scrollIntoViewFast(strip.el, { block: 'nearest' });
 }
 function deactivateStrip(strip) {
   strip.isActive = false; strip.hs = null; strip.he = null; strip.activeHandle = null;
@@ -1654,13 +1577,15 @@ function deactivateStrip(strip) {
   strip.controls.innerHTML = '';
   drawStrip(strip);
 }
-// select()/clearSel()이 끝에서 이걸 불러 - 선택이 그 문단의 스트립을 active로, 선택 해제는
-// 지금 active인 스트립을 다시 정적 미리보기로 되돌린다(다른 스트립은 항상 그대로 보임).
+// select()/clearSel()이 끝에서 이걸 불러 - 선택이 그 문장의 스트립을 active로, 선택 해제는
+// 지금 active인 스트립을 다시 정적 미리보기로 되돌린다(다른 스트립은 항상 그대로 보임). DOM
+// 인접 관계(.closest('.para').nextElementSibling) 대신 토큰의 단어 인덱스가 어느 스트립의
+// firstWi~lastWi 범위에 들어가는지로 찾는다 - 결과는 같지만 DOM 구조가 바뀌어도 안 깨진다.
 function stripForTok(ti) {
-  const el = document.querySelector(`.tok[data-t="${ti}"]`);
-  const para = el && el.closest('.para');
-  const stripEl = para && para.nextElementSibling;
-  return waveStrips.find((s) => s.el === stripEl) || null;
+  const t = toks[ti]; if (!t) return null;
+  const wi = t.type === 'w' ? t.wi : t.g.prev_wi;
+  if (wi == null) return null;
+  return waveStrips.find((s) => wi >= s.firstWi && wi <= s.lastWi) || null;
 }
 function syncActiveStripToSelection() {
   if (sel) {
@@ -1773,33 +1698,15 @@ function jumpToAudioRisk(dir) {
 }
 
 // ------------------------------------------------------------------ pending navigation
-// J walks the sidebar's own pending items, each selected exactly as its card would select it.
-// It used to walk runs of proposal-coloured words, which merged neighbouring items and caught
-// only part of a speaker block - the selection then matched no item and Enter fell back to a
-// plain manual cut (UX audit H2). Skipped items aren't pending, so J moves past them (H3), and
-// the count here is the same one the sidebar and the 확정 dialog show (L3).
+// 10-02(검토 큐 제거): 더 이상 어디서도 "다음 pending으로 이동"에 쓰이지 않는다(그 역할은
+// jumpToCutSpan()/↑↓가 함) - 이 목록은 이제 확정 전 "아직 검토 안 한 게 N곳" 경고 카운트
+// 전용이다(judge layer만, quick layer는 이미 두 평가를 통과해 경고 대상이 아님).
 function pendingList() {
   const out = [];
   for (const n of judgeNgItems()) if (ngStatus(n) === 'pending') out.push([n.wi_start, n.wi_end - 1]);
   for (const b of reviewBlocks()) if (blockStatus(b) === 'pending') out.push([b.wi_start, b.wi_end]);
   return out.map(([wa, wb]) => ({ a: findTokIndex(wa), b: findTokIndex(wb), start: S.words[wa].s }))
     .filter((p) => p.a >= 0 && p.b >= 0).sort((x, y) => x.start - y.start);
-}
-function nextPending() {
-  // from the current selection, else from the last one (cursorTime) - after a decision the
-  // selection is gone, and the video position has nothing to do with where review left off
-  const cur = sel ? toks[sel.a].s : (cursorTime || -1);
-  const list = pendingList();
-  if (!list.length) { toast('남은 검토 항목이 없습니다'); return; }
-  const item = list.find((p) => p.start > cur + 0.01) || list[0];
-  document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  setTimeout(() => {
-    select(item.a, item.b);
-    // light up the matching sidebar card, same as clicking it would
-    const i = [...document.querySelectorAll('.review-card')].findIndex((c) => c.dataset.a === String(item.a) && c.dataset.b === String(item.b));
-    document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active'));
-    if (i >= 0) { const c = document.querySelectorAll('.review-card')[i]; c.classList.add('active'); c.scrollIntoView({ block: 'nearest' }); }
-  }, 250);
 }
 // 10-01(읽기→추적→듣기 3단계): 1단계 "빠른 검토 모드" 탐색 - pendingList()는 REVIEW(judge
 // layer)만 보던 좁은 범위라 확정 전 경고 카운트용으로 그대로 남겨두고(의미 유지: "판단
@@ -1828,8 +1735,10 @@ function jumpToCutSpan(dir) {  // dir: +1 = 다음(↓) · -1 = 이전(↑)
   let item;
   if (dir > 0) item = list.find((p) => p.start > cur + 0.01) || list[0];
   else { const rev = [...list].reverse(); item = rev.find((p) => p.start < cur - 0.01) || rev[0]; }
-  document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  setTimeout(() => select(item.a, item.b), 120);
+  // 1단계 ↑/↓의 핵심 동작 - 거리와 무관하게 항상 즉시 이동(smooth는 거리 비례로 느려져
+  // 실측 최대 1.5초까지 걸렸음, 속도가 생명인 동작이라 애니메이션을 아예 없앤다).
+  document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'auto' });
+  select(item.a, item.b);
 }
 // 화살표 좌우 = 단어 단위 커서 이동(읽는 속도로 훑기, 무음) - Shift면 선택을 그 방향으로
 // 확장한다(구 단위 일괄 삭제/살리기용). 잠긴 단어도 지나가며 볼 수는 있게 그대로 둔다 -
@@ -1854,7 +1763,7 @@ function moveWordCursor(dir, extend) {
   } else {
     select(ti, ti);
   }
-  document.querySelector(`.tok[data-t="${ti}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  scrollIntoViewFast(document.querySelector(`.tok[data-t="${ti}"]`), { block: 'nearest' });
 }
 // ------------------------------------------------------------------ playback (virtual, no render)
 let play = null;
@@ -2040,30 +1949,9 @@ $('#pauseHead').addEventListener('click', () => {
 // render as kept-for-now (see wordClass) and live here instead. 2026-10-01: this panel no
 // longer feeds a per-user personalized default into the next video (removed - see server.py
 // "(removed) personalization", docs/채택하지-않은-것.md) - resolving an item here only affects
-// this video. Structurally repeated patterns instead feed structural_suspects.json (기획/04
-// 3장) for developer review - never read back to auto-decide anything.
+// this video.
 const CASE_KO = { A: '정정 재시작', B: '재진술', C: '강조 반복', D: '정상 나열', E: '조사·어미 수정', F: '미완성 전환', OTHER: '기타', FILLER: '필러' };
 function ngTypeLabel(n) { return CASE_KO[n.clf?.case] || '검토 필요'; }
-// docs/기획/03-두-관점-평가.md 5장 / 05-검토-화면.md 3장: PD·시청자 배지. n.review는 server.py의
-// Session._review_meta가 route_reason을 파싱해 계산한 것 - 전체 루프(global_review.py)가 아예 안
-// 돌았으면 n.review.pd가 null이고, 그때는 배지 자체를 안 보여준다(평가 안 한 것과 "통과"는 다르다).
-function renderBadges(n) {
-  const rv = n.review;
-  if (!rv || !rv.pd) return null;
-  const box = document.createElement('div'); box.className = 'rc-badges';
-  const add = (cls, label, reason) => {
-    const b = document.createElement('span'); b.className = `badge ${cls}`; b.textContent = label;
-    if (reason) { b.title = reason; b.addEventListener('click', (e) => { e.stopPropagation(); toast(reason); }); }
-    box.appendChild(b);
-  };
-  if (rv.pd.status === 'warn' && rv.viewer.length) add('clash', '두 관점 엇갈림');
-  if (rv.pd.status === 'warn') add('warn', 'PD ⚠ 정보 누락', rv.pd.reason);
-  else if (rv.pd.status === 'new') add('warn', 'PD ⚠ 추가 발견', rv.pd.reason);
-  else add('ok', 'PD ✓');
-  if (rv.viewer.length) rv.viewer.forEach((v) => add('warn', `시청자 ⚠ ${v.label}`, v.reason));
-  else add('ok', '시청자 ✓');
-  return box;
-}
 function ngStatus(n) {
   const dec = S.decisions.ng[String(n.i)] || {};
   // 'skipped' is a tag on top of whatever action currently applies, not a third action - a
@@ -2093,151 +1981,37 @@ function reviewNgItems() { return (S.ng || []).filter((n) => n.route === 'REVIEW
 function judgeNgItems() { return reviewNgItems().filter((n) => (n.review?.layer ?? 'judge') === 'judge'); }
 function quickNgItems() { return reviewNgItems().filter((n) => n.review?.layer === 'quick'); }
 function reviewBlocks() { return S.blocks || []; }
-// Clicking a review card's body highlights the words it's about in the transcript, the same
-// blue background a manual text selection gets (.tok.sel), and opens the work panel (#pop) for
-// listening/이음새/정밀 조정/★ - none of which change the decision by themselves. Re-clicking
-// an already-decided card re-opens it the same way, so refining it further needs no separate
-// undo path. Wanting only part of a span (e.g. "그, 그, 그, 그런" - cut the repeats, keep the
-// last word) still works exactly as it would anywhere else in the transcript: click into the
-// now-highlighted words for a narrower selection, cut/keep from the popup as usual, then use
-// this card's own 검토 완료 button to close it out - that button never rewrites the content,
-// so a narrower manual cut/precision edit made this way survives it.
+// 10-02(검토 큐·카드 완전 제거): 본문 ↑/↓(jumpToCutSpan)+C/V가 모든 판단을 담당한다 - 그와
+// 똑같은 일을 하는 카드 목록은 더 이상 필요 없다. scrollWordRange만 scroll ticks가 여전히 쓴다.
 function selectWordRange(wiStart, wiEndIncl) {
   const a = findTokIndex(wiStart), b = findTokIndex(wiEndIncl);
   if (a < 0 || b < 0) return;
   select(a, b);
 }
-function reviewCard(typeLabel, status, text, [wa, wb], kind, ref, onOpen) {
-  const card = document.createElement('div'); card.className = `review-card st-${status}`;
-  card.dataset.a = findTokIndex(wa); card.dataset.b = findTokIndex(wb);  // lets J light up the matching card
-  card.tabIndex = 0;
-  card.addEventListener('keydown', (e) => {  // keyboard reach: Enter/Space open it, same as a click
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault(); e.stopPropagation(); card.click();
-  });
-  const head = document.createElement('div'); head.className = 'rc-head';
-  head.innerHTML = `<span class="rc-type">${esc(typeLabel)}</span><span class="rc-status">${STATUS_KO[status]}</span>`;
-  card.appendChild(head);
-  if (kind === 'ng') {
-    const badges = renderBadges(ref);
-    if (badges) card.appendChild(badges);
-  }
-  const t = document.createElement('div'); t.className = 'rc-text'; t.textContent = text; card.appendChild(t);
-  // 건너뛰기/검토 완료: every decision this card can make, right here - neither needs an
-  // exact-range reselect in the popup. Both only apply before a decision exists (pending/skipped).
-  const actions = document.createElement('div'); actions.className = 'rc-actions';
-  if (status === 'pending') {
-    const skipBtn = document.createElement('button');
-    skipBtn.textContent = '건너뛰기';
-    skipBtn.title = '지금은 판단을 미룸 - J로 검토를 계속하면 나중에 다시 나타남';
-    skipBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      await reviewAction({ kind, ref }, 'skip');
-      toast('건너뜀 (J로 계속하면 나중에 다시 나타남)');
-    });
-    actions.appendChild(skipBtn);
-  }
-  if (status === 'pending' || status === 'skipped') {
-    const doneBtn = document.createElement('button'); doneBtn.className = 'ok';
-    doneBtn.textContent = '✓ 검토 완료';
-    doneBtn.title = '지금 상태(기본 삭제 그대로든, 정밀 조정으로 일부만 손봤든) 그대로 확정';
-    doneBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      await reviewAction({ kind, ref }, 'confirm');
-      toast('검토 완료');
-    });
-    actions.appendChild(doneBtn);
-  }
-  if (actions.childNodes.length) card.appendChild(actions);
-  card.addEventListener('click', () => {
-    if (card.classList.contains('active')) {  // clicking the same card again closes it
-      card.classList.remove('active');
-      clearSel(); stop();
-      return;
-    }
-    document.querySelectorAll('.review-card.active').forEach((c) => c.classList.remove('active'));
-    card.classList.add('active');
-    onOpen();
-  });
-  return card;
-}
-// Kept collapsed across re-renders (renderReviewPanel runs after every single decision), not
-// reset to closed each time - the whole point is glancing back into it mid-session without it
-// snapping shut on the very next J/Enter.
-let reviewDoneOpen = false;
-function makeReviewCard(n) {
-  return reviewCard(ngTypeLabel(n), ngStatus(n),
-    n.clf?.reasoning || n.route_reason || n.text || '(근거 없음)', [n.wi_start, n.wi_end - 1],
-    'ng', n, () => selectWordRange(n.wi_start, n.wi_end - 1));
-}
-function makeBlockCard(b) {
-  return reviewCard('발화 블록', blockStatus(b),
-    `${b.preview || `발화 블록 (${b.lines.length}줄)`} · ${fmtDur(b.proposed_delete_sec || 0)} 삭제 제안`, [b.wi_start, b.wi_end],
-    'block', b, () => selectWordRange(b.wi_start, b.wi_end));
-}
-// docs/기획/05-검토-화면.md 2.2절 정렬: 판단 필요 층 안에서는 tier(server.py가 계산 - 두 관점
-// 모두 지적 > 정보 손실 major > 판정 엇갈림 > 저신뢰도 자동삭제 > 그 외) 오름차순, 같은 tier면
-// 영상 시간순 - 사용자가 영상 흐름을 따라가며 볼 수 있도록.
-function sortByTier(items) {
-  return items.slice().sort((a, b) => (a.review?.tier ?? 5) - (b.review?.tier ?? 5) || a.start - b.start);
-}
+// 10-02(검토 큐 제거): 예전엔 여기가 "판단 필요" 카드 목록(건너뛰기·검토 완료 버튼 포함)을
+// 그렸다 - 1단계(본문 ↑/↓ + C/V)가 이미 완전히 흡수한 동작이라 그대로 두면 같은 판단을 두
+// 군데서 할 수 있는 중복 인터페이스였다(사용자 지적). 이제 여기는 진행 상황 숫자만 보여준다.
 function renderReviewPanel() {
   const blocks = reviewBlocks();
   const judgeNg = judgeNgItems(), quickNg = quickNgItems();
   const total = judgeNg.length + blocks.length;
-  // Anything not 'pending' already reads as resolved-for-now everywhere else (STATUS_KO,
-  // the grey st-skipped/st-done_* card treatment, the N/M 완료 count) - the drawer just gives
-  // that same group a place to live instead of sitting inline among what's still open.
-  const doneNg = judgeNg.filter((n) => ngStatus(n) !== 'pending');
-  const doneBlocks = blocks.filter((b) => blockStatus(b) !== 'pending');
-  const activeNg = sortByTier(judgeNg.filter((n) => ngStatus(n) === 'pending'));
-  const activeBlocks = blocks.filter((b) => blockStatus(b) === 'pending');
-  const done = doneNg.length + doneBlocks.length;
+  const done = judgeNg.filter((n) => ngStatus(n) !== 'pending').length
+    + blocks.filter((b) => blockStatus(b) !== 'pending').length;
   $('#reviewCount').textContent = total ? `· ${total}` : '';
   $('#reviewProgress').textContent = total ? `${done}/${total} 완료` : '';
-  const panel = $('#reviewPanel'); panel.innerHTML = '';
-  if (!total) { panel.innerHTML = '<div class="empty-hint">판단이 필요한 항목이 없습니다</div>'; }
-  else {
-    if (done) {
-      const drawer = document.createElement('div'); drawer.id = 'reviewDoneDrawer';
-      const head = document.createElement('button');
-      head.id = 'reviewDoneHead'; head.setAttribute('aria-expanded', String(reviewDoneOpen));
-      head.innerHTML = `<span>✓ 검토 완료<span class="n">${done}건</span></span><span class="chev">▸</span>`;
-      head.addEventListener('click', () => { reviewDoneOpen = !reviewDoneOpen; renderReviewPanel(); });
-      drawer.appendChild(head);
-      const body = document.createElement('div');
-      body.id = 'reviewDoneBody'; body.className = reviewDoneOpen ? 'open' : '';
-      doneNg.forEach((n) => body.appendChild(makeReviewCard(n)));
-      doneBlocks.forEach((b) => body.appendChild(makeBlockCard(b)));
-      drawer.appendChild(body);
-      panel.appendChild(drawer);
-    }
-    activeNg.forEach((n) => panel.appendChild(makeReviewCard(n)));
-    activeBlocks.forEach((b) => panel.appendChild(makeBlockCard(b)));
-  }
+  $('#reviewPanel').innerHTML = total
+    ? '<div class="empty-hint">본문에서 <kbd>↓</kbd>로 잘린 곳을 훑으며 <kbd>C</kbd>/<kbd>V</kbd>로 판단하세요</div>'
+    : '<div class="empty-hint">판단이 필요한 항목이 없습니다</div>';
   renderQuickPanel(quickNg);
   renderScrollTicks();
 }
-// docs/기획/05-검토-화면.md 2장: 빠른 확인 층 - flag는 있지만 두 평가 모두 통과한 항목. 카드를
-// 하나씩 보는 게 아니라 릴(playQuickReel)로 훑어 듣는 게 기본 동선이라 개별 카드는 기본 접어
-// 둔다(판단 필요 쪽의 "검토 완료" 서랍과 같은 패턴) - 감사하고 싶을 때만 펼친다.
-let quickOpen = false;
+// 10-02(사용자 지적 - "카드로 보기는 왜 남아있어"): 빠른 확인 층은 두 평가를 이미 통과한
+// 항목이라 릴로 훑어 듣는 게 기본 동선인데, 카드 목록까지 같이 두면 "또 다른 카드 큐"로
+// 보여 판단 필요 층 제거의 취지와 어긋났다 - 릴 버튼과 건수만 남기고 카드 목록 자체를 없앴다.
 function renderQuickPanel(quickNg) {
-  const section = $('#quickSection'); const panel = $('#quickPanel');
   $('#quickCount').textContent = quickNg.length ? `· ${quickNg.length}` : '';
   $('#btnQuickReel').disabled = !quickNg.length;
-  panel.innerHTML = '';
-  if (!quickNg.length) { section.style.display = 'none'; return; }
-  section.style.display = '';
-  const head = document.createElement('button');
-  head.id = 'reviewDoneHead'; head.setAttribute('aria-expanded', String(quickOpen));
-  head.innerHTML = `<span>카드로 보기<span class="n">${quickNg.length}건</span></span><span class="chev">▸</span>`;
-  head.addEventListener('click', () => { quickOpen = !quickOpen; renderReviewPanel(); });
-  panel.appendChild(head);
-  const body = document.createElement('div');
-  body.id = 'reviewDoneBody'; body.className = quickOpen ? 'open' : '';
-  sortByTier(quickNg).forEach((n) => body.appendChild(makeReviewCard(n)));
-  panel.appendChild(body);
+  $('#quickSection').style.display = quickNg.length ? '' : 'none';
 }
 
 // ------------------------------------------------------------------ stats / confirm
@@ -2289,9 +2063,8 @@ $('#btnConfirm').addEventListener('click', async () => {
       <ul style="margin:4px 0 10px 18px">
         ${warnings.map((w) => `<li><a href="#" onclick="hideModal();video.currentTime=Math.max(0,${w.start}-1);video.play();return false">${fmtDur(w.start)} ~ ${fmtDur(w.end)}</a> <span style="color:var(--muted);font-size:12px">${esc(w.note || '')}</span></li>`).join('')}
       </ul>` : '';
-    // 백로그/R1-결과-영수증.md 영수증 + R3의 "안전 배지"(신고된 오삭제 누적) - server.py의
-    // Session.receipt()가 이번 확정과 history.jsonl의 직전 확정(r.previous, 이 영상 자신은
-    // 제외) 양쪽을 계산해 함께 돌려준다.
+    // 백로그/R1-결과-영수증.md 영수증 - server.py의 Session.receipt()가 이번 확정과
+    // history.jsonl의 직전 확정(r.previous, 이 영상 자신은 제외) 양쪽을 계산해 함께 돌려준다.
     const rc = r.receipt, prev = r.previous;
     let receiptBlock = '';
     if (rc) {
@@ -2306,7 +2079,6 @@ $('#btnConfirm').addEventListener('click', async () => {
           <div>자동 처리 &nbsp;컷 ${totalCuts}건 (NG ${rc.cuts_ng} · 쉼 ${rc.cuts_pause} · 대화블록 ${rc.cuts_block} · 수동 ${rc.cuts_manual})</div>
           <div>내 결정 &nbsp;복원 ${rc.judge_restored ?? rc.restored} / 판단 필요 ${rc.judge_flagged ?? rc.flagged}건${rc.quick_total ? ` · 빠른 확인 ${rc.quick_total}건 통과` : ''}</div>
           <div>검토 시간 &nbsp;${reviewLine}</div>
-          <div>안전 &nbsp;신고된 오삭제 누적 <strong>${rc.reported_bad_cuts}건</strong></div>
           ${rc.cost_est_usd != null ? `<div>처리 비용 추정 &nbsp;$${rc.cost_est_usd.toFixed(2)}</div>` : ''}
         </div>`;
     }
@@ -2366,11 +2138,11 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); $('#btnRedo').click(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); $('#btnUndo').click(); return; }
   // 10-01(읽기→추적→듣기 3단계): 1단계 "빠른 검토 모드" 핵심 탐색/편집 - 무음, 팝업 없이
-  // 커서+즉시 반영. ←/→ = 단어 단위 커서 이동(+Shift로 범위 확장), ↑/↓(및 기존 J)는 "지금
+  // 커서+즉시 반영. ←/→ = 단어 단위 커서 이동(+Shift로 범위 확장), ↑/↓는 "지금
   // 잘려 있는 곳"만 건너뛰며 순회(잠긴 구간은 제외) - jumpToCutSpan()/moveWordCursor() 참고.
   if (e.key === 'ArrowLeft') { e.preventDefault(); return moveWordCursor(-1, e.shiftKey); }
   if (e.key === 'ArrowRight') { e.preventDefault(); return moveWordCursor(1, e.shiftKey); }
-  if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); return jumpToCutSpan(1); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); return jumpToCutSpan(1); }
   // 2단계 "위험지점 추적": 파형 바의 잔음 의심(audio_ok===false) 구간만 순서대로 - 본문 선택과
   // 무관하므로 sel 유무와 상관없이 전역에서 동작.
   if (e.key === 'n' && !e.shiftKey) { e.preventDefault(); return jumpToAudioRisk(1); }
@@ -2382,6 +2154,10 @@ document.addEventListener('keydown', (e) => {
   // 들을 수 있게 남겨 둔다 - 모든 cut_spans 항목이 리뷰 카드로 열 수 있는 ng/block과 깔끔하게
   // 대응하진 않아(수동 병합·쉼 트림 등) 카드까지 자동으로 열지는 않는다.
   if (e.key === 'Enter' && reel && !sel) { e.preventDefault(); stopReel(); toast('릴 정지 - 이 구간에 머뭅니다'); return; }
+  // 10-02(직접 써보며 발견): 화살표로 먼저 커서를 옮기지 않고 도움말만 보고 곧바로 C/V부터
+  // 눌러보면 아래 if(sel) 블록에 아예 안 걸려 완전히 조용히 무시됐다 - 처음 쓰는 사람은
+  // "고장났나?"로 느끼기 쉬우니 여기서 바로 안내한다.
+  if (!sel && (e.key === 'c' || e.key === 'v')) { e.preventDefault(); toast('먼저 커서를 이동하세요 (↑↓ 또는 단어 클릭)'); return; }
   if (sel) {
     // c/v: 명시적 삭제/살리기(토글 아님 - 빠르게 연타해도 상태가 안 꼬임), 결정 직후 자동으로
     // 다음 "잘려 있는 곳"으로 이동한다(advance:true) - 1단계 핵심 루프.
@@ -2395,9 +2171,9 @@ document.addEventListener('keydown', (e) => {
         : selReviewMatch?.kind === 'block' ? S.decisions.blocks[String(selReviewMatch.ref.id)]?.locked : false;
       if (locked) { e.preventDefault(); return applyUnlock(); }
     }
-    if (e.key === 'Enter') { e.preventDefault(); return toggleSel(); }  // the one shortcut for both 삭제/살리기 - see popToggle
+    if (e.key === 'Enter') { e.preventDefault(); return toggleSel(); }  // the one shortcut for both 삭제/살리기
     // docs/기획/05-검토-화면.md 4.2절 번호 키 - 이 항목에 실제 내부 쉼(split_wi)이 있을 때만
-    // 반응한다(renderPopAlts와 같은 조건) - 없으면 숫자 키는 그냥 아무 일도 안 한다.
+    // 반응한다 - 없으면 숫자 키는 그냥 아무 일도 안 한다.
     if (['1', '2', '3'].includes(e.key) && selReviewMatch?.kind === 'ng' && selReviewMatch.ref.review?.split_wi != null) {
       e.preventDefault();
       if (e.key === '1') applyAltRestore(selReviewMatch.ref, 'front');

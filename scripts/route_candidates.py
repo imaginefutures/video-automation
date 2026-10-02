@@ -29,7 +29,6 @@ import json
 from pathlib import Path
 
 from common import load_transcript, words_only, norm
-import structural_tags
 
 # 2026-10-01: 사용자가 기존 테스트 영상 여러 편에서 반복 확인한 패턴 - 삭제 구간(wi_end) 바로
 # 다음에 접속사로 시작하는 새 문장이 오면, 그 접속사까지 삭제 범위에 같이 먹히는 경우가 있었다.
@@ -143,9 +142,6 @@ def main() -> None:
     for run in runs:
         decision = route_one(run, words)
         item = {**run, **decision}
-        # 2026-10-01: 구조적 의심 탐지(docs/기획/04-지식-층과-학습.md 3장) 1단계 - 자동 라우팅에는
-        # 전혀 영향 없는 태그만 붙인다. server.py가 사용자 결정과 묶어 집계한다.
-        item["structural_tags"] = structural_tags.tag_item(item, words or [], CUT_CONFIDENCE_MIN)
         routed.append(item)
 
     counts: dict[str, int] = {}
