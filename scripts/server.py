@@ -820,12 +820,16 @@ class Session:
             elif action == "confirm":
                 d["ng"][str(i)]["by"] = "user"
                 d["ng"][str(i)]["skipped"] = False
-                if 0 <= i < len(self.ng):
+                if 0 <= i < len(self.ng) and not msg.get("fast"):
                     clf = self.ng[i].get("llm_classification") or {}
                     self._maybe_suggest_pattern(clf.get("case"), d["ng"][str(i)].get("action"))
             else:
                 d["ng"][str(i)] = {"action": action, "by": "user", "skipped": False, "wi": self._ng_wi(i)}
-                if 0 <= i < len(self.ng):
+                # fast=True(검토 모드의 빠른 연속 클릭, web/index.html applySel 참고): 패턴 제안
+                # LLM 호출(claude -p 서브프로세스, 몇 초 걸림)을 건너뛴다 - 이 결정 응답을
+                # 블로킹해 "즉시 복원"이 수 초씩 멈추는 걸 실측으로 발견했다. 그 케이스는 이번
+                # 세션에서 제안을 못 받을 뿐, 평소 속도 편집에선(fast 생략) 그대로 받는다.
+                if 0 <= i < len(self.ng) and not msg.get("fast"):
                     clf = self.ng[i].get("llm_classification") or {}
                     self._maybe_suggest_pattern(clf.get("case"), action)
         elif t == "pause_enabled":

@@ -92,7 +92,18 @@
   #reviewEstimate { font-size: 11px; color: var(--muted); margin: -2px 16px 4px; }
   /* 10-02(사용자 지적 - "이거 어떤 기능인지 인식이 안됨"): ↑/↓·C/V·1·3·⇧Enter 키보드 단축키가
      전부 안 보여서 발견이 안 됐다 - 같은 동작을 가리키는 버튼을 추가한다(팝업으로 또 판단하는
-     중복이 아니라, 하나뿐인 흐름을 보이게만 만드는 것). 키보드는 그대로 둔다. */
+     중복이 아니라, 하나뿐인 흐름을 보이게만 만드는 것). 키보드는 그대로 둔다.
+     10-02 2차(사용자 지적 - "검토 모드가 편집과 구분이 안 된다"): 시작/중단/완료 세 상태를 둬서
+     "지금 빠르게 훑는 중인지"를 명확히 하고, 단어 클릭 즉시 복원(아래 onMouseUp)은 active일 때만
+     켠다 - 평소 편집 중엔 클릭이 여전히 안전한 선택일 뿐이다. */
+  #reviewIdle { padding: 4px 0 10px; }
+  #rtStart { width: 100%; padding: 8px; border-radius: var(--r-md); border: 1px solid var(--accent);
+    background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; font-size: 12.5px; }
+  #rtStart:hover { filter: brightness(1.03); }
+  #reviewDone { padding: 4px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #rtReopen { font-size: 11.5px; padding: 4px 8px; border-radius: var(--r-sm); border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); }
+  #rtReopen:hover { border-color: var(--accent); color: var(--accent); }
   #reviewToolbar { padding: 4px 0 10px; display: flex; flex-direction: column; gap: 6px; }
   #rtPos { font-size: 11.5px; color: var(--muted); min-height: 14px; }
   .rt-row { display: flex; gap: 6px; }
@@ -101,6 +112,27 @@
   .rt-row button:hover:not(:disabled), #rtLock:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .rt-row button:disabled, #rtLock:disabled { opacity: 0.4; cursor: default; }
   #rtAltRow { display: none; }
+  #rtStop { font-size: 11.5px; padding: 5px; border-radius: var(--r-sm); border: 1px dashed var(--line);
+    background: none; color: var(--muted); }
+  #rtStop:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* 10-02 3차(사용자 지적 - "창 색을 다르게 하던가... 마치 집중 모드처럼"): reviewMode==='active'면
+     body에 .review-focus를 달아(syncReviewToolbar) 판단 필요 영역만 또렷하게 남기고 나머지
+     사이드바 메뉴는 흐리게+조작 불가로 가라앉힌다. 되돌리기(.history-row)는 안전망이라 예외 -
+     검토 중 실수해도 바로 고칠 수 있어야 한다. */
+  #reviewFocusBanner { display: none; padding: 7px 16px; background: var(--accent); color: var(--accent-ink);
+    font-size: 11.5px; font-weight: 600; text-align: center; }
+  body.review-focus #reviewFocusBanner { display: block; }
+  body.review-focus #searchRow, body.review-focus .duration-row, body.review-focus .actions,
+  body.review-focus #btnRedetect, body.review-focus #pauseAccordion, body.review-focus #quickSection,
+  body.review-focus .title-row > div:first-child {
+    opacity: 0.3; filter: grayscale(0.6); pointer-events: none; transition: opacity 150ms ease;
+  }
+  body.review-focus #judgeSectionTitle { color: var(--accent-strong); }
+  body.review-focus #reviewProgress, body.review-focus #reviewEstimate, body.review-focus #reviewPanel {
+    background: var(--accent-soft);
+  }
+  body.review-focus #reviewPanel { padding-top: 6px; padding-bottom: 10px; }
 
   /* ---------------------------------------------------------------- 빠른 확인 (docs/기획/05-검토-화면.md 2장)
      flag는 있지만 두 평가 모두 통과한, 한 번도 복원한 적 없는 유형 - 카드 목록 없이 이음새를
@@ -304,6 +336,7 @@
 <div id="app">
   <aside id="sidebar">
     <div id="sidebarHead">
+    <div id="reviewFocusBanner">● 검토 중 — 잘린 단어 클릭 = 즉시 살리기 · 다른 메뉴는 잠시 흐려집니다</div>
     <div class="pad">
       <div class="title-row">
         <div style="display:flex;align-items:center;gap:6px;min-width:0">
@@ -341,7 +374,7 @@
       </div>
     </div>
     <div class="divider"></div>
-    <div class="section-title">판단 필요 <span id="reviewCount"></span></div>
+    <div class="section-title" id="judgeSectionTitle">판단 필요 <span id="reviewCount"></span></div>
     <div id="reviewProgress"></div>
     <div id="reviewEstimate"></div>
     </div>
@@ -349,6 +382,13 @@
       <div id="suggestionPanel"></div>
       <div id="reviewPanel">
         <div id="reviewEmpty" class="empty-hint">판단이 필요한 항목이 없습니다</div>
+        <div id="reviewIdle">
+          <button id="rtStart">▶ 검토 시작</button>
+        </div>
+        <div id="reviewDone">
+          <span>✓ 판단 필요 완료</span>
+          <button id="rtReopen">다시 검토</button>
+        </div>
         <div id="reviewToolbar">
           <div id="rtPos"></div>
           <div class="rt-row">
@@ -364,6 +404,7 @@
             <button id="rtBack" title="뒷부분만 살리기 (3)">뒷부분만 살리기</button>
           </div>
           <button id="rtLock" title="확정 - 더 이상 건드리지 않음 (⇧Enter)">확정</button>
+          <button id="rtStop" title="검토 모드만 끄고 지금까지 판단은 그대로 둔다">■ 검토 중단</button>
         </div>
       </div>
       <div id="quickSection">
@@ -1098,6 +1139,11 @@ function applyStates() {
     if (wasHit) el.classList.add('search-hit');
     if (wasCur) el.classList.add('search-cur');
   });
+  // 10-02(사용자 지적 - "C로 삭제해도 다른 단어를 클릭해야 파형에 표시된다"): 파형 스트립의
+  // 회색/해치 오버레이는 S.cut_spans 기준으로 그려지는데, 그동안은 다음에 활성화되는 스트립만
+  // drawStrip()을 다시 타서 갱신됐다 - 지금 막 바뀐 스트립이 그중 어느 것인지 가리지 않고 매
+  // 결정 직후 전부 다시 그린다(캔버스 다시 그리기일 뿐 - peaks는 이미 로드돼 있으면 재요청 없음).
+  waveStrips.forEach(drawStrip);
 }
 
 // ------------------------------------------------------------------ gauge drag
@@ -1166,7 +1212,16 @@ function onMouseUp(ev) {
     // 10-01: 확정 잠긴 단어는 단일 클릭으로 재편집 못 하게 막는다(더블클릭만 잠금 해제) -
     // "이제 신경 안 써도 되는 곳"이 실수로 다시 열리는 걸 방지.
     if (lockedSet.has(t.wi)) { toast('잠긴 구간입니다 - 더블클릭하면 잠금 해제'); return; }
-    return select(ti, ti);   // clicking a word is always a decide+cursor action, never playback - see 재생/정지 controls under the video
+    select(ti, ti);
+    // 10-02(사용자 지적 - "파형까지 안 가고 단어 클릭만으로 일부 살리기", 이어서 "검토 모드에서만
+    // 이렇게 되어야지"): 평소 편집 중엔 클릭이 그냥 안전한 선택일 뿐이고, reviewMode==='active'
+    // (▶ 검토 시작을 누른 뒤)일 때만 잘린 단어 클릭이 그 자리에서 바로 그 단어 하나를 복원한다
+    // (= applySel('keep')과 같은 경로 - 항목 전체와 안 겹치면 범위 override, 정확히 겹치면 그
+    // 항목 자체를 결정). 여러 단어를 한 번에 살리고 싶으면 드래그/Shift로 범위를 넓힌 뒤 V(위
+    // 네이티브 선택 분기가 처리, 모드와 무관하게 항상 동작). 이미 살아있는 단어 클릭은 모드와
+    // 무관하게 항상 커서 이동만 한다 - 클릭만으로 삭제까지 되면 실수로 지우기 쉬워 위험하다.
+    if (reviewMode === 'active' && (S.word_states[t.wi] || '').startsWith('cut')) applySel('keep');
+    return;   // clicking a word is always a decide+cursor action, never playback - see 재생/정지 controls under the video
   }, 0);
 }
 function onDblClick(ev) {
@@ -1262,7 +1317,12 @@ async function applySel(op, { advance = false } = {}) {
   const r = selRange(); const n = r.wi_end !== null ? r.wi_end - r.wi_start + 1 : 0;
   clearSel();
   if (match?.kind === 'ng') {
-    if (!(await decide({ type: 'ng', i: match.ref.i, action: op }))) return;
+    // fast: 검토 모드(reviewMode==='active')에서는 패턴 제안 LLM 호출(server.py
+    // _maybe_suggest_pattern, 같은 케이스 3연속마다 한 번 - claude -p 서브프로세스라 몇 초
+    // 걸림)을 건너뛴다 - 실측(Playwright로 빠르게 연타) 중 이 호출이 걸리면 "즉시 복원"이
+    // 수 초간 멈추는 걸 발견했다. 그 케이스는 그냥 이번 세션에서 제안을 못 받을 뿐 - 평소
+    // 속도로 편집할 땐(reviewMode!=='active') 그대로 제안받는다.
+    if (!(await decide({ type: 'ng', i: match.ref.i, action: op, fast: reviewMode === 'active' }))) return;
     toast(op === 'cut' ? '삭제로 확정' : '살리기로 확정');
     if (advance) jumpToCutSpan(1);
     return;
@@ -1325,7 +1385,14 @@ async function applyUnlock() {
   toast('잠금 해제');
 }
 function playSelJoin() { if (sel) { const r = selRange(); playRange(Math.max(0, r.start - 1.5), r.end + 1.5, { skip: true, extra: [{ start: r.start, end: r.end }] }); } }
-// 사이드바 "판단 필요" 툴바 - ◀이전/다음▶은 언제나 눌릴 수 있고(선택 없어도 "다음"이 곧 시작),
+// 사이드바 "판단 필요" 툴바 - 시작/중단/완료 세 상태(10-02 3차, "검토 모드가 편집과 구분이
+// 안 된다" 피드백). 시작을 눌러야 진짜 "검토 모드"가 켜지고(단어 클릭 즉시 복원 - onMouseUp
+// 참고 - 과 집중 모드 스타일 둘 다 이 상태를 본다), 중단은 지금까지 판단은 그대로 두고 모드만
+// 끈다. 남은 항목을 전부 결정하면 renderReviewPanel()이 자동으로 완료로 전환한다.
+$('#rtStart').addEventListener('click', () => { reviewMode = 'active'; jumpToReviewItem(1); });
+$('#rtStop').addEventListener('click', () => { reviewMode = 'idle'; clearSel(); });
+$('#rtReopen').addEventListener('click', () => { reviewMode = 'active'; jumpToReviewItem(1); });
+// ◀이전/다음▶은 진행 중에만 보이므로 선택 없이도 "다음"이 곧 다음 항목으로 이동.
 // 나머지 액션은 지금 선택이 실제 판단 필요 항목일 때만(syncReviewToolbar가 disabled로 막음).
 // 각 액션 뒤에 다음 항목으로 자동 이동 - "쭉 한번에 검토"가 목적이라 매번 다시 ▶을 안 눌러도 된다.
 $('#rtPrev').addEventListener('click', () => jumpToReviewItem(-1));
@@ -1429,13 +1496,33 @@ function armWaveStripObserver() {
     for (const en of entries) {
       if (!en.isIntersecting) continue;
       const strip = waveStrips.find((s) => s.el === en.target);
-      if (strip && !strip.loaded) fetchStripPeaks(strip);
+      if (strip) scheduleStripFetch(strip);
     }
   }, { root: $('#main'), rootMargin: '600px 0px' });
   waveStrips.forEach((s) => waveStripObserver.observe(s.el));
 }
+// 10-02(검토 모드로 빠르게 jumpToReviewItem()을 연타하며 발견): 한 번의 큰 스크롤 점프가 600px
+// 여백 안에 들어오는 스트립 수십 개를 한꺼번에 교차시켜, 가드 없이 fetch하면 브라우저의
+// origin당 동시 연결 수(크롬 6개)를 전부 파형 요청이 차지해버린다 - 그 뒤에 줄 선 결정(decide)
+// POST가 응답을 몇 초씩 못 받아 "즉시 복원"이 실제로는 몇 초 멈췄다 반영되는 것처럼 보였다.
+// 동시 실행 수를 낮게 제한해 연결 몇 개는 항상 interactive 요청(decide/log) 몫으로 남겨둔다.
+const WAVE_FETCH_CONCURRENCY = 2;
+let waveFetchActive = 0;
+const waveFetchQueue = [];
+function scheduleStripFetch(strip, { priority = false } = {}) {
+  if (strip.loaded) return;
+  strip.loaded = true;  // 큐에 넣는 즉시 표시 - 대기 중 재교차해도 중복 큐잉 안 함
+  if (priority) waveFetchQueue.unshift(strip); else waveFetchQueue.push(strip);
+  pumpWaveFetchQueue();
+}
+function pumpWaveFetchQueue() {
+  while (waveFetchActive < WAVE_FETCH_CONCURRENCY && waveFetchQueue.length) {
+    const strip = waveFetchQueue.shift();
+    waveFetchActive++;
+    fetchStripPeaks(strip).finally(() => { waveFetchActive--; pumpWaveFetchQueue(); });
+  }
+}
 async function fetchStripPeaks(strip) {
-  strip.loaded = true;  // 실패해도 재시도 안 함 - 파형은 부가 정보, 스크롤 중 중복 요청만 방지
   try {
     const data = await (await fetch(`/api/waveform?start=${strip.start}&end=${strip.end}`)).json();
     strip.peaks = data.peaks || [];
@@ -1567,6 +1654,8 @@ function renderStripControls(strip) {
       </div>
     </div>
     <div class="zoom-btns">
+      <button class="waveCutWord danger" title="지금 선택한 단어를 삭제 (단축키 C)">삭제</button>
+      <button class="waveKeepWord ok" title="지금 선택한 단어를 살리기 (단축키 V)">살리기</button>
       <button class="wavePlayIn">▶ 선택된 부분만 듣기</button>
       <button class="wavePlayOut">▶ 선택된 부분 빼고 듣기</button>
       <button class="wavePlayLive" title="지금 화면에 보이는 구간을, 선택 범위와 상관없이 현재 편집(컷 결과) 그대로 재생">▶ 살아있는 부분만 듣기</button>
@@ -1574,6 +1663,10 @@ function renderStripControls(strip) {
       <button class="waveApplyKeep ok">정밀 복원</button>
     </div>`;
   const q = (sel) => strip.controls.querySelector(sel);
+  // 10-02(사용자 요청 - 패널에 버튼으로도 삭제/살리기를 인지·사용할 수 있게): C/V 키와 똑같이
+  // 지금 선택(sel)에 applySel을 적용 - 단축키를 몰라도 이 패널만 보고 판단할 수 있다.
+  q('.waveCutWord').addEventListener('click', () => { if (sel) applySel('cut', { advance: true }); });
+  q('.waveKeepWord').addEventListener('click', () => { if (sel) applySel('keep', { advance: true }); });
   q('.waveHsInput').addEventListener('change', (e) => { strip.activeHandle = 'hs'; setStripHandle(strip, 'hs', parseFloat(e.target.value)); previewStripEdit(strip); });
   q('.waveHeInput').addEventListener('change', (e) => { strip.activeHandle = 'he'; setStripHandle(strip, 'he', parseFloat(e.target.value)); previewStripEdit(strip); });
   q('.waveHsInput').addEventListener('focus', () => { strip.activeHandle = 'hs'; drawStrip(strip); renderStripHandleInputs(strip); });
@@ -1608,7 +1701,7 @@ function activateStrip(strip, hs, he) {
   strip.el.classList.add('active');
   renderStripControls(strip);
   drawStrip(strip);
-  if (!strip.loaded) fetchStripPeaks(strip);
+  scheduleStripFetch(strip, { priority: true });  // 지금 보는 스트립이라 배경 지연로드보다 먼저
   scrollIntoViewFast(strip.el, { block: 'nearest' });
 }
 function deactivateStrip(strip) {
@@ -2054,27 +2147,39 @@ function selectWordRange(wiStart, wiEndIncl) {
 // 군데서 할 수 있는 중복 인터페이스였다(사용자 지적). 이제 여기는 진행 상황 숫자 + 그 ↑/↓·C/V
 // 를 그대로 가리키는 툴바를 보여준다(10-02 2차: "이게 뭔지 인식이 안 된다" 피드백 - 키보드
 // 단축키뿐이라 발견이 안 됨, 버튼은 팝업처럼 또 판단하는 게 아니라 같은 동작을 보이게만 함).
+// 10-02 3차(사용자 지적 - "검토 모드가 편집과 구분이 안 된다"): 시작/중단/완료 세 상태를 명시한다.
+let reviewMode = 'idle';  // 'idle' | 'active' | 'done' - rtStart/rtStop/완료 자동전환이 바꾼다
+let reviewDoneCount = 0, reviewTotalCount = 0;
 function renderReviewPanel() {
   const blocks = reviewBlocks();
   const judgeNg = judgeNgItems(), quickNg = quickNgItems();
   const total = judgeNg.length + blocks.length;
   const done = judgeNg.filter((n) => ngStatus(n) !== 'pending').length
     + blocks.filter((b) => blockStatus(b) !== 'pending').length;
+  reviewTotalCount = total; reviewDoneCount = done;
+  // 남은 게 없으면 자동으로 완료 상태로, 완료였다가 되돌리기 등으로 다시 남으면 idle로(활성
+  // 중이던 흐름이 이미 끊긴 뒤라 "계속"보다는 "다시 시작"이 맞다 - rtReopen으로 바로 재개 가능).
+  if (total > 0 && done === total) reviewMode = 'done';
+  else if (reviewMode === 'done' && done < total) reviewMode = 'idle';
   $('#reviewCount').textContent = total ? `· ${total}` : '';
   $('#reviewProgress').textContent = total ? `${done}/${total} 완료` : '';
   syncReviewToolbar();
   renderQuickPanel(quickNg);
   renderScrollTicks();
 }
-// select()/clearSel()(선택이 바뀔 때)와 renderReviewPanel()(결정으로 목록 자체가 바뀔 때, 예:
-// 0건이 되는 순간) 양쪽에서 호출 - 지금 선택이 "판단 필요" 항목 하나와 정확히 겹칠 때만 그
-// 항목의 액션 버튼들이 눌려진다(앞/뒤부분 살리기는 쉼이 있는 항목일 때만 추가로 보임).
+// select()/clearSel()(선택이 바뀔 때)와 renderReviewPanel()(결정으로 목록·모드가 바뀔 때) 양쪽에서
+// 호출. reviewMode에 따라 넷 중 하나만 보인다: 없음/시작 전/진행 중/완료. 진행 중일 때만 지금
+// 선택이 "판단 필요" 항목 하나와 정확히 겹치는지로 액션 버튼을 켠다(앞/뒤부분 살리기는 쉼이
+// 있는 항목일 때만 추가로 보임).
 function syncReviewToolbar() {
-  const list = reviewNavList();
-  const total = list.length;
+  const total = reviewTotalCount;
+  document.body.classList.toggle('review-focus', reviewMode === 'active');
   $('#reviewEmpty').style.display = total ? 'none' : '';
-  $('#reviewToolbar').style.display = total ? '' : 'none';
-  if (!total) return;
+  $('#reviewIdle').style.display = total && reviewMode === 'idle' ? '' : 'none';
+  $('#reviewDone').style.display = total && reviewMode === 'done' ? '' : 'none';
+  $('#reviewToolbar').style.display = total && reviewMode === 'active' ? '' : 'none';
+  if (!total || reviewMode !== 'active') return;
+  const list = reviewNavList();
   const match = selReviewMatch;
   const locked = match?.kind === 'ng' ? !!S.decisions.ng[String(match.ref.i)]?.locked
     : match?.kind === 'block' ? !!S.decisions.blocks[String(match.ref.id)]?.locked : false;
@@ -2086,7 +2191,7 @@ function syncReviewToolbar() {
   const idx = sel ? list.findIndex((p) => p.a === sel.a && p.b === sel.b) : -1;
   $('#rtPos').textContent = idx >= 0
     ? `${idx + 1}/${total} · ${match.kind === 'ng' ? ngTypeLabel(match.ref) : '발화 블록'} · ${STATUS_KO[matchStatus(match)]}${locked ? ' (잠김 - 더블클릭으로 해제)' : ''}`
-    : `${total}건 - 다음 ▶으로 시작`;
+    : `${total}건 - 다음 ▶으로 계속`;
 }
 // 10-02(사용자 지적 - "카드로 보기는 왜 남아있어"): 빠른 확인 층은 두 평가를 이미 통과한
 // 항목이라 릴로 훑어 듣는 게 기본 동선인데, 카드 목록까지 같이 두면 "또 다른 카드 큐"로
@@ -2211,6 +2316,11 @@ function showModal(html) {
 function hideModal() { $('#modal').style.display = 'none'; }
 
 // ------------------------------------------------------------------ keyboard
+// 10-02(사용자 지적 - "단축키가 한글 입력 상태면 동작을 안 함"): 한글 입력기가 켜진 채로 이
+// 키들을 누르면 물리적으로는 같은 자리를 눌러도 e.key가 'c'/'v' 대신 조합 중인 자모
+// ('ㅊ' 등)로 들어와 전부 무시됐다. e.code는 키보드 레이아웃/입력기와 무관하게 "물리적
+// 키 위치"만 가리키므로(KeyC = 미국 자판 기준 C 위치), 글자 단축키는 전부 e.code로
+// 비교한다 - Enter/Escape/화살표/Space처럼 애초에 한글 조합의 영향을 안 받는 키는 그대로 e.key 사용.
 document.addEventListener('keydown', (e) => {
   if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
   if (document.activeElement === $('#scrollProgress')) return;  // 그 컨트롤 자신의 화살표 스크롤과 충돌 방지
@@ -2218,8 +2328,8 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault(); if ($('#modalNo')) $('#modalNo').click(); else hideModal(); return;
   }
   if (e.key === 'Escape' && $('#helpPop').classList.contains('show')) { e.preventDefault(); $('#helpPop').classList.remove('show'); return; }
-  if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); $('#btnRedo').click(); return; }
-  if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); $('#btnUndo').click(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && e.shiftKey) { e.preventDefault(); $('#btnRedo').click(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ') { e.preventDefault(); $('#btnUndo').click(); return; }
   // 10-01(읽기→추적→듣기 3단계): 1단계 "빠른 검토 모드" 핵심 탐색/편집 - 무음, 팝업 없이
   // 커서+즉시 반영. ←/→ = 단어 단위 커서 이동(+Shift로 범위 확장), ↑/↓는 "지금
   // 잘려 있는 곳"만 건너뛰며 순회(잠긴 구간은 제외) - jumpToCutSpan()/moveWordCursor() 참고.
@@ -2228,11 +2338,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') { e.preventDefault(); return jumpToCutSpan(1); }
   // 2단계 "위험지점 추적": 파형 바의 잔음 의심(audio_ok===false) 구간만 순서대로 - 본문 선택과
   // 무관하므로 sel 유무와 상관없이 전역에서 동작.
-  if (e.key === 'n' && !e.shiftKey) { e.preventDefault(); return jumpToAudioRisk(1); }
-  if (e.key === 'N' || (e.key === 'n' && e.shiftKey)) { e.preventDefault(); return jumpToAudioRisk(-1); }
+  if (e.code === 'KeyN' && !e.shiftKey) { e.preventDefault(); return jumpToAudioRisk(1); }
+  if (e.code === 'KeyN' && e.shiftKey) { e.preventDefault(); return jumpToAudioRisk(-1); }
   if (e.key === 'ArrowUp') { e.preventDefault(); return jumpToCutSpan(-1); }
   if (e.key === ' ') { e.preventDefault(); return togglePlay(); }  // global: play/pause from cursor, selection or not
-  if (e.key === 'r' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); return reel ? stopReel() : playReel(null, '이음새 릴'); }
+  if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); return reel ? stopReel() : playReel(null, '이음새 릴'); }
   // 이음새 릴 재생 중 거슬리는 곳에서 Enter: 릴은 멈추고(다음 구간으로 안 넘어감) 그 자리에서
   // 들을 수 있게 남겨 둔다 - 모든 cut_spans 항목이 리뷰 카드로 열 수 있는 ng/block과 깔끔하게
   // 대응하진 않아(수동 병합·쉼 트림 등) 카드까지 자동으로 열지는 않는다.
@@ -2240,16 +2350,16 @@ document.addEventListener('keydown', (e) => {
   // 10-02(직접 써보며 발견): 화살표로 먼저 커서를 옮기지 않고 도움말만 보고 곧바로 C/V부터
   // 눌러보면 아래 if(sel) 블록에 아예 안 걸려 완전히 조용히 무시됐다 - 처음 쓰는 사람은
   // "고장났나?"로 느끼기 쉬우니 여기서 바로 안내한다.
-  if (!sel && (e.key === 'c' || e.key === 'v')) { e.preventDefault(); toast('먼저 커서를 이동하세요 (↑↓ 또는 단어 클릭)'); return; }
+  if (!sel && (e.code === 'KeyC' || e.code === 'KeyV')) { e.preventDefault(); toast('먼저 커서를 이동하세요 (↑↓ 또는 단어 클릭)'); return; }
   if (sel) {
     // c/v: 명시적 삭제/살리기(토글 아님 - 빠르게 연타해도 상태가 안 꼬임), 결정 직후 자동으로
     // 다음 "잘려 있는 곳"으로 이동한다(advance:true) - 1단계 핵심 루프.
-    if (e.key === 'c') { e.preventDefault(); return applySel('cut', { advance: true }); }
-    if (e.key === 'v') { e.preventDefault(); return applySel('keep', { advance: true }); }
+    if (e.code === 'KeyC') { e.preventDefault(); return applySel('cut', { advance: true }); }
+    if (e.code === 'KeyV') { e.preventDefault(); return applySel('keep', { advance: true }); }
     // ⇧↵ = 확정 잠금(예전 "검토 완료"를 계승 - applyLock 참고), u = 잠금 해제(화살표로
     // 잠긴 단어까지 커서를 옮긴 경우의 키보드 경로 - 마우스는 더블클릭).
     if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); return applyLock(); }
-    if (e.key === 'u') {
+    if (e.code === 'KeyU') {
       const locked = selReviewMatch?.kind === 'ng' ? S.decisions.ng[String(selReviewMatch.ref.i)]?.locked
         : selReviewMatch?.kind === 'block' ? S.decisions.blocks[String(selReviewMatch.ref.id)]?.locked : false;
       if (locked) { e.preventDefault(); return applyUnlock(); }
@@ -2257,15 +2367,15 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); return toggleSel(); }  // the one shortcut for both 삭제/살리기
     // docs/기획/05-검토-화면.md 4.2절 번호 키 - 이 항목에 실제 내부 쉼(split_wi)이 있을 때만
     // 반응한다 - 없으면 숫자 키는 그냥 아무 일도 안 한다.
-    if (['1', '2', '3'].includes(e.key) && selReviewMatch?.kind === 'ng' && selReviewMatch.ref.review?.split_wi != null) {
+    if (['Digit1', 'Digit2', 'Digit3'].includes(e.code) && selReviewMatch?.kind === 'ng' && selReviewMatch.ref.review?.split_wi != null) {
       e.preventDefault();
-      if (e.key === '1') applyAltRestore(selReviewMatch.ref, 'front');
-      else if (e.key === '2') applySel('keep');
+      if (e.code === 'Digit1') applyAltRestore(selReviewMatch.ref, 'front');
+      else if (e.code === 'Digit2') applySel('keep');
       else applyAltRestore(selReviewMatch.ref, 'back');
       return;
     }
-    if (e.key === 'x') { e.preventDefault(); return playSelJoin(); }
-    if (e.key === 's' && matchStatus(selReviewMatch) === 'pending') { e.preventDefault(); return applySkip(); }
+    if (e.code === 'KeyX') { e.preventDefault(); return playSelJoin(); }
+    if (e.code === 'KeyS' && matchStatus(selReviewMatch) === 'pending') { e.preventDefault(); return applySkip(); }
     if (e.key === 'Escape') { clearSel(); stop(); return; }
   }
   if (e.key === 'Escape') { stop(); }
