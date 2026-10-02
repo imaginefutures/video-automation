@@ -60,9 +60,25 @@ def setup_videos_folder(project_dir: Path) -> None:
     print(f"videos/ 폴더를 만들었습니다: {videos}\n  -> 여기에 <이름>/raw.mp4로 원본을 넣으세요 (videos/README.md 참고)")
 
 
+def install_git_hooks() -> None:
+    """docs/교체-절차.md 5번: 매뉴얼/문서 동기화 필수 필드를 강제하는 commit-msg 훅을
+    설치/갱신한다. .git/hooks는 버전관리 밖이라 setup.py 호출마다 다시 복사해야 최신으로
+    유지된다. 스킬 저장소(PROJECT_ROOT)가 git 저장소가 아니면(예: 일부 배포 경로) 조용히 넘어간다."""
+    git_dir = PROJECT_ROOT / ".git"
+    src = PROJECT_ROOT / "scripts" / "hooks" / "commit-msg"
+    if not git_dir.is_dir() or not src.exists():
+        return
+    dst = git_dir / "hooks" / "commit-msg"
+    dst.parent.mkdir(exist_ok=True)
+    dst.write_text(src.read_text())
+    dst.chmod(0o755)
+    print(f"commit-msg 훅 설치/갱신됨 ({dst})")
+
+
 def main() -> None:
     project_dir = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
 
+    install_git_hooks()
     ensure_api_keys()  # 없으면 여기서 (대화식 또는 명확한 에러로) 처리하고 넘어옴
     load_env()
     have = [k for k, _, _ in REQUIRED_API_KEYS if os.environ.get(k)]

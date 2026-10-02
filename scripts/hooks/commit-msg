@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# 매뉴얼/문서 동기화 필수 필드 검사 — docs/교체-절차.md 5번.
+# web/·scripts/·SKILL.md를 건드리는 커밋은 "매뉴얼:"/"문서:" 줄이 있어야 통과한다.
+# 두 줄이 있는지만 확인한다 — 내용이 맞는지는 사람(또는 다음에 보는 세션)이 판단한다.
+# scripts/setup.py가 호출될 때마다 .git/hooks/commit-msg로 설치/갱신된다.
+
+commit_msg_file="$1"
+commit_source="${2:-}"
+
+[ "$commit_source" = "merge" ] && exit 0
+
+changed_files="$(git diff --cached --name-only)"
+
+needs_check=false
+while IFS= read -r f; do
+  case "$f" in
+    web/*|scripts/*|SKILL.md) needs_check=true ;;
+  esac
+done <<< "$changed_files"
+
+$needs_check || exit 0
+
+msg="$(cat "$commit_msg_file")"
+missing=false
+
+echo "$msg" | grep -qE '^매뉴얼: .+' || { echo "commit-msg 훅: '매뉴얼: <갱신 항목> / 해당 없음 — <이유>' 줄이 없습니다" >&2; missing=true; }
+echo "$msg" | grep -qE '^문서: .+'   || { echo "commit-msg 훅: '문서: <갱신 파일> / 해당 없음 — <이유>' 줄이 없습니다" >&2; missing=true; }
+
+if $missing; then
+  cat >&2 <<'EOF'
+
+web/·scripts/·SKILL.md를 건드리는 커밋은 본문에 아래 두 줄이 있어야 합니다 (docs/교체-절차.md 5번):
+  매뉴얼: <갱신한 SKILL.md/촬영-가이드.md 절> / 해당 없음 — <이유>
+  문서: <갱신한 docs/*.md 파일> / 해당 없음 — <이유>
+
+급한 예외는 사용자가 명시적으로 지시했을 때만 --no-verify로 건너뛴다.
+EOF
+  exit 1
+fi
+
+exit 0
