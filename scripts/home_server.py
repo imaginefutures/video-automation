@@ -40,7 +40,7 @@ PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
-    api_keys_status, edit_dir, load_env, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
+    api_keys_status, edit_dir, ensure_project_python, load_env, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS,
 )
 
@@ -796,6 +796,9 @@ def serve(port: int, open_browser: bool) -> None:
 
 
 def main() -> None:
+    # 홈 서버 자신은 표준 라이브러리만 쓰지만 자식(run.py/server.py)을 sys.executable로 띄운다 -
+    # 여기서 프로젝트 환경을 보장해야 자식이 numpy·requests 없이 죽지 않는다(common.py 참고)
+    ensure_project_python()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8764)
     ap.add_argument("--no-open", action="store_true")

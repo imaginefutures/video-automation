@@ -59,7 +59,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import load_env, ensure_api_keys, video_dir, edit_dir, write_json, PROJECT_ROOT  # noqa: E402
+from common import load_env, ensure_api_keys, ensure_project_python, video_dir, edit_dir, write_json, PROJECT_ROOT  # noqa: E402
 import migrate  # noqa: E402
 
 # ----------------------------------------------------------------------------- R2: 처리 중 진행 화면
@@ -271,6 +271,7 @@ def notify(title: str, message: str) -> None:
 
 
 def main() -> None:
+    ensure_project_python()  # 각 단계를 sys.executable로 띄우므로 - 안 맞으면 전사부터 엉뚱하게 실패
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder", nargs="?", default=None,
                     help="videos/<이름>. 생략하면 videos/ 바로 아래 떨어진 mp4를 찾아 자동으로 폴더를 만든다")

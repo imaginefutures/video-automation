@@ -27,7 +27,9 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail
+from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python
+if __name__ == "__main__":
+    ensure_project_python()  # 아래 audio_map 등이 numpy를 import하므로 그 전에 - common.py 참고
 from build_edl import compute_kept_segments, BOUNDARY_PAD_SEC
 from plan_pauses import PRESETS, PROTECT_SEC, recommended_keep, trim_for_keep, usable_range
 from pattern_suggest import check as check_pattern, MIN_TRIGGER as PATTERN_MIN_TRIGGER

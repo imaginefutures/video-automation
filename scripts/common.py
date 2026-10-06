@@ -44,6 +44,38 @@ def sanitize_project_name(raw: str) -> str:
     return name
 
 
+# pyproject.toml 의존성(+librosa가 끌고 오는 numpy)의 import 이름 - 하나라도 없으면 프로젝트
+# 환경(.venv)이 아닌 파이썬으로 실행된 것이다.
+_REQUIRED_MODULES = ("anthropic", "pydantic", "requests", "librosa", "numpy")
+
+
+def ensure_project_python() -> None:
+    """진입점(home_server.py/run.py/server.py)이 맨 처음 부른다. 프로젝트 의존성이 없는 파이썬
+    (예: `uv run` 없이 `python3 scripts/home_server.py`)으로 실행됐으면 `uv run --project`로
+    자기 자신을 다시 실행해 .venv로 갈아탄다.
+
+    10-06 실제 사고(다른 컴퓨터): 홈 서버가 시스템 파이썬으로 떠 있었는데 홈 서버 자체는
+    표준 라이브러리만 써서 멀쩡히 돌았다. 그런데 자식(run.py 단계들, server.py)을 전부
+    sys.executable로 띄우므로 - "정리"는 통과하고 "전사"는 requests가 없어 종료 코드 1, 검토
+    서버는 numpy가 없어 시작 직후 종료. 증상이 단계마다 엉뚱하게 흩어져 원인을 찾기 어려웠다."""
+    import importlib.util
+    missing = [m for m in _REQUIRED_MODULES if importlib.util.find_spec(m) is None]
+    if not missing:
+        return
+    import shutil
+    uv = shutil.which("uv")
+    if os.environ.get("VIDEO_CUT_REEXEC") or uv is None:
+        # 이미 uv로 다시 실행했는데도 없음(설치 실패 등), 또는 uv 자체가 없음 - 루프 대신 멈춘다
+        sys.exit(f"필요한 파이썬 라이브러리가 없습니다({', '.join(missing)}) - 현재 파이썬: {sys.executable}\n"
+                 + ("uv를 설치한 뒤(`brew install uv`) " if uv is None else "")
+                 + f"`uv run --project {PROJECT_ROOT} python {sys.argv[0]}`로 실행하세요.")
+    print(f"[env] 프로젝트 환경이 아닌 파이썬({sys.executable})으로 실행됨 - 없는 라이브러리: "
+          f"{', '.join(missing)}. uv로 다시 실행합니다.", flush=True)
+    os.environ["VIDEO_CUT_REEXEC"] = "1"
+    os.execvp(uv, [uv, "run", "--project", str(PROJECT_ROOT), "python",
+                   str(Path(sys.argv[0]).resolve()), *sys.argv[1:]])
+
+
 def load_env() -> None:
     """Load PROJECT_ROOT/.env into os.environ without overriding existing values."""
     env_path = PROJECT_ROOT / ".env"
