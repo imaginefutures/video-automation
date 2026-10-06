@@ -26,6 +26,11 @@ def main() -> None:
     args = ap.parse_args()
 
     out_path = args.out or args.video.with_name(f"{args.video.stem}_clean.mp4")
+    # 임시 이름에 쓰고 다 끝나면 rename - 10-06: 최종 이름에 바로 쓰다가 프로세스가 중간에 죽어
+    # 반쪽짜리 clean.mp4가 남았고, run.py는 "파일이 있으니 정리 끝"으로 보고 매번 건너뛰어
+    # 다음 단계(전사)가 ffmpeg Invalid data(종료 코드 183)로 계속 실패했다. 확장자는 .mp4로
+    # 끝나야 ffmpeg가 출력 형식을 안다.
+    tmp_path = out_path.with_name(f"{out_path.stem}.part.mp4")
 
     cmd = [
         "ffmpeg", "-y", "-i", str(args.video),
@@ -33,10 +38,15 @@ def main() -> None:
         "-map_metadata", "-1",
         "-c", "copy",
         "-movflags", "+faststart",
-        str(out_path),
+        str(tmp_path),
     ]
     print(f"cleaning {args.video.name} -> {out_path.name} (stream copy, lossless)")
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    tmp_path.replace(out_path)
     print(f"wrote {out_path} ({out_path.stat().st_size / 1e9:.2f} GB)")
 
 

@@ -23,9 +23,11 @@ SCRIBE_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 
 def extract_audio(video: Path, dest: Path) -> None:
     subprocess.run(
-        ["ffmpeg", "-y", "-i", str(video), "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
+        # -v error: 배너·진행률 없이 에러 문구만 stderr로 - 10-06: 예전엔 stderr를 버려서 실패해도
+        # "exit status 183"만 남고 원인(Invalid data found)을 알 수 없었다
+        ["ffmpeg", "-y", "-v", "error", "-i", str(video), "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
          "-c:a", "pcm_s16le", str(dest)],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        check=True, stdout=subprocess.DEVNULL,
     )
 
 

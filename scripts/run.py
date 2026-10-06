@@ -172,6 +172,18 @@ def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback
     _pipeline_done += 1
 
 
+def _media_readable(path: Path) -> bool:
+    """ffprobe로 오디오 스트림 길이를 읽을 수 있는지 - 반쪽짜리 mp4(moov 없음)는 여기서 실패한다.
+    clean.mp4는 faststart라 수 GB여도 앞부분만 읽어 금방 끝난다."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0",
+                            "-show_entries", "stream=duration", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return True  # 확인 자체를 못 하면 기존 캐시를 믿는다(멀쩡한 파일을 지우지 않게)
+    return r.returncode == 0 and bool(r.stdout.strip())
+
+
 def start_server(folder: Path, port: int, no_open: bool) -> subprocess.Popen:
     """R2: launch the review server right away, before the pipeline runs, instead of at the
     very end - the browser opens immediately and shows a progress view (web/index.html polling
@@ -340,6 +352,11 @@ def main() -> None:
         sys.exit(msg)
 
     clean = edit / "clean.mp4"
+    if clean.exists() and not _media_readable(clean):
+        # 10-06: 예전 clean_media.py(최종 이름에 바로 씀)가 중간에 죽어 남긴 반쪽 파일 - 캐시로
+        # 믿으면 전사가 매번 Invalid data로 실패한다. 지우고 다시 만든다.
+        print(f"정리: {clean.name}가 깨져 있어(읽을 수 없음) 다시 만듭니다")
+        clean.unlink()
     if not clean.exists():
         step("정리", [str(HERE / "clean_media.py"), str(raw), "--out", str(clean)], folder)
     else:
