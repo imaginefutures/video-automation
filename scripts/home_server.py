@@ -40,7 +40,7 @@ PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
-    api_keys_status, edit_dir, load_env, read_pipeline_status, sanitize_project_name, write_env_keys,
+    api_keys_status, edit_dir, load_env, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS,
 )
 
@@ -403,7 +403,7 @@ def _spawn_pipeline(name: str, folder: Path) -> tuple[int, subprocess.Popen, Pat
         cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
         start_new_session=True,
         # 버퍼링되면 run.py의 "== 단계" 줄이 하위 프로세스 출력보다 늦게 찍혀 run.log 순서가
-        # 뒤섞인다 - 진행 화면의 실패 로그(server.py _log_tail)가 이 순서에 기댄다.
+        # 뒤섞인다 - 실패 로그(common.pipeline_log_tail)가 이 순서에 기댄다.
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     with _active_lock:
@@ -639,6 +639,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(WEB_DIR / "home.html", "text/html; charset=utf-8")
         if path == "/api/projects":
             return self._json({"projects": scan_projects()})
+        if path == "/api/log":
+            # 10-06: 오류 카드 클릭 = 홈 화면에서 바로 로그+다시 시도 창. 예전엔 진행 화면용 검토
+            # 서버를 새로 띄우고 최대 12초 기다렸다 - 그동안 아무 변화가 없고, 그 서버가 못 뜨면
+            # 사용자는 "눌러도 아무것도 안 나온다"만 겪었다(다른 컴퓨터에서 실제 보고).
+            name = (parse_qs(urlsplit(self.path).query).get("name") or [""])[0]
+            folder = videos_root() / name
+            if not name or not is_project_folder(folder):
+                return self._json({"ok": False, "error": f"알 수 없는 영상: {name}"}, 404)
+            return self._json({"ok": True, "log_tail": pipeline_log_tail(folder)})
         if path == "/api/setup":
             return self._json({"keys": api_keys_status(), **ffmpeg_status()})
         if path == "/api/setup/ffmpeg/status":

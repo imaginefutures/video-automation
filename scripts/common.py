@@ -244,6 +244,20 @@ def pid_alive(pid: int | None) -> bool:
     return bool(stat) and not stat.startswith("Z")
 
 
+def pipeline_log_tail(folder: Path, max_lines: int = 60) -> str | None:
+    """edit/run.log에서 실패한 단계의 출력만 - run.py step()이 단계마다 찍는 "== 제목" 줄부터
+    끝까지. 그냥 마지막 N줄을 자르면 run.py 자신의 traceback만 남고 진짜 원인(ffmpeg/API 에러
+    문구)은 그 위에 있어 잘려 나갔다. 진행 화면(server.py)과 홈 화면 오류 창(home_server.py)이
+    같이 쓴다."""
+    try:
+        lines = (folder / "edit" / "run.log").read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("== ")]
+    section = lines[starts[-1]:] if starts else lines
+    return "\n".join(section[-max_lines:]) or None
+
+
 def read_pipeline_status(folder: Path) -> dict | None:
     """run.py가 남긴 edit/pipeline_status.json - state는 running/error/done. 파일이 없거나 pid가
     없는 옛 형식(10-06 이전 run.py)이면 None - 그런 폴더는 예전 기준(전사·NG 파일 유무)대로

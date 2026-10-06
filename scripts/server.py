@@ -27,7 +27,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status
+from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail
 from build_edl import compute_kept_segments, BOUNDARY_PAD_SEC
 from plan_pauses import PRESETS, PROTECT_SEC, recommended_keep, trim_for_keep, usable_range
 from pattern_suggest import check as check_pattern, MIN_TRIGGER as PATTERN_MIN_TRIGGER
@@ -1440,21 +1440,8 @@ def _pipeline_status(folder: Path) -> dict:
     if out["state"] == "running" and data.get("stage_started_at"):
         out["elapsed_sec"] = max(0, round(time.time() - data["stage_started_at"]))
     if out["state"] == "error":
-        out["log_tail"] = _log_tail(folder / "edit" / "run.log")
+        out["log_tail"] = pipeline_log_tail(folder)
     return out
-
-
-def _log_tail(path: Path, max_lines: int = 60) -> str | None:
-    """실패한 단계의 출력만 - run.py step()이 단계마다 찍는 "== 제목" 줄부터 끝까지. 그냥 마지막
-    N줄을 자르면 run.py 자신의 traceback만 남고 진짜 원인(ffmpeg/API 에러 문구)은 그 위에 있어
-    잘려 나갔다."""
-    try:
-        lines = path.read_text(errors="replace").splitlines()
-    except OSError:
-        return None
-    starts = [i for i, ln in enumerate(lines) if ln.startswith("== ")]
-    section = lines[starts[-1]:] if starts else lines
-    return "\n".join(section[-max_lines:]) or None
 
 
 _retry_lock = threading.Lock()
