@@ -83,7 +83,9 @@
   .card.clickable { cursor: pointer; }
   .card.loading { opacity: 0.6; pointer-events: none; }
   .card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .card-name { font-size: 15px; font-weight: 600; }
+  /* 10-06 harden: 이름은 150자까지 - 띄어쓰기 없는 긴 영문·밑줄 이름도 카드 안에서 줄바꿈되게, 배지는 안 찌그러지게 */
+  .card-name { font-size: 15px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+  .card-top .badge { flex: 0 0 auto; }
   .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: var(--r-full); white-space: nowrap; }
   .badge.processing { background: var(--chip); color: var(--muted); }
   .badge.reviewing { background: var(--proposal-bg); color: var(--proposal-line); }
