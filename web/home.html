@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>video-cut 프로젝트 홈</title>
 <style>
-  /* 색상 변수는 web/index.html의 것과 맞췄다(docs/현재-설계/design-system.md 참고 - 같은
+  /* 색상 변수는 web/index.html의 것과 맞췄다(DESIGN.md 참고 - 같은
      Vercel풍 라이트 톤) - 검토 화면과 홈 화면이 다른 느낌으로 보이지 않게. */
   :root {
     --bg: #ffffff; --panel: #fafafa; --surface-2: #f5f5f5; --ink: #171717; --muted: #666666; --line: #ebebeb; --line-strong: #a1a1a1;
     --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0066dd;
-    --warn: #ab570a; --warn-soft: #ffefcf;
-    --danger: #ee0000; --danger-soft: #f7d4d6;
+    /* 검토 대기(질의) 표시 - 검토 화면과 같은 이름. 빨강(--danger)은 삭제 동작 전용인데 홈 화면엔
+       삭제 동작이 없어 선언하지 않는다(10-06 polish: 실패 표시가 빨강을 빌려 쓰던 걸 잉크로 바꿈) */
+    --proposal-line: #ab570a; --proposal-bg: #ffefcf;
     --chip: rgba(0,0,0,0.045); --chip-hover: rgba(0,0,0,0.08);
     --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
     --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 9999px;
@@ -60,7 +61,7 @@
   #modal .field-label, #setupGate .field-label { font-size: 13px; font-weight: 600; }
   #modal .field-chip, #setupGate .field-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--r-full); }
   #modal .field-chip.ok, #setupGate .field-chip.ok { background: var(--accent-soft); color: var(--accent-strong); }
-  #modal .field-chip.missing, #setupGate .field-chip.missing { background: var(--warn-soft); color: var(--warn); }
+  #modal .field-chip.missing, #setupGate .field-chip.missing { background: var(--proposal-bg); color: var(--proposal-line); }
   #modal .field input[type=text], #modal .field input[type=password],
   #setupGate .field input[type=text], #setupGate .field input[type=password] { width: 100%; padding: 7px 10px; border-radius: 8px;
     border: 1px solid var(--line); font: inherit; font-size: 13px; box-sizing: border-box; }
@@ -85,9 +86,11 @@
   .card-name { font-size: 15px; font-weight: 600; }
   .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: var(--r-full); white-space: nowrap; }
   .badge.processing { background: var(--chip); color: var(--muted); }
-  .badge.reviewing { background: var(--warn-soft); color: var(--warn); }
+  .badge.reviewing { background: var(--proposal-bg); color: var(--proposal-line); }
   .badge.confirmed { background: var(--accent-soft); color: var(--accent-strong); }
-  .badge.error { background: var(--danger-soft); color: var(--danger); }
+  /* 실패 = 검은 잉크 + 경고 아이콘(DESIGN.md The Ink Note Rule) - 연한 배지들 사이에서 가장 진하게 */
+  .badge.error { background: var(--ink); color: var(--bg); }
+  .badge svg { flex: 0 0 auto; }
   .card-meta { margin-top: 6px; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 14px; }
   .card-meta .preview-chip { background: var(--chip); color: var(--ink); padding: 1px 8px; border-radius: var(--r-full); font-size: 11.5px; }
   .card-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
@@ -220,6 +223,8 @@ function fmtDuration(sec) {
 
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+// 실패 표시용 경고 아이콘 - 빨강 대신 잉크(DESIGN.md The Ink Note Rule)
+const WARN_ICON = (size, color) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 2.4 17.6A2 2 0 0 0 4.1 20.6h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5"/><path d="M12 17h.01"/></svg>`;
 function statusBadge(p) {
   if (p.status === 'error') return { cls: 'error', text: '처리 실패' };
   if (p.status === 'processing') return { cls: 'processing', text: p.resumable && !p.managed ? '처리 멈춤' : '처리 중' };
@@ -240,7 +245,8 @@ function renderCard(p) {
 
   const top = document.createElement('div'); top.className = 'card-top';
   const name = document.createElement('span'); name.className = 'card-name'; name.textContent = p.name;
-  const b = document.createElement('span'); b.className = `badge ${badge.cls}`; b.textContent = badge.text;
+  const b = document.createElement('span'); b.className = `badge ${badge.cls}`;
+  b.innerHTML = (p.status === 'error' ? WARN_ICON(12, 'currentColor') : '') + esc(badge.text);
   top.appendChild(name); top.appendChild(b);
   card.appendChild(top);
 
@@ -261,7 +267,7 @@ function renderCard(p) {
 
   if (p.status === 'error') {
     const hint = document.createElement('div'); hint.className = 'card-hint';
-    hint.style.color = 'var(--warn)';
+    hint.style.color = 'var(--ink)';  // 실패 = 잉크. 호박색은 '검토 대기'(멈춘 처리 포함) 전용
     hint.textContent = `${p.stage ? p.stage + ' 단계에서 ' : ''}${p.error || '처리 중 오류가 발생했습니다'} - 클릭하면 자세히 볼 수 있어요`;
     card.appendChild(hint);
   }
@@ -275,7 +281,7 @@ function renderCard(p) {
       : p.resumable
         ? '처리가 멈춰 있습니다 - 클릭하면 이어서 처리해요'
         : '다른 곳(터미널 등)에서 처리 중입니다 - 끝나면 여기서 열 수 있어요';
-    if (p.resumable && !p.managed) hint.style.color = 'var(--warn)';
+    if (p.resumable && !p.managed) hint.style.color = 'var(--proposal-line)';
     card.appendChild(hint);
   }
   if (clickable) {
@@ -295,7 +301,7 @@ async function showErrorDetail(p, card) {
   let log = null;
   try { log = (await (await fetch(`/api/log?name=${encodeURIComponent(p.name)}`)).json()).log_tail; } catch (e) { /* 로그 없이도 창은 띄운다 */ }
   showModal(`<h2 style="margin:0 0 6px;font-size:16px">${esc(p.name)} 처리 실패</h2>
-    <p style="margin:0 0 10px;color:var(--danger)">${esc(p.stage ? p.stage + ' 단계에서 ' : '')}${esc(p.error || '처리 중 오류가 발생했습니다')}</p>
+    <p style="margin:0 0 10px;display:flex;align-items:center;gap:7px;font-weight:600">${WARN_ICON(16, 'var(--ink)')}${esc(p.stage ? p.stage + ' 단계에서 ' : '')}${esc(p.error || '처리 중 오류가 발생했습니다')}</p>
     ${log ? `<pre style="user-select:text;-webkit-user-select:text;max-height:45vh;overflow:auto;margin:0;padding:10px 12px;background:var(--chip);border-radius:6px;
                 font-size:11.5px;white-space:pre-wrap;word-break:break-all">${esc(log)}</pre>`
           : '<p style="margin:0;color:var(--muted);font-size:13px">남아 있는 처리 로그가 없습니다.</p>'}

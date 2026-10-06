@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-06T07:32:53.285561+00:00",
+  "title": "Design System: video-cut",
+  "extensions": {
+    "colorMeta": {
+      "proof-white": {
+        "role": "neutral",
+        "displayName": "Proof White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#404040",
+          "#737373",
+          "#a6a6a6",
+          "#d9d9d9",
+          "#ffffff",
+          "#ffffff",
+          "#ffffff",
+          "#ffffff"
+        ]
+      },
+      "margin-gray": {
+        "role": "neutral",
+        "displayName": "Margin Gray",
+        "canonical": "#fafafa",
+        "tonalRamp": [
+          "#3e3e3e",
+          "#707070",
+          "#a2a2a2",
+          "#d4d4d4",
+          "#fbfbfb",
+          "#fcfcfc",
+          "#fefefe",
+          "#fefefe"
+        ]
+      },
+      "galley-gray": {
+        "role": "neutral",
+        "displayName": "Galley Gray",
+        "canonical": "#f5f5f5",
+        "tonalRamp": [
+          "#3d3d3d",
+          "#6e6e6e",
+          "#9f9f9f",
+          "#d0d0d0",
+          "#f7f7f7",
+          "#fafafa",
+          "#fcfcfc",
+          "#fefefe"
+        ]
+      },
+      "press-ink": {
+        "role": "neutral",
+        "displayName": "Press Ink",
+        "canonical": "#171717",
+        "tonalRamp": [
+          "#060606",
+          "#0a0a0a",
+          "#0f0f0f",
+          "#141414",
+          "#454545",
+          "#7f7f7f",
+          "#b9b9b9",
+          "#e8e8e8"
+        ]
+      },
+      "pencil-gray": {
+        "role": "neutral",
+        "displayName": "Pencil Gray",
+        "canonical": "#666666",
+        "tonalRamp": [
+          "#1a1a1a",
+          "#2e2e2e",
+          "#424242",
+          "#575757",
+          "#858585",
+          "#ababab",
+          "#d1d1d1",
+          "#f0f0f0"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#ebebeb",
+        "tonalRamp": [
+          "#3b3b3b",
+          "#6a6a6a",
+          "#999999",
+          "#c8c8c8",
+          "#efefef",
+          "#f4f4f4",
+          "#f9f9f9",
+          "#fdfdfd"
+        ]
+      },
+      "rule-gray": {
+        "role": "neutral",
+        "displayName": "Rule Gray",
+        "canonical": "#a1a1a1",
+        "tonalRamp": [
+          "#282828",
+          "#484848",
+          "#696969",
+          "#898989",
+          "#b4b4b4",
+          "#cbcbcb",
+          "#e3e3e3",
+          "#f6f6f6"
+        ]
+      },
+      "struck-gray": {
+        "role": "neutral",
+        "displayName": "Struck Gray",
+        "canonical": "#a1a1a1",
+        "tonalRamp": [
+          "#282828",
+          "#484848",
+          "#696969",
+          "#898989",
+          "#b4b4b4",
+          "#cbcbcb",
+          "#e3e3e3",
+          "#f6f6f6"
+        ]
+      },
+      "query-wash": {
+        "role": "secondary",
+        "displayName": "Query Wash",
+        "canonical": "#ffefcf",
+        "tonalRamp": [
+          "#403c34",
+          "#736c5d",
+          "#a69b87",
+          "#d9cbb0",
+          "#fff2d9",
+          "#fff6e5",
+          "#fffaf1",
+          "#fffdfa"
+        ]
+      },
+      "query-amber": {
+        "role": "secondary",
+        "displayName": "Query Amber",
+        "canonical": "#ab570a",
+        "tonalRamp": [
+          "#2b1602",
+          "#4d2704",
+          "#6f3906",
+          "#914a08",
+          "#bc793b",
+          "#d1a378",
+          "#e6cdb6",
+          "#f7eee6"
+        ]
+      },
+      "gauge-track": {
+        "role": "neutral",
+        "displayName": "Gauge Track",
+        "canonical": "#f0f0f0",
+        "tonalRamp": [
+          "#3c3c3c",
+          "#6c6c6c",
+          "#9c9c9c",
+          "#cccccc",
+          "#f3f3f3",
+          "#f7f7f7",
+          "#fafafa",
+          "#fefefe"
+        ]
+      },
+      "gauge-fill": {
+        "role": "neutral",
+        "displayName": "Gauge Fill",
+        "canonical": "#d4d4d4",
+        "tonalRamp": [
+          "#353535",
+          "#5f5f5f",
+          "#8a8a8a",
+          "#b4b4b4",
+          "#dddddd",
+          "#e7e7e7",
+          "#f2f2f2",
+          "#fbfbfb"
+        ]
+      },
+      "approval-blue": {
+        "role": "primary",
+        "displayName": "Approval Blue",
+        "canonical": "#0070f3",
+        "tonalRamp": [
+          "#001c3d",
+          "#00326d",
+          "#00499e",
+          "#005fcf",
+          "#338df5",
+          "#73b0f8",
+          "#b2d4fb",
+          "#e6f1fe"
+        ]
+      },
+      "approval-wash": {
+        "role": "primary",
+        "displayName": "Approval Wash",
+        "canonical": "#d3e5ff",
+        "tonalRamp": [
+          "#353940",
+          "#5f6773",
+          "#8995a6",
+          "#b3c3d9",
+          "#dceaff",
+          "#e7f1ff",
+          "#f2f7ff",
+          "#fbfcff"
+        ]
+      },
+      "approval-deep": {
+        "role": "primary",
+        "displayName": "Approval Deep",
+        "canonical": "#0066dd",
+        "tonalRamp": [
+          "#001a37",
+          "#002e63",
+          "#004290",
+          "#0057bc",
+          "#3385e4",
+          "#73abec",
+          "#b2d1f5",
+          "#e6f0fc"
+        ]
+      },
+      "delete-red": {
+        "role": "tertiary",
+        "displayName": "Delete Red",
+        "canonical": "#ee0000",
+        "tonalRamp": [
+          "#3c0000",
+          "#6b0000",
+          "#9b0000",
+          "#ca0000",
+          "#f13333",
+          "#f67373",
+          "#fab2b2",
+          "#fde6e6"
+        ]
+      },
+      "delete-wash": {
+        "role": "tertiary",
+        "displayName": "Delete Wash",
+        "canonical": "#f7d4d6",
+        "tonalRamp": [
+          "#3e3536",
+          "#6f5f60",
+          "#a18a8b",
+          "#d2b4b6",
+          "#f9ddde",
+          "#fbe7e8",
+          "#fdf2f3",
+          "#fefbfb"
+        ]
+      },
+      "chip-tint": {
+        "role": "neutral",
+        "displayName": "Chip Tint",
+        "canonical": "rgba(0,0,0,0.045)"
+      },
+      "chip-tint-hover": {
+        "role": "neutral",
+        "displayName": "Chip Tint Hover",
+        "canonical": "rgba(0,0,0,0.08)"
+      }
+    },
+    "typographyMeta": {
+      "manuscript": {
+        "displayName": "Manuscript",
+        "purpose": "검토 화면 대본 본문. 가장 오래 읽히는 글자."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "기본 UI 글자."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "모달 제목."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "사이드바 제목."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "사이드바 섹션 제목(대문자)."
+      },
+      "numeric": {
+        "displayName": "Numeric",
+        "purpose": "타임스탬프·길이·게이지 값. tabular-nums."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float-small",
+        "value": "0 6px 16px -4px rgba(0,0,0,0.18)",
+        "purpose": "도움말 버튼."
+      },
+      {
+        "name": "float-medium",
+        "value": "0 20px 50px -12px rgba(0,0,0,0.22)",
+        "purpose": "도움말 패널."
+      },
+      {
+        "name": "float-large",
+        "value": "0 24px 60px -14px rgba(0,0,0,0.25)",
+        "purpose": "확정·오류 모달."
+      },
+      {
+        "name": "strip-lift",
+        "value": "0 10px 28px -16px rgba(0,0,0,0.3)",
+        "purpose": "조정 중인 파형 스트립."
+      },
+      {
+        "name": "video-lift",
+        "value": "0 20px 50px -12px rgba(0,0,0,0.7), 0 0 0 1px #ebebeb",
+        "purpose": "플로팅 비디오 미리보기만."
+      },
+      {
+        "name": "card-hover",
+        "value": "0 6px 18px -10px rgba(0,0,0,0.18)",
+        "purpose": "클릭 가능한 홈 카드 호버."
+      }
+    ],
+    "motion": [
+      {
+        "name": "duration-instant",
+        "value": "80ms linear",
+        "purpose": "스크롤 진행률처럼 연속값 추적."
+      },
+      {
+        "name": "duration-fast",
+        "value": "120-160ms ease",
+        "purpose": "마이크로 피드백(카드 호버, 셰브론 회전)."
+      },
+      {
+        "name": "duration-base",
+        "value": "200ms ease",
+        "purpose": "높이 기반 패널 펼침."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.2,.8,.2,1)",
+        "purpose": "뜨는 패널 등장·퇴장(150-220ms). 유일한 비선형 이징."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "680px"
+      },
+      {
+        "name": "video-reserve",
+        "value": "1700px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Confirm Button",
+      "kind": "button",
+      "refersTo": "button-confirm",
+      "description": "검토를 마치고 확정하는 유일한 주 동작. 사이드바 폭 전체 알약형.",
+      "html": "<button class=\"ds-btn-confirm\">확정하고 내보내기</button>",
+      "css": ".ds-btn-confirm{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;width:260px;background:#0070f3;color:#fff;border:none;border-radius:9999px;font-weight:600;font-size:13.5px;padding:10px 9px;cursor:pointer;transition:filter 120ms ease}.ds-btn-confirm:hover{filter:brightness(1.06)}.ds-btn-confirm:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #0070f3}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "모달의 취소·닫기·로그 복사.",
+      "html": "<button class=\"ds-btn-secondary\">닫기</button>",
+      "css": ".ds-btn-secondary{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;padding:7px 14px;border-radius:8px;border:1px solid #ebebeb;background:#fafafa;color:#171717;font-size:13px;cursor:pointer;transition:border-color 120ms ease}.ds-btn-secondary:hover{border-color:#a1a1a1}.ds-btn-secondary:focus-visible{outline:none;border-color:#0070f3;box-shadow:0 0 0 2px #d3e5ff}"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "되돌리기·다시 실행·도움말 같은 원형 아이콘 버튼.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"되돌리기\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 14 4 9l5-5\"/><path d=\"M4 9h10.5a5.5 5.5 0 0 1 0 11H11\"/></svg></button>",
+      "css": ".ds-btn-icon{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:9999px;border:none;background:rgba(0,0,0,0.045);color:#171717;cursor:pointer;transition:background 120ms ease}.ds-btn-icon:hover{background:rgba(0,0,0,0.08)}.ds-btn-icon:focus-visible{outline:none;box-shadow:0 0 0 2px #d3e5ff}"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "대본 검색창.",
+      "html": "<input class=\"ds-input-search\" placeholder=\"대본에서 찾기\">",
+      "css": ".ds-input-search{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;width:220px;font-size:12.5px;padding:6px 9px;border:1px solid #ebebeb;border-radius:6px;background:#fafafa;color:#171717}.ds-input-search:focus{outline:none;border-color:#0070f3;box-shadow:0 0 0 2px #d3e5ff}"
+    },
+    {
+      "name": "Project Card",
+      "kind": "card",
+      "refersTo": "card-project",
+      "description": "홈 화면의 영상 카드. 이름, 상태 배지, 메타 정보.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-top\"><span class=\"ds-card-name\">BS167</span><span class=\"ds-badge ds-badge-pending\">검토 중 · 25건 남음</span></div><div class=\"ds-card-meta\">오늘 14:29 · 56건 중 31건 결정</div></div>",
+      "css": ".ds-card{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;width:420px;background:#fafafa;border:1px solid #ebebeb;border-radius:12px;padding:14px 18px;cursor:pointer;transition:border-color 120ms ease,box-shadow 120ms ease}.ds-card:hover{border-color:#a1a1a1;box-shadow:0 6px 18px -10px rgba(0,0,0,0.18)}.ds-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.ds-card-name{font-size:15px;font-weight:600;color:#171717}.ds-card-meta{margin-top:6px;font-size:12.5px;color:#666}.ds-badge{display:inline-flex;font-size:12px;font-weight:600;padding:3px 10px;border-radius:9999px;white-space:nowrap}.ds-badge-pending{background:#ffefcf;color:#ab570a}"
+    },
+    {
+      "name": "Status Badges",
+      "kind": "chip",
+      "refersTo": "badge-pending",
+      "description": "홈 화면 상태 배지: 검토 대기(호박), 확정(파랑), 처리 중(중립), 처리 실패(잉크 + 경고 아이콘).",
+      "html": "<span class=\"ds-badge ds-badge-pending\">검토 중 · 12건 남음</span> <span class=\"ds-badge ds-badge-confirmed\">확정됨</span> <span class=\"ds-badge ds-badge-neutral\">처리 중</span> <span class=\"ds-badge ds-badge-failed\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M10.3 3.9 2.4 17.6A2 2 0 0 0 4.1 20.6h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z\"/><path d=\"M12 9v4.5\"/><path d=\"M12 17h.01\"/></svg>처리 실패</span>",
+      "css": ".ds-badge{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;display:inline-flex;font-size:12px;font-weight:600;padding:3px 10px;border-radius:9999px;white-space:nowrap}.ds-badge-pending{background:#ffefcf;color:#ab570a}.ds-badge-confirmed{background:#d3e5ff;color:#0066dd}.ds-badge-neutral{background:rgba(0,0,0,0.045);color:#666}.ds-badge{gap:5px;align-items:center}.ds-badge-failed{background:#171717;color:#fff}"
+    },
+    {
+      "name": "Manuscript Marks",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "대본 위의 교정 기호 - 잘림(회색 취소선), 검토 대기(호박 배경), 선택(파랑 배경). 시스템의 정체성.",
+      "html": "<p class=\"ds-ms\">그래서 오늘은 <span class=\"ds-cut\">어 그러니까 음</span> 수면 교육 연구 <span class=\"ds-query\">세 편을 세 편을</span> 같이 볼 건데요, <span class=\"ds-sel\">첫 번째 논문은</span> 2019년에 나왔습니다.</p>",
+      "css": ".ds-ms{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;max-width:520px;margin:0;font-size:17px;line-height:1.85;color:#171717}.ds-cut{color:#a1a1a1;text-decoration:line-through;text-decoration-color:#a1a1a1;cursor:pointer}.ds-query{background:#ffefcf;border-radius:3px}.ds-sel{background:#d3e5ff;border-radius:3px}"
+    },
+    {
+      "name": "Modal",
+      "kind": "custom",
+      "refersTo": "modal",
+      "description": "확정·오류·설정 같은 블로킹 창. 위쪽 드래그 핸들.",
+      "html": "<div class=\"ds-modal\" role=\"dialog\"><div class=\"ds-handle\"></div><h2>확정할까요?</h2><p>아직 검토하지 않은 항목이 3곳 있습니다. 이대로 확정하면 3곳 모두 잘린 채로 나갑니다.</p><div class=\"ds-row\"><button class=\"ds-m-btn\">취소</button><button class=\"ds-m-btn ds-m-primary\">확정</button></div></div>",
+      "css": ".ds-modal{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;width:420px;background:#fff;border:1px solid #ebebeb;border-radius:14px;padding:22px 26px;line-height:1.6;color:#171717;box-shadow:0 24px 60px -14px rgba(0,0,0,0.25)}.ds-handle{height:12px;margin:-8px -12px 10px;display:flex;justify-content:center}.ds-handle::after{content:'';width:28px;height:3px;border-radius:2px;background:#ebebeb}.ds-modal h2{margin:0;font-size:16px}.ds-modal p{font-size:14px;color:#171717}.ds-row{display:flex;gap:8px}.ds-m-btn{font:inherit;font-size:13px;padding:7px 14px;border-radius:8px;border:1px solid #ebebeb;background:#fafafa;color:#171717;cursor:pointer}.ds-m-primary{background:#0070f3;border-color:#0070f3;color:#fff}"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "저장·되돌리기 알림. 페이지와 무관하게 항상 최대 대비.",
+      "html": "<div class=\"ds-toast\" role=\"status\">되돌렸습니다</div>",
+      "css": ".ds-toast{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;display:inline-block;background:#171717;color:#fff;padding:9px 16px;border-radius:9px;font-size:13px}"
+    },
+    {
+      "name": "Pipeline Progress",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "처리 진행 화면 - 제목, 숫자만 등폭인 부제, 그린 아이콘의 단계 목록, 동작 버튼.",
+      "html": "<div class=\"ds-pp\"><h1 class=\"ds-pp-t\"><span class=\"ds-spin\"></span>처리 중</h1><p class=\"ds-pp-s\">NG 탐지 · <span class=\"n\">3</span>분 <span class=\"n\">18</span>초째 · <span class=\"n\">5/14</span>단계</p><ol class=\"ds-pp-l\"><li class=\"d\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#171717\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg>전사</li><li class=\"a\"><span class=\"ds-spin sm\"></span>NG 탐지</li><li><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#a1a1a1\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg>무음 리듬</li></ol><div class=\"ds-pp-a\"><button class=\"ds-pp-b\">일시정지</button><button class=\"ds-pp-b\">중단</button></div></div>",
+      "css": ".ds-pp{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;width:380px;display:flex;flex-direction:column;gap:14px;color:#171717}.ds-pp-t{margin:0;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}.ds-pp-s{margin:-8px 0 0;font-size:13px;color:#666}.ds-pp-s .n{font-family:'Geist Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}.ds-pp-l{list-style:none;margin:0;padding:12px 14px;display:flex;flex-direction:column;gap:8px;background:#fafafa;border:1px solid #ebebeb;border-radius:12px}.ds-pp-l li{display:flex;align-items:center;gap:10px;font-size:13.5px;color:#666}.ds-pp-l li.d{color:#171717}.ds-pp-l li.a{color:#171717;font-weight:600}.ds-spin{width:20px;height:20px;border:2.5px solid #d3e5ff;border-top-color:#0070f3;border-radius:50%;animation:ds-r .8s linear infinite;box-sizing:border-box}.ds-spin.sm{width:12px;height:12px;border-width:2px;margin:0 1px}@keyframes ds-r{to{transform:rotate(360deg)}}.ds-pp-a{display:flex;gap:8px}.ds-pp-b{font:inherit;font-size:13.5px;padding:8px 16px;border-radius:8px;border:1px solid #ebebeb;background:#fafafa;color:#171717;cursor:pointer}.ds-pp-b:hover{border-color:#a1a1a1}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Editor's Proof Sheet (편집자의 교정지)",
+    "overview": "**Creative North Star: \"The Editor's Proof Sheet\" (편집자의 교정지)**\n\n화면은 교정 표시가 된 원고다. 흰 종이 위에 검은 글자로 강의 대본이 놓이고, 자동 처리가 남긴 판단은 모두 교정 기호처럼 그 위에 얹힌다. 잘린 말은 회색 취소선, 사람이 판단해야 할 곳은 호박색 질의 표시, 확정과 선택은 파란 펜, 지우는 동작은 빨간 펜. 기호마다 뜻이 하나씩이라, 사용자는 색만 보고도 원고의 상태를 읽는다.\n\n밀도는 높고 장식은 없다. 장시간 전사문을 읽고 ms 단위로 경계를 반복 조정하는 정밀 작업이라, 가독성과 상태 구분이 모든 장식보다 앞선다. 계층은 그림자가 아니라 종이의 결(흰 원고, 옅은 회색 여백, 조금 더 짙은 떠 있는 판)과 1px 선으로 만든다. 이전에 시도한 웜페이퍼(Notion풍)와 다크 커맨드 툴(Raycast풍)은 반려됐다. 다크는 반투명 accent와 근흑색 위 회색 선 때문에 상태가 안 보였다.\n\n새 요소를 넣을 때는 하나만 묻는다. **\"이건 원고 위의 어떤 표시인가?\"** 대답이 기존 기호 중 하나면 그 색을 쓰고, 어느 것도 아니면 색을 쓰지 않는다.",
+    "keyCharacteristics": [
+      "흰 원고(#ffffff) + 근흑색 잉크(#171717), 대비 약 17.9:1",
+      "브랜드 accent는 파랑 하나. 나머지 색은 모두 교정 기호",
+      "대본 본문은 17px / 줄 간격 1.85의 넉넉한 원고 조판",
+      "숫자(타임스탬프, 길이, 게이지)는 등폭 글꼴로 자릿수가 흔들리지 않게",
+      "그림자는 떠 있는 판에만, 계층의 주 수단은 색면과 1px 선",
+      "키보드 중심 조작. 단축키 표기는 작은 회색 `kbd`"
+    ],
+    "rules": [
+      {
+        "name": "The One Pen Per Meaning Rule",
+        "body": "파랑은 확정·선택, 호박색은 검토 대기, 빨강은 삭제 동작. 한 색이 두 뜻을 갖지 않는다. 특히 빨강은 실패·경고·강조에 쓰지 않는다.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Note Rule",
+        "body": "실패는 색이 아니라 검은 잉크와 그린 경고 아이콘으로 쓴다. 교정자가 검은 펜으로 남긴 메모다. 연한 배지들 사이에서 가장 진한 Press Ink 배지가 되고, 오류 문구는 잉크 글자에 경고 아이콘을 붙인다(2026-10-06 결정).",
+        "section": "colors"
+      },
+      {
+        "name": "The Token-Only Rule",
+        "body": "새 컴포넌트는 `:root` 변수만 쓰고 hex를 직접 쓰지 않는다. 예외는 문서화된 것뿐이다: 토스트·툴팁·비디오 컨트롤 바의 Press Ink 고정 배경, CSS 변수를 못 읽는 파형 캔버스(같은 값을 JS에 hex로 둔다, 바뀌면 양쪽 함께 갱신).",
+        "section": "colors"
+      },
+      {
+        "name": "The Steady Digits Rule",
+        "body": "시간·길이·개수처럼 바뀌는 숫자는 항상 등폭(tabular-nums)으로. 자릿수가 바뀔 때 줄이 흔들리면 정밀 작업의 신뢰가 깎인다.",
+        "section": "typography"
+      },
+      {
+        "name": "The Paper First Rule",
+        "body": "표면은 쉬고 있을 때 평평하다. 그림자는 화면 위에 실제로 떠 있는 판이거나, 호버처럼 상태에 대한 반응일 때만 나타난다.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pill Is Earned Rule",
+        "body": "완전한 알약형(9999px)은 확정 버튼, 되돌리기/다시 실행·도움말 같은 원형 아이콘 버튼, 상태 배지에만 쓴다. 그 외 카드·입력·일반 버튼은 6~8px.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "**Do** 새 요소마다 \"원고 위의 어떤 표시인가?\"를 묻고, 기존 교정 기호의 색만 쓴다.",
+      "**Do** `:root` 변수(--bg, --panel, --surface-2, --ink, --muted, --line, --accent, --proposal-*, --danger 등)만 참조한다.",
+      "**Do** 바뀌는 숫자는 Geist Mono + tabular-nums로 쓴다.",
+      "**Do** 계층은 Proof White → Margin Gray → Galley Gray 색면과 1px 선으로 먼저 만든다.",
+      "**Do** 아이콘 버튼에 `aria-label`, 모든 오버레이에 Esc 닫기를 붙인다.",
+      "**Do** 실패는 Press Ink + 그린 경고 아이콘으로 표시한다(The Ink Note Rule).",
+      "**Do** 확인이 필요한 동작은 브라우저 `confirm()`/`alert()`이 아니라 확인 모달과 토스트로 처리한다."
+    ],
+    "donts": [
+      "**Don't** 빨강(Delete Red)을 삭제 동작 외에 쓰지 않는다. 실패 상태, 경고, 강조도 빨강이 아니다.",
+      "**Don't** 유니코드 문자(●, ○, ❚❚ 등)를 아이콘 대신 쓰지 않는다. 아이콘은 한 가지 선 두께의 그린 SVG다.",
+      "**Don't** 어두운 배경 화면을 만들지 않는다. 다크 테마는 상태 구분이 안 보여 반려됐다.",
+      "**Don't** Struck Gray 잘린 단어를 대비 개선 대상으로 \"고치지\" 않는다. 의도된 연함이다.",
+      "**Don't** 작은 글자를 Pencil Gray(#666666)보다 흐리게 내리지 않는다.",
+      "**Don't** 외부 웹폰트나 CDN 요청을 추가하지 않는다. 로컬 서버는 외부 요청 없이 동작해야 한다.",
+      "**Don't** 새 그림자 값을 만들지 않는다. Shadow Vocabulary에서 고른다."
+    ]
+  }
+}

@@ -65,7 +65,7 @@ BS145 정밀도 0.786·재현율 0.736(보정 0.781), BS167 정밀도 0.748·재
 
 ## 기타 참고 문서
 
-- [`design-system.md`](design-system.md) — 검토 화면 디자인 시스템
+- [`design-system.md`](design-system.md) — 화면 디자인 보조 기록(z-index·접근성 체크리스트·적용 안 한 것·이력). 디자인 규칙 자체는 루트 [`DESIGN.md`](../DESIGN.md)
 - [`촬영-가이드.md`](촬영-가이드.md) — 사용자에게 안내할 촬영 습관
 - [`ux-audit-2026-09-29.md`](ux-audit-2026-09-29.md) — UX 감사 기록
 - [`archive/`](archive/) — 폐기된 이전 판. 특히 [`archive/PLAN-2026-09-29-retired.md`](archive/PLAN-2026-09-29-retired.md)는 이 구조로 나뉘기 전 PLAN.md 전문 + 옛 섹션 번호 대응표 — 코드 주석에 남은 "PLAN.md 4.2" 같은 참조는 여기서 새 파일을 찾는다
