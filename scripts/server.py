@@ -27,7 +27,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python
+from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python, pid_alive
 if __name__ == "__main__":
     ensure_project_python()  # 아래 audio_map 등이 numpy를 import하므로 그 전에 - common.py 참고
 from build_edl import compute_kept_segments, BOUNDARY_PAD_SEC
@@ -1296,6 +1296,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.path in ("/api/pipeline/pause", "/api/pipeline/resume", "/api/pipeline/stop") and self.session is None:
+            try:
+                return self._json({"ok": True, **_control_pipeline(self.folder, self.path.rsplit("/", 1)[1])})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 409)
         if self.path == "/api/retry" and self.session is None:
             try:
                 return self._json({"ok": True, **_retry_pipeline(self.folder, self.server.server_address[1])})
@@ -1459,7 +1464,7 @@ def _retry_pipeline(folder: Path, port: int) -> dict:
     run.py가 두 개 뜨지 않게 락 안에서 확인하고, 새 pid를 바로 기록해 다음 확인부터 running으로
     보이게 한다."""
     with _retry_lock:
-        if _pipeline_status(folder)["state"] != "error":
+        if _pipeline_status(folder)["state"] not in ("error", "stopped"):
             raise ValueError("이미 처리가 진행 중입니다")
         log_f = open(folder / "edit" / "run.log", "a")
         proc = subprocess.Popen(
@@ -1471,6 +1476,103 @@ def _retry_pipeline(folder: Path, port: int) -> dict:
                    {"stage": "다시 시작하는 중", "state": "running", "stages": [], "pid": proc.pid,
                     "stage_started_at": time.time()})
     return {"pid": proc.pid}
+
+
+def _process_tree(pid: int) -> list[int]:
+    """pid와 그 자손 전부(run.py → 단계 스크립트 → ffmpeg 등). 프로세스 그룹(killpg)을 쓰지 않는
+    이유: 터미널에서 직접 돌린 run.py는 셸 작업 그룹을 공유할 수 있어 그룹째 보내면 엉뚱한
+    프로세스까지 맞는다 - 부모-자식 관계로만 좁힌다. 검토 서버(server.py)는 run.py가 띄운
+    자식이지만 진행 화면을 보여주는 쪽이라 그 하위 트리째 뺀다."""
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True,
+                             timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return [pid]
+    children: dict[int, list[int]] = {}
+    servers: set[int] = {os.getpid()}
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+            if len(parts) == 3 and _runs_review_server(parts[2]):
+                servers.add(int(parts[0]))
+    tree, stack = [], [pid]
+    while stack:
+        p = stack.pop()
+        if p in servers:
+            continue
+        tree.append(p)
+        stack.extend(children.get(p, []))
+    return tree
+
+
+def _runs_review_server(command: str) -> bool:
+    """파이썬(또는 uv run)이 server.py를 직접 실행하는 프로세스인지 - 명령줄에 "server.py"라는
+    글자만 있는 걸로 판단하면 그 문자열을 인자로 품은 셸(예: bash -c "... server.py ...")까지
+    빠져 run.py 묶음 전체가 신호를 못 받는다(테스트 중 실제로 발생)."""
+    toks = command.split()
+    if not toks:
+        return False
+    exe = Path(toks[0]).name.lower()
+    if not (exe.startswith("python") or exe == "uv"):
+        return False
+    return any(Path(t).name == "server.py" for t in toks[1:6])
+
+
+def _signal_all(pids: list[int], sig: int) -> None:
+    for p in pids:
+        try:
+            os.kill(p, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def _control_pipeline(folder: Path, action: str) -> dict:
+    """진행 화면의 일시정지/계속/중단(10-06 사용자 요청). 상태 파일의 run.py pid와 그 자손에게
+    직접 신호를 보낸다 - 멈춘 프로세스는 스스로 상태를 못 쓰므로 상태 파일도 여기서 고친다.
+    일시정지는 SIGSTOP이라 하던 작업을 잃지 않지만, 외부 API 응답을 기다리던 중이면 오래 멈춘
+    뒤 계속할 때 연결이 끊겨 그 단계가 실패할 수 있다(그땐 오류 화면의 다시 시도로 이어감)."""
+    import signal
+    with _retry_lock:
+        p = folder / "edit" / "pipeline_status.json"
+        st = read_pipeline_status(folder)
+        if st is None or st.get("state") not in ("running", "paused"):
+            raise ValueError("지금 진행 중인 처리가 없습니다")
+        tree = _process_tree(st["pid"])
+        if action == "pause":
+            if st["state"] == "paused":
+                raise ValueError("이미 일시정지 상태입니다")
+            _signal_all(tree, signal.SIGSTOP)  # 부모 먼저 - 자식이 멈춘 걸 부모가 실패로 오인하지 않게
+            st.update(state="paused", paused_at=time.time())
+        elif action == "resume":
+            if st["state"] != "paused":
+                raise ValueError("일시정지 상태가 아닙니다")
+            _signal_all(list(reversed(tree)), signal.SIGCONT)
+            # 멈춰 있던 시간은 경과 시간에서 뺀다 - "지금 단계 몇 분째"가 실제 작업 시간이 되게
+            st["stage_started_at"] = st.get("stage_started_at", time.time()) + (time.time() - st.pop("paused_at", time.time()))
+            st["state"] = "running"
+        elif action == "stop":
+            # run.py부터 끝낸다 - 자식이 먼저 죽으면 run.py가 그걸 "단계 실패"로 기록해 덮어쓴다
+            _signal_all(tree, signal.SIGTERM)
+            _signal_all(tree, signal.SIGCONT)  # 일시정지 중이었으면 SIGTERM은 깨어나야 처리된다
+            deadline = time.time() + 5
+            while time.time() < deadline and any(_alive(x) for x in tree):
+                time.sleep(0.1)
+            _signal_all([x for x in tree if _alive(x)], signal.SIGKILL)
+            st.update(state="stopped", error="사용자가 중단했습니다")
+            st.pop("paused_at", None)
+        else:
+            raise ValueError(f"알 수 없는 동작: {action}")
+        write_json(p, st)
+    return {"state": st["state"]}
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.waitpid(pid, os.WNOHANG)  # 이 서버가 띄운 run.py(다시 시도)면 좀비를 거둬야 사라진다
+    except ChildProcessError:
+        pass
+    return pid_alive(pid)
 
 
 def _session_watcher(folder: Path, interval: float = 1.0) -> None:

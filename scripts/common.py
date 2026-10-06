@@ -291,9 +291,10 @@ def pipeline_log_tail(folder: Path, max_lines: int = 60) -> str | None:
 
 
 def read_pipeline_status(folder: Path) -> dict | None:
-    """run.py가 남긴 edit/pipeline_status.json - state는 running/error/done. 파일이 없거나 pid가
+    """run.py가 남긴 edit/pipeline_status.json - state는 running/paused/stopped/error/done(paused·
+    stopped는 진행 화면의 일시정지·중단 버튼이 server.py에서 기록). 파일이 없거나 pid가
     없는 옛 형식(10-06 이전 run.py)이면 None - 그런 폴더는 예전 기준(전사·NG 파일 유무)대로
-    다룬다. state가 running인데 그 pid가 죽었으면 여기서 error로 바꿔 돌려준다 - 검토 서버와
+    다룬다. state가 running/paused인데 그 pid가 죽었으면 여기서 error로 바꿔 돌려준다 - 검토 서버와
     홈 서버가 같은 판정을 쓰게 한 곳에 둔다."""
     try:
         data = json.loads((folder / "edit" / "pipeline_status.json").read_text())
@@ -301,7 +302,7 @@ def read_pipeline_status(folder: Path) -> dict | None:
         return None
     if not isinstance(data, dict) or not data.get("pid"):
         return None
-    if data.get("state") == "running" and not pid_alive(data["pid"]):
+    if data.get("state") in ("running", "paused") and not pid_alive(data["pid"]):
         data["state"] = "error"
         data["error"] = "처리 프로세스가 예기치 않게 종료됐습니다"
     return data

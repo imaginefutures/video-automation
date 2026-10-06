@@ -171,8 +171,10 @@ def project_status(folder: Path) -> dict:
             info["stage"] = pnew.get("stage")
             info["error"] = pnew.get("error") or "처리가 예기치 않게 중단됐습니다 - edit/run.log를 확인하세요"
         else:
+            # stopped(사용자가 중단)는 run.py가 없으니 resumable로 잡혀 "처리 멈춤 - 클릭하면 이어서"가 된다
             info["status"] = "processing"
             info["resumable"] = _resumable(folder)
+            info["paused"] = pnew.get("state") == "paused"
         return info
 
     if not ng_path.exists():

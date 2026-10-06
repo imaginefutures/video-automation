@@ -493,6 +493,27 @@ function renderPipelineProgress(st) {
   // 10-06: 실패했을 때 "왜"와 "이제 뭘 하나"가 없어 스피너만 보고 기다리던 문제 - 로그 끝부분과
   // 다시 시도(캐시돼 있어 실패한 단계부터 이어짐)/홈으로 버튼을 같이 보여준다.
   const homeUrl = `http://127.0.0.1:${st.home_port || 8764}/`;
+  const BTN = 'padding:8px 16px;border-radius:6px;cursor:pointer;font:inherit;font-size:14px;';
+  const PRIMARY = BTN + 'border:0;background:#7ab8ff;color:#0d0e10;font-weight:600;';
+  const GHOST = BTN + 'border:1px solid #3a3d42;background:transparent;color:#ddd;';
+  // 10-06: 처리 중 일시정지/계속/중단 - server.py _control_pipeline. 중단은 되돌릴 수 없으니 확인을 받는다.
+  const controls = st.state === 'running' || st.state === 'paused'
+    ? `<div style="display:flex;gap:10px">
+         ${st.state === 'paused'
+           ? `<button onclick="controlPipeline('resume', this)" style="${PRIMARY}">계속</button>`
+           : `<button onclick="controlPipeline('pause', this)" style="${GHOST}">일시정지</button>`}
+         <button onclick="controlPipeline('stop', this)" style="${GHOST}color:#f88;">중단</button>
+       </div>
+       ${st.state === 'paused' ? '<p style="margin:0;color:#777;font-size:12px;max-width:440px">일시정지가 길어지면 외부 서비스(전사·AI 분석) 연결이 끊겨 계속할 때 그 단계가 실패할 수 있어요 - 그땐 다시 시도로 이어서 처리됩니다</p>' : ''}`
+    : '';
+  const stoppedBlock = st.state === 'stopped'
+    ? `<p style="color:#ccc;margin:2px 0 0">처리를 중단했습니다</p>
+       <div style="display:flex;gap:10px">
+         <button id="pipelineRetry" onclick="retryPipeline()" style="${PRIMARY}">이어서 처리</button>
+         <a href="${homeUrl}" style="${GHOST}text-decoration:none">홈으로</a>
+       </div>
+       <p style="margin:0;color:#777;font-size:12px">이어서 처리하면 이미 끝난 단계는 건너뛰고 중단된 단계부터 다시 처리합니다</p>`
+    : '';
   window._pipelineErrText = `${st.stage || ''} 단계 실패 - ${st.error || ''}\n\n${st.log_tail || '(로그 없음)'}`;
   const errBlock = st.state === 'error'
     ? `<p style="color:#f66;max-width:520px;margin:2px 0 0">오류: ${esc(st.error || '')}</p>`
@@ -518,6 +539,8 @@ function renderPipelineProgress(st) {
       + stages.map((s) => {
           const dot = s.done
             ? `<span style="color:#3ecf5e;font-size:13px;line-height:1">●</span>`
+            : s.active && st.state === 'paused'
+              ? `<span style="color:#e0b050;font-size:11px;line-height:1">❚❚</span>`
             : s.active
               ? `<span style="display:inline-block;width:9px;height:9px;border:2px solid #3a3d42;
                              border-top-color:#7ab8ff;border-radius:50%;animation:pipelineSpin 0.7s linear infinite"></span>`
@@ -538,15 +561,17 @@ function renderPipelineProgress(st) {
   // 대신 "지금 단계가 얼마나 됐는지"는 정확히 알 수 있으니 보여준다 - 숫자가 계속 올라가면
   // 멈춘 게 아니라 일하는 중이라는 신호(죽었으면 server.py가 에러로 바꿔 보냄).
   const sec = st.elapsed_sec;
-  const elapsed = st.state !== 'error' && Number.isFinite(sec)
+  const elapsed = st.state === 'paused' ? ' · 일시정지됨' : st.state === 'running' && Number.isFinite(sec)
     ? ` · ${sec >= 60 ? `${Math.floor(sec / 60)}분 ` : ''}${sec % 60}초째` : '';
   const html = `
     <style>@keyframes pipelineSpin{to{transform:rotate(360deg)}}</style>
-    ${st.state === 'error' ? '' : indicator}
+    ${st.state === 'error' || st.state === 'stopped' ? '' : indicator}
     <p style="margin:0;font-size:12.5px;color:#888">${esc(st.stage || '처리 준비 중')}${elapsed}</p>
     ${countText}
     ${errBlock}
-    ${st.state === 'error' ? '' : '<p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>'}`;
+    ${stoppedBlock}
+    ${controls}
+    ${st.state === 'running' || st.state === 'paused' ? '<p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>' : ''}`;
   // 매초 폴링마다 다시 그리면 로그 <pre> 스크롤이 맨 위로 튄다 - 내용이 바뀔 때만 교체
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
 }
@@ -567,6 +592,15 @@ async function copyText(text, btn) {
     btn.textContent = ok ? '복사됨 ✓' : '복사 실패 - 직접 선택하세요';
     setTimeout(() => { btn.textContent = label; }, 1800);
   }
+}
+async function controlPipeline(action, btn) {
+  if (action === 'stop' && !confirm('처리를 중단할까요? 나중에 "이어서 처리"를 누르면 이미 끝난 단계는 건너뛰고 중단된 단계부터 다시 합니다.')) return;
+  if (btn) btn.disabled = true;
+  try {
+    const data = await (await fetch(`/api/pipeline/${action}`, { method: 'POST', body: '{}' })).json();
+    if (!data.ok) alert(data.error || '처리하지 못했습니다');
+  } catch (e) { alert('서버에 연결할 수 없습니다'); }
+  if (btn) btn.disabled = false;
 }
 async function retryPipeline() {
   const btn = document.getElementById('pipelineRetry');
