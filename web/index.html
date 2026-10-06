@@ -102,18 +102,18 @@
     background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; font-size: 12.5px; }
   #rtStart:hover { filter: brightness(1.03); }
   #reviewDone { padding: 4px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  #rtReopen { font-size: 11.5px; padding: 4px 8px; border-radius: var(--r-sm); border: 1px solid var(--line);
+  #rtReopen { font-size: 12px; padding: 4px 8px; border-radius: var(--r-sm); border: 1px solid var(--line);
     background: var(--panel); color: var(--muted); }
   #rtReopen:hover { border-color: var(--accent); color: var(--accent-strong); }
   #reviewToolbar { padding: 4px 0 10px; display: flex; flex-direction: column; gap: 6px; }
-  #rtPos { font-size: 11.5px; color: var(--muted); min-height: 14px; }
+  #rtPos { font-size: 12px; color: var(--muted); min-height: 14px; }
   .rt-row { display: flex; gap: 6px; }
   .rt-row button, #rtLock { flex: 1; font-size: 12px; padding: 6px 4px; border-radius: var(--r-sm);
     border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
   .rt-row button:hover:not(:disabled), #rtLock:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
   .rt-row button:disabled, #rtLock:disabled { opacity: 0.4; cursor: default; }
   #rtAltRow { display: none; }
-  #rtStop { font-size: 11.5px; padding: 5px; border-radius: var(--r-sm); border: 1px dashed var(--line);
+  #rtStop { font-size: 12px; padding: 5px; border-radius: var(--r-sm); border: 1px dashed var(--line);
     background: none; color: var(--muted); }
   #rtStop:hover { border-color: var(--danger); color: var(--danger); }
 
@@ -122,7 +122,7 @@
      사이드바 메뉴는 흐리게+조작 불가로 가라앉힌다. 되돌리기(.history-row)는 안전망이라 예외 -
      검토 중 실수해도 바로 고칠 수 있어야 한다. */
   #reviewFocusBanner { display: none; padding: 7px 16px; background: var(--accent); color: var(--accent-ink);
-    font-size: 11.5px; font-weight: 600; text-align: center; }
+    font-size: 12px; font-weight: 600; text-align: center; }
   body.review-focus #reviewFocusBanner { display: block; }
   body.review-focus #searchRow, body.review-focus .duration-row, body.review-focus .actions,
   body.review-focus #btnRedetect, body.review-focus #pauseAccordion, body.review-focus #quickSection,
@@ -162,7 +162,10 @@
   .pause-row label { flex: 1; color: var(--ink); }
   .pause-row .n { color: var(--muted); font-size: 11px; margin-left: 4px; }
   .pause-row input[type=number] { width: 56px; font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
-  #pzToggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 12px; }
+  #pzToggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 12px; min-height: 24px; }
+  /* 10-06 polish: 기본 13px 체크박스는 클릭 영역 기준(24px)에 못 미쳤다 - 16px로 키우고 라벨까지 한 덩어리로 눌리게 */
+  #pzToggle input { width: 16px; height: 16px; margin: 0; flex: 0 0 auto; cursor: pointer; }
+  #pzToggle label { cursor: pointer; padding: 3px 0; }
   #pzResetAll { width: 100%; margin-top: 6px; padding: 7px; border-radius: 8px; border: 1px dashed var(--line); background: none; font-size: 12px; color: var(--muted); }
   #pzResetAll:hover { border-color: var(--accent); color: var(--accent-strong); }
 
@@ -378,7 +381,7 @@
   @keyframes pipelineSpin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .pp-spin { animation-duration: 2.4s; } }
   .pp-log { margin: 0; max-height: 42vh; overflow: auto; padding: 12px 14px; background: var(--surface-2);
-    border: 1px solid var(--line); border-radius: var(--r-md); font: 11.5px/1.55 var(--mono); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--r-md); font: 12px/1.55 var(--mono); color: var(--ink);
     white-space: pre-wrap; word-break: break-all; user-select: text; -webkit-user-select: text; }
   .pp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .pp-btn { font: inherit; font-size: 13.5px; padding: 8px 16px; border-radius: var(--r-md); cursor: pointer;
