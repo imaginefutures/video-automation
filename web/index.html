@@ -9,8 +9,8 @@
     /* "편집자의 교정지" - 흰 원고 + 근흑색 잉크 + 뜻이 고정된 교정 기호 색 (see DESIGN.md) */
     --bg: #ffffff; --panel: #fafafa; --surface-2: #f5f5f5; --ink: #171717; --muted: #666666; --line: #ebebeb; --line-strong: #a1a1a1;
     --cut: #a1a1a1; --proposal-bg: #ffefcf; --proposal-line: #ab570a;
-    --gauge-bg: #f0f0f0; --gauge-fill: #d4d4d4; --gauge-user: #0070f3; --gauge-rule: #a1a1a1;
-    --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0066dd;
+    --gauge-bg: #f0f0f0; --gauge-fill: #d4d4d4; --gauge-user: #b9d6ff; --gauge-rule: #a1a1a1;
+    --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0058c0;
     --danger: #ee0000; --danger-soft: #f7d4d6; --danger-ink: #ffffff;
     --select: #0070f3; --select-soft: #d3e5ff;
     --chip: rgba(0,0,0,0.045); --chip-hover: rgba(0,0,0,0.08);
@@ -50,7 +50,7 @@
   .icon-btn:disabled { color: var(--muted); opacity: 0.4; cursor: default; }
   .duration-row { display: flex; align-items: flex-end; gap: 10px; margin-top: 14px; }
   .duration-row .stat { display: flex; flex-direction: column; gap: 2px; }
-  .duration-row .stat-lbl { font-size: 10.5px; color: var(--muted); }
+  .duration-row .stat-lbl { font-size: 11px; color: var(--muted); }
   .duration-row .stat-val { font-size: 14px; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
   .duration-row .arrow { color: var(--muted); font-size: 13px; padding-bottom: 2px; }
   .duration-row .edited .stat-val { color: var(--accent-strong); font-weight: 700; font-size: 16px; }  /* --accent at 16px is 4.4:1 on the panel - one step darker passes AA */
@@ -66,7 +66,7 @@
   #searchBox { flex: 1; font: inherit; font-size: 12.5px; padding: 6px 9px; border: 1px solid var(--line);
     border-radius: var(--r-sm); background: var(--panel); color: var(--ink); }
   #searchBox:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-  #searchStatus { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  #searchStatus { font-size: 11px; color: var(--muted); white-space: nowrap; }
   .tok.w.search-hit { background: var(--accent-soft); border-radius: 3px; }
   .tok.w.search-hit.search-cur { background: var(--accent); color: var(--accent-ink); }
 
@@ -76,7 +76,7 @@
   #suggestionPanel { padding: 0 16px; }
   .suggestion-card { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: var(--r-md);
     padding: 9px 10px; margin-bottom: 8px; font-size: 12.5px; }
-  .suggestion-card .sg-head { font-size: 10.5px; font-weight: 700; color: var(--accent); margin-bottom: 3px;
+  .suggestion-card .sg-head { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 3px;
     text-transform: uppercase; letter-spacing: 0.03em; }
   .suggestion-card .sg-text { color: var(--ink); line-height: 1.45; margin-bottom: 6px; }
   .suggestion-card .sg-n { color: var(--muted); font-size: 11px; }
@@ -103,13 +103,13 @@
   #reviewDone { padding: 4px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #rtReopen { font-size: 11.5px; padding: 4px 8px; border-radius: var(--r-sm); border: 1px solid var(--line);
     background: var(--panel); color: var(--muted); }
-  #rtReopen:hover { border-color: var(--accent); color: var(--accent); }
+  #rtReopen:hover { border-color: var(--accent); color: var(--accent-strong); }
   #reviewToolbar { padding: 4px 0 10px; display: flex; flex-direction: column; gap: 6px; }
   #rtPos { font-size: 11.5px; color: var(--muted); min-height: 14px; }
   .rt-row { display: flex; gap: 6px; }
   .rt-row button, #rtLock { flex: 1; font-size: 12px; padding: 6px 4px; border-radius: var(--r-sm);
     border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
-  .rt-row button:hover:not(:disabled), #rtLock:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .rt-row button:hover:not(:disabled), #rtLock:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
   .rt-row button:disabled, #rtLock:disabled { opacity: 0.4; cursor: default; }
   #rtAltRow { display: none; }
   #rtStop { font-size: 11.5px; padding: 5px; border-radius: var(--r-sm); border: 1px dashed var(--line);
@@ -132,6 +132,8 @@
   body.review-focus #reviewProgress, body.review-focus #reviewEstimate, body.review-focus #reviewPanel {
     background: var(--accent-soft);
   }
+  /* 연파랑 위 회색 보조 글자는 4.49:1로 기준에 살짝 못 미친다 - 집중 모드에선 잉크색 */
+  body.review-focus #reviewProgress, body.review-focus #reviewEstimate { color: var(--ink); }
   body.review-focus #reviewPanel { padding-top: 6px; padding-bottom: 10px; }
 
   /* ---------------------------------------------------------------- 빠른 확인 (docs/기획/05-검토-화면.md 2장)
@@ -161,16 +163,20 @@
   .pause-row input[type=number] { width: 56px; font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
   #pzToggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 12px; }
   #pzResetAll { width: 100%; margin-top: 6px; padding: 7px; border-radius: 8px; border: 1px dashed var(--line); background: none; font-size: 12px; color: var(--muted); }
-  #pzResetAll:hover { border-color: var(--accent); color: var(--accent); }
+  #pzResetAll:hover { border-color: var(--accent); color: var(--accent-strong); }
 
   /* ---------------------------------------------------------------- video (top-right, large) */
   #videoWrap { position: fixed; top: 20px; right: 20px; width: var(--video-w); z-index: 8; border-radius: 14px;
     overflow: hidden; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.7), 0 0 0 1px var(--line); background: #000; }
   video { width: 100%; display: block; aspect-ratio: 16/9; background: #000; }
-  #videoBar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #171717; }
-  #videoBar button { background: #ffffff14; color: #fff; border: 1px solid #ffffff20; border-radius: 6px; font-size: 12px; padding: 4px 10px; }
+  video:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }  /* 10-06 audit: 키보드 포커스가 보이지 않았다 */
+  /* 10-06 audit: 1024px 폭(비디오 245px)에서 버튼 글자가 "재/생"처럼 두 줄로 쪼개졌다 - 글자는 안 쪼개고
+     모자라면 줄을 넘긴다 */
+  #videoBar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; background: #171717; }
+  #videoBar button { background: #ffffff14; color: #fff; border: 1px solid #ffffff20; border-radius: 6px; font-size: 12px; padding: 4px 10px; white-space: nowrap; }
   #videoBar button:hover { background: #ffffff22; }
-  #playInfo { color: #ffffff88; font-size: 11px; flex: 1; text-align: right; }
+  #videoBar kbd { background: #ffffff14; color: #ffffffb0; }  /* 기본 kbd(회색 #666)는 검은 조작 줄 위 3.1:1 */
+  #playInfo { color: #ffffff88; font-size: 11px; flex: 1; text-align: right; white-space: nowrap; }
 
   /* ---------------------------------------------------------------- transcript (center, scrolls) */
   #main { flex: 1; height: 100vh; overflow-y: auto; }
@@ -185,6 +191,9 @@
      first lines instead; every line after that gets the full column width. */
   #topSpacer { float: right; width: 1px; }
   @media (max-width: 680px) { #videoWrap { display: none; } #topSpacer { display: none; } }
+  /* 10-06 audit: 진행 막대가 #main 전체 폭이라 오른쪽 끝의 "N% 읽음 · 대기 N건"과 틱이 떠 있는 비디오
+     뒤에 숨었다 - 비디오가 보이는 폭에선 막대를 비디오 왼쪽까지만. 틱 위치는 막대 폭 기준 %라 그대로 맞는다 */
+  @media (min-width: 681px) { #main #scrollProgress { width: calc(100% - var(--video-w) - 44px); } }  /* #main로 우선순위를 올림 - 아래 #scrollProgress 기본 규칙(width:100%)이 뒤에 있어 덮어쓴다 */
   /* Below ~1700px the 880px column plus the sidebar reaches under the fixed video, so the
      top spacer alone isn't enough: every line scrolled up behind the video got hidden (UX
      audit H5). Reserve the video's column for the whole transcript at those widths. */
@@ -226,7 +235,7 @@
      pinned at 100% with no ticks (short or fully-clean transcript). The label makes it legible
      as "reading position" without hovering for the title tooltip. */
   #scrollProgressLabel { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-    font-size: 10.5px; color: var(--muted); pointer-events: none; white-space: nowrap; }
+    font-size: 11px; color: var(--muted); pointer-events: none; white-space: nowrap; }
 
   .para { margin: 0; font-size: 17px; line-height: 1.85; }
   .tok { border-radius: 3px; padding: 1px 0; }
@@ -249,13 +258,15 @@
   .g { display: inline-block; position: relative; height: 15px; vertical-align: -3px; margin: 0 4px; border-radius: 4px;
     background: var(--gauge-bg); cursor: ew-resize; user-select: none; overflow: hidden; }
   .g .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gauge-fill); }
-  .g.user .fill { background: var(--gauge-user); }
+  /* 10-06 audit: 사용자 조정 채움이 진한 파랑 + 흰 숫자였을 때, 채움이 짧으면 숫자 대부분이 연회색
+     트랙 위에 놓여 안 보였다(1.13:1). 연한 파랑 + 오른쪽 끝 파란 선으로 '사용자가 바꿈'을 표시하고
+     숫자는 채움 길이와 무관하게 항상 잉크색(12:1 이상) */
+  .g.user .fill { background: var(--gauge-user); box-shadow: inset -2px 0 0 var(--accent); }
   .g.rule .fill { background: var(--gauge-rule); }
   .g.cut { background: repeating-linear-gradient(45deg, var(--line), var(--line) 3px, var(--bg) 3px, var(--bg) 6px); cursor: pointer; }
   .g.cut .fill { display: none; }
   .g .lbl { position: absolute; inset: 0; font-size: 10px; line-height: 15px; text-align: center; color: var(--ink); pointer-events: none; white-space: nowrap;
     font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  .g.user .lbl { color: var(--accent-ink); }
   .g.dragging { outline: 2px solid var(--accent); }
   .g.sel { outline: 2px solid var(--select); }
 
@@ -282,12 +293,17 @@
   #btnHelp { position: fixed; z-index: 25; right: 20px; bottom: 20px; width: 34px; height: 34px; border-radius: 50%;
     border: 1px solid var(--line); background: var(--bg); box-shadow: 0 6px 16px -4px rgba(0,0,0,0.18);
     color: var(--muted); font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
-  #btnHelp:hover { border-color: var(--accent); color: var(--accent); }
+  #btnHelp:hover { border-color: var(--accent); color: var(--accent-strong); }  /* 호버 글자는 진한 파랑 - Approval Blue는 Margin Gray 위 4.4:1 (10-06 audit) */
   #helpPop { position: fixed; z-index: 25; right: 20px; bottom: 64px; width: 300px; background: var(--bg);
     border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.22); padding: 14px 16px;
     display: none; opacity: 0; transform: scale(0.92) translateY(6px); transform-origin: bottom right;
     transition: opacity 160ms cubic-bezier(.2,.8,.2,1), transform 220ms cubic-bezier(.2,.8,.2,1); }
   #helpPop.show { display: block; opacity: 1; transform: scale(1) translateY(0); }
+  /* 10-06 audit: 낮은 창(1024x700 등)에서 단축키 패널이 위로 자라 비디오 조작 줄을 덮었다 - 비디오
+     (폭×9/16 + 조작 줄 약 48px) 아래 남은 높이까지만 쓰고 넘치면 스크롤. 비디오가 숨는 680px 이하는 제외 */
+  @media (min-width: 681px) {
+    #helpPop { max-height: calc(100vh - 64px - 32px - (var(--video-w) * 0.5625 + 84px)); overflow-y: auto; }  /* 84px = 조작 줄이 두 줄로 넘어간 경우까지 */
+  }
   #helpPop h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
   #helpPop .drag-handle { margin: -6px -8px 4px; }
   #helpPop .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: var(--ink); }
@@ -315,7 +331,9 @@
   #waveStatus .key { display: inline-flex; align-items: center; gap: 5px; }
   #waveStatus .sw { width: 18px; height: 10px; border-radius: 2px; display: inline-block; }
   #waveStatus .sw.cut { background: repeating-linear-gradient(-45deg, #bdbdbd 0 1.5px, #f2f2f2 1.5px 5px); border: 1px solid var(--gauge-fill); }
-  #waveStatus .sw.risk { background: repeating-linear-gradient(-45deg, #ff5622 0 1.5px, #ffd9cc 1.5px 5px); border: 1px solid #ad2200; }
+  /* 10-06 audit(colorize): 잔음 의심은 "이 경계를 들어보고 판단해 달라"는 질의라 Query Amber(--proposal-*)로 -
+     예전 주황빨강(#ff5622 등)은 DESIGN.md에 없고 삭제 동작의 빨강과 헷갈렸다. 캔버스(drawStrip)도 같은 값 */
+  #waveStatus .sw.risk { background: repeating-linear-gradient(-45deg, var(--proposal-line) 0 1.5px, var(--proposal-bg) 1.5px 5px); border: 1px solid var(--proposal-line); }
   #waveStatus .sw.sel { background: rgba(0,112,243,0.14); border: 1.5px solid var(--accent); }
   #waveStatus b { color: var(--ink); font-weight: 600; }
   .zoom-btns button:disabled { opacity: 0.35; cursor: default; filter: none; }
@@ -380,7 +398,7 @@
     <div class="pad">
       <div class="title-row">
         <div style="display:flex;align-items:center;gap:6px;min-width:0">
-          <a href="http://127.0.0.1:8764/" id="homeLink" class="icon-btn" title="프로젝트 홈으로" aria-label="프로젝트 홈으로" style="text-decoration:none">⌂</a>
+          <a href="http://127.0.0.1:8764/" id="homeLink" class="icon-btn" title="프로젝트 홈으로" aria-label="프로젝트 홈으로" style="text-decoration:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg></a>
           <h1 id="title">video-cut</h1>
         </div>
         <div class="history-row">
@@ -996,22 +1014,22 @@ function findTokIndex(wi) { return toks.findIndex((t) => t.type === 'w' && t.wi 
 // 리사이즈 시에는 글자 크기만 다시 재고(fitAllSentences) 쪼개기는 다시 안 함 - 만든 직후
 // 한 번 쪼개 넣은 걸 창 크기가 바뀔 때마다 다시 합치고 쪼개려면 로드된 파형(peaks)까지 다시
 // 받아와야 해서(스트립마다 서버 왕복) 비용이 크다 - 초기 렌더 시점 창 너비 기준으로 확정.
-const SENT_FONT_BASE = 17, SENT_FONT_FLOOR = 13;
+// 10-06 audit(typeset): 예전엔 13~17px 사이를 0.5px 단위로 이분 탐색해 문단마다 제각각인 크기
+// (14.3px, 16.1px…)가 한 화면에 섞였다 - DESIGN.md "원고 17px"이 무너지고 줄마다 글자가 들쭉날쭉해
+// 보였다. 이제 17 → 16 → 15px 세 단계 중에서만 고르고(차이 최대 2px), 15px로도 꺾이면 지금처럼
+// 절 경계에서 쪼갠다. 대가: 긴 문장이 예전보다 조금 더 자주 쪼개지고, 창을 크게 줄이면(리사이즈는
+// 다시 쪼개지 않음) 드물게 두 줄로 꺾일 수 있다.
+const SENT_FONT_STEPS = [17, 16, 15];
 function fitSentenceOneLine(p) {
   const fitsAt = (px) => {
     p.style.fontSize = px + 'px';
     const lh = parseFloat(getComputedStyle(p).lineHeight);
     return p.scrollHeight <= lh + 1;
   };
-  if (fitsAt(SENT_FONT_BASE)) { p.style.fontSize = ''; return true; }  // 기본 크기로 이미 한 줄이면 그대로(인라인 스타일 안 남김)
-  if (!fitsAt(SENT_FONT_FLOOR)) return false;  // 하한까지 줄여도 두 줄 - 호출한 쪽이 쪼갤 차례
-  let lo = SENT_FONT_FLOOR, hi = SENT_FONT_BASE;
-  while (hi - lo > 0.5) {
-    const mid = (lo + hi) / 2;
-    if (fitsAt(mid)) lo = mid; else hi = mid;
-  }
-  fitsAt(lo);
-  return true;
+  if (fitsAt(SENT_FONT_STEPS[0])) { p.style.fontSize = ''; return true; }  // 기본 크기로 이미 한 줄이면 그대로(인라인 스타일 안 남김)
+  for (const px of SENT_FONT_STEPS.slice(1)) if (fitsAt(px)) return true;
+  p.style.fontSize = SENT_FONT_STEPS[SENT_FONT_STEPS.length - 1] + 'px';  // 가장 작은 단계로 두고 쪼갤지는 호출한 쪽이 정함
+  return false;
 }
 function fitAllSentences() {
   $('#transcript').querySelectorAll('.para').forEach(fitSentenceOneLine);
@@ -1225,34 +1243,43 @@ function paintPartial(el, p) {
 function applyStates() {
   partSet = partialWords();
   lockedSet = computeLockedSet();
+  // 10-06 audit(optimize): 판단 한 번마다 모든 토큰(수천 개)의 className·style·title을 무조건 다시 써서
+  // 브라우저가 대본 전체 스타일을 재계산했다(판단 1회 = 약 190ms 메인 스레드 정지). 실제로 바뀌는 건
+  // 몇 단어뿐이라, 새 값이 지금 값과 다를 때만 쓴다. 클래스 조합 순서(기본 → sel → search-hit →
+  // search-cur)는 예전 classList.add 순서와 같게 유지해 비교가 안정적이다.
   document.querySelectorAll('.tok').forEach((el) => {
     const t = toks[+el.dataset.t];
-    const wasSel = el.classList.contains('sel');
-    const wasHit = el.classList.contains('search-hit');
-    const wasCur = el.classList.contains('search-cur');
+    const keep = (el.classList.contains('sel') ? ' sel' : '') + (el.classList.contains('search-hit') ? ' search-hit' : '')
+      + (el.classList.contains('search-cur') ? ' search-cur' : '');
     if (t.type === 'w') {
-      const part = partSet.has(t.wi);
-      el.className = 'tok w' + wordClass(t.wi) + (part ? ' partcut' : '') + (lockedSet.has(t.wi) ? ' locked' : '');
-      paintPartial(el, partSet.get(t.wi));
-      el.title = fmt(t.s) + (part ? (partSet.get(t.wi).mode === 'cut' ? ' · 일부 정밀 삭제됨(빨간 줄)' : ' · 일부 정밀 복원됨(파란 밑줄)') + ' — 선택하면 바로 아래 파형에서 확인' : '');
+      const p = partSet.get(t.wi);
+      const cls = 'tok w' + wordClass(t.wi) + (p ? ' partcut' : '') + (lockedSet.has(t.wi) ? ' locked' : '') + keep;
+      if (el.className !== cls) el.className = cls;
+      const pk = p ? `${p.mode}:${p.segs.map(([a, b]) => `${a.toFixed(4)}-${b.toFixed(4)}`).join(',')}` : '';
+      if (el.dataset.pk !== pk) { paintPartial(el, p); el.dataset.pk = pk; }
+      const title = fmt(t.s) + (p ? (p.mode === 'cut' ? ' · 일부 정밀 삭제됨(빨간 줄)' : ' · 일부 정밀 복원됨(파란 밑줄)') + ' — 선택하면 바로 아래 파형에서 확인' : '');
+      if (el.title !== title) el.title = title;
     } else {
       const v = gv.get(t.gid); const cut = gapCut(t.g);
       const ruleKeep = !['NORMAL_INTER', 'NORMAL_INTRA', 'ENUMERATION', 'QUOTE_TO_EXPLANATION'].includes(t.g.style);
-      el.className = 'tok g' + (cut ? ' cut' : v.user ? ' user' : ruleKeep ? ' rule' : '');
+      const cls = 'tok g' + (cut ? ' cut' : v.user ? ' user' : ruleKeep ? ' rule' : '') + keep;
+      if (el.className !== cls) el.className = cls;
       const ratio = v.usable > 0 ? Math.min(1, v.keep / v.usable) : 1;
-      el.querySelector('.fill').style.width = `${Math.round(ratio * 100)}%`;
+      const fill = el.querySelector('.fill'); const fw = `${Math.round(ratio * 100)}%`;
+      if (fill.style.width !== fw) fill.style.width = fw;
       const w = gaugeWidth(t.g.duration);
-      el.querySelector('.lbl').textContent = w >= 46 ? (cut ? '' : `${v.keep.toFixed(2)}`) : '';
+      const lbl = el.querySelector('.lbl'); const txt = w >= 46 ? (cut ? '' : `${v.keep.toFixed(2)}`) : '';
+      if (lbl.textContent !== txt) lbl.textContent = txt;
     }
-    if (wasSel) el.classList.add('sel');
-    if (wasHit) el.classList.add('search-hit');
-    if (wasCur) el.classList.add('search-cur');
   });
   // 10-02(사용자 지적 - "C로 삭제해도 다른 단어를 클릭해야 파형에 표시된다"): 파형 스트립의
   // 회색/해치 오버레이는 S.cut_spans 기준으로 그려지는데, 그동안은 다음에 활성화되는 스트립만
   // drawStrip()을 다시 타서 갱신됐다 - 지금 막 바뀐 스트립이 그중 어느 것인지 가리지 않고 매
   // 결정 직후 전부 다시 그린다(캔버스 다시 그리기일 뿐 - peaks는 이미 로드돼 있으면 재요청 없음).
-  waveStrips.forEach(drawStrip);
+  // 10-06 audit(optimize): 전부(500개 넘게) 다시 그리면 스트립마다 폭을 읽고 캔버스를 새로 잡아 판단이
+  // 끈적해졌다 - 화면 근처(관찰자 600px 여백 안)만 지금 그리고, 나머지는 표시만 해 뒀다가 보이게 될
+  // 때 위 IntersectionObserver가 그린다. 아직 관찰 결과가 없는 스트립(near 미정)은 안전하게 지금 그린다.
+  waveStrips.forEach((st) => { if (st.near === false) st.dirty = true; else drawStrip(st); });
 }
 
 // ------------------------------------------------------------------ gauge drag
@@ -1603,9 +1630,12 @@ function armWaveStripObserver() {
   if (waveStripObserver) waveStripObserver.disconnect();
   waveStripObserver = new IntersectionObserver((entries) => {
     for (const en of entries) {
-      if (!en.isIntersecting) continue;
       const strip = waveStrips.find((s) => s.el === en.target);
-      if (strip) scheduleStripFetch(strip);
+      if (!strip) continue;
+      strip.near = en.isIntersecting;  // applyStates()가 화면 근처 스트립만 즉시 다시 그리는 데 씀
+      if (!en.isIntersecting) continue;
+      if (strip.dirty) { strip.dirty = false; drawStrip(strip); }  // 멀리 있는 동안 바뀐 컷 반영
+      scheduleStripFetch(strip);
     }
   }, { root: $('#main'), rootMargin: '600px 0px' });
   waveStrips.forEach((s) => waveStripObserver.observe(s.el));
@@ -1666,7 +1696,7 @@ function drawStrip(strip) {
     });
   }
   // audio_ok===false(가장 조용한 지점으로 스냅해도 여전히 시끄러움 - 잔음/절단 의심)인 구간은
-  // 진한 주황-빨강으로, 나머지 잘린 구간은 회색 해치로 - 2단계 "위험지점 추적"의 시각 신호. 이
+  // 호박색 해치(Query Amber - DESIGN.md, 10-06 audit 전엔 주황빨강)로, 나머지 잘린 구간은 회색 해치로 - 2단계 "위험지점 추적"의 시각 신호. 이
   // 데이터(cut_spans[i].audio_ok)는 서버가 공짜로 계산해 보내는 것(audio_map.choose_boundary
   // 기반). 10-02(사용자 피드백 - "오류 의심 구간이 색으로 잘 보이게"): 스트립 하나가 문장 하나
   // 전체(수 초)를 담다 보니 의심 구간이 몇십 ms짜리면 줌아웃 상태에서 1px도 안 돼 안 보일 수
@@ -1677,11 +1707,12 @@ function drawStrip(strip) {
     let a = Math.max(0, xOf(sp.start)), b = Math.min(w, xOf(sp.end));
     if (risky && b - a < 4) { const c = (a + b) / 2; a = Math.max(0, c - 2); b = Math.min(w, c + 2); }
     ctx.save(); ctx.beginPath(); ctx.rect(a, waveTop, b - a, waveH); ctx.clip();
-    ctx.fillStyle = risky ? 'rgba(255,86,34,0.55)' : 'rgba(245,245,245,0.78)'; ctx.fillRect(a, waveTop, b - a, waveH);
-    ctx.strokeStyle = risky ? 'rgba(173,34,0,0.9)' : 'rgba(0,0,0,0.16)'; ctx.lineWidth = risky ? 1.5 : 1;
+    // 캔버스는 CSS 변수를 못 읽는다 - --proposal-bg(#ffefcf)·--proposal-line(#ab570a)과 같은 값을 직접 쓴다
+    ctx.fillStyle = risky ? 'rgba(255,239,207,0.9)' : 'rgba(245,245,245,0.78)'; ctx.fillRect(a, waveTop, b - a, waveH);
+    ctx.strokeStyle = risky ? 'rgba(171,87,10,0.9)' : 'rgba(0,0,0,0.16)'; ctx.lineWidth = risky ? 1.5 : 1;
     for (let x = a - waveH; x < b; x += 6) { ctx.beginPath(); ctx.moveTo(x, h); ctx.lineTo(x + waveH, waveTop); ctx.stroke(); }
     ctx.restore();
-    if (risky) { ctx.fillStyle = '#e63900'; ctx.fillRect(a, h - 3, Math.max(4, b - a), 3); }
+    if (risky) { ctx.fillStyle = '#ab570a'; ctx.fillRect(a, h - 3, Math.max(4, b - a), 3); }
   }
   if (strip.hs != null) {
     const x1 = xOf(strip.hs), x2 = xOf(strip.he);
@@ -2282,7 +2313,13 @@ function renderReviewPanel() {
 // 있는 항목일 때만 추가로 보임).
 function syncReviewToolbar() {
   const total = reviewTotalCount;
-  document.body.classList.toggle('review-focus', reviewMode === 'active');
+  const focusOn = reviewMode === 'active';
+  document.body.classList.toggle('review-focus', focusOn);
+  // 10-06 audit: CSS의 pointer-events:none은 마우스만 막아서, Tab으로는 흐려진(거의 안 보이는)
+  // 확정·검색 버튼 등에 포커스가 들어가 위치를 잃었다 - inert로 키보드·스크린리더에서도 뺀다.
+  // 목록은 위 body.review-focus CSS 셀렉터와 같게 유지한다(되돌리기 .history-row는 예외로 살림).
+  document.querySelectorAll('#searchRow, .duration-row, .actions, #btnRedetect, #pauseAccordion, #quickSection, .title-row > div:first-child')
+    .forEach((el) => { el.inert = focusOn; });
   $('#reviewEmpty').style.display = total ? 'none' : '';
   $('#reviewIdle').style.display = total && reviewMode === 'idle' ? '' : 'none';
   $('#reviewDone').style.display = total && reviewMode === 'done' ? '' : 'none';

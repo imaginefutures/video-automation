@@ -16,7 +16,7 @@ colors:
   gauge-fill: "#d4d4d4"
   approval-blue: "#0070f3"
   approval-wash: "#d3e5ff"
-  approval-deep: "#0066dd"
+  approval-deep: "#0058c0"
   delete-red: "#ee0000"
   delete-wash: "#f7d4d6"
   chip-tint: "rgba(0,0,0,0.045)"
@@ -148,10 +148,10 @@ components:
 ### Primary
 - **Approval Blue** (approval-blue): 확정, 선택, 재생헤드, 사용자가 조정한 게이지. 페이지 전체에서 "긍정/활성" 의미로만 쓰는 유일한 브랜드 accent. 확정 버튼처럼 solid로 채울 때만 흰 글자를 얹는다(대비 약 4.55:1, 버튼 글자를 이보다 작게 줄이지 않는다).
 - **Approval Wash** (approval-wash): 텍스트 선택 하이라이트, 포커스 링, 확정됨 배지 배경. 옅은 배경 위엔 기본 잉크를 그대로 얹는다.
-- **Approval Deep** (approval-deep): 16px 강조 숫자처럼 Approval Blue로는 대비가 모자랄 때만 쓰는 한 단계 진한 변형. 새 의미를 만들지 않는다.
+- **Approval Deep** (approval-deep): Approval Blue로는 대비가 모자랄 때 쓰는 진한 변형. Approval Wash 위 글자("검토 시작" 버튼, 확정됨 배지)와 16px 강조 숫자에 쓴다. 연파랑 위 5.2:1(10-06 audit에서 #0066dd → #0058c0, 이전 값은 4.16:1로 AA 미달). 새 의미를 만들지 않는다.
 
 ### Secondary
-- **Query Amber** (query-amber) / **Query Wash** (query-wash): 사람의 판단을 기다리는 삭제 제안. 원고 여백에 연필로 단 "확인 바람" 질의 표시다. 검토 대기 하이라이트, 스크롤 진행률 바의 대기 틱, 홈 화면의 "검토 중" 배지.
+- **Query Amber** (query-amber) / **Query Wash** (query-wash): 사람이 확인해야 할 곳. 원고 여백에 연필로 단 "확인 바람" 질의 표시다. 검토 대기 하이라이트, 스크롤 진행률 바의 대기 틱, 홈 화면의 "검토 중" 배지, 파형의 **잔음 의심** 구간(호박색 해치 + 바닥 3px 막대, 10-06 audit 전엔 문서에 없던 주황빨강), 멈춘 처리·일시정지 안내.
 
 ### Tertiary
 - **Delete Red** (delete-red) / **Delete Wash** (delete-wash): 삭제 동작 전용. 교정지의 빨간 펜이다.
@@ -165,7 +165,7 @@ components:
 - **Hairline** (hairline): 기본 1px 경계선.
 - **Rule Gray** (rule-gray): 강조 경계선, 해결된 검토 틱.
 - **Struck Gray** (struck-gray): 잘린 단어의 취소선과 글자. 일부러 연하게 한 것이다. 대비 감사에서 제외한다.
-- **Gauge Track / Gauge Fill**: 무음 리듬 게이지의 트랙과 규칙 기반 채움.
+- **Gauge Track / Gauge Fill**: 무음 리듬 게이지의 트랙과 규칙 기반 채움. 사용자가 조정한 게이지는 연한 파랑(#b9d6ff) 채움 + 오른쪽 끝 2px Approval Blue 선이고, 숫자는 채움과 상관없이 항상 잉크색이다(흰 숫자는 채움이 짧으면 트랙 위에서 안 보였다).
 - **Chip Tint / Chip Tint Hover**: 아이콘 버튼과 중립 배지의 반투명 배경.
 
 ### Named Rules
@@ -174,7 +174,7 @@ components:
 
 **The Ink Note Rule.** 실패는 색이 아니라 검은 잉크와 그린 경고 아이콘으로 쓴다. 교정자가 검은 펜으로 남긴 메모다. 연한 배지들 사이에서 가장 진한 Press Ink 배지가 되고, 오류 문구는 잉크 글자에 경고 아이콘을 붙인다(2026-10-06 결정).
 
-**The Token-Only Rule.** 새 컴포넌트는 `:root` 변수만 쓰고 hex를 직접 쓰지 않는다. 예외는 문서화된 것뿐이다: 토스트·툴팁·비디오 컨트롤 바의 Press Ink 고정 배경, CSS 변수를 못 읽는 파형 캔버스(같은 값을 JS에 hex로 둔다, 바뀌면 양쪽 함께 갱신).
+**The Token-Only Rule.** 새 컴포넌트는 `:root` 변수만 쓰고 hex를 직접 쓰지 않는다. 예외는 문서화된 것뿐이다: 토스트·툴팁·비디오 컨트롤 바의 Press Ink 고정 배경, CSS 변수를 못 읽는 파형 캔버스(파형 #4d4d4d, 재생헤드 Approval Blue, 잘림 회색 해치, 잔음 의심 Query 색 - 같은 값을 JS에 직접 두고, 바뀌면 양쪽 함께 갱신).
 
 ## Typography
 
@@ -184,7 +184,7 @@ components:
 **Character:** 원고는 읽기 좋은 넉넉한 산세리프, 측정값은 흔들리지 않는 등폭. 웹폰트를 불러오지 않는다. 로컬 서버가 외부 요청 없이 동작하도록 시스템 폰트 스택만 쓴다.
 
 ### Hierarchy
-- **Manuscript** (400, 17px, 1.85): 검토 화면의 대본 본문. 이 도구에서 가장 오래 읽히는 글자라 가장 넉넉하게 조판한다. 대본 열은 최대 880px.
+- **Manuscript** (400, 17px, 1.85): 검토 화면의 대본 본문. 이 도구에서 가장 오래 읽히는 글자라 가장 넉넉하게 조판한다. 대본 열은 최대 880px. 문장을 한 줄에 맞추려고 줄일 때는 16px·15px 두 단계까지만 쓰고, 그래도 안 들어가면 절 경계에서 나눈다(10-06 audit 전엔 13~17px 사이 아무 크기나 써서 줄마다 들쭉날쭉했다).
 - **Body** (400, 15px, 1.5): 기본 UI 글자.
 - **Headline** (700, 16px): 모달 제목.
 - **Title** (700, 14px, -0.01em): 사이드바 제목, 카드 이름(600, 15px).

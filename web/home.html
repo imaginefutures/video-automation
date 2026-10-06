@@ -9,7 +9,7 @@
      Vercel풍 라이트 톤) - 검토 화면과 홈 화면이 다른 느낌으로 보이지 않게. */
   :root {
     --bg: #ffffff; --panel: #fafafa; --surface-2: #f5f5f5; --ink: #171717; --muted: #666666; --line: #ebebeb; --line-strong: #a1a1a1;
-    --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0066dd;
+    --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0058c0;
     /* 검토 대기(질의) 표시 - 검토 화면과 같은 이름. 빨강(--danger)은 삭제 동작 전용인데 홈 화면엔
        삭제 동작이 없어 선언하지 않는다(10-06 polish: 실패 표시가 빨강을 빌려 쓰던 걸 잉크로 바꿈) */
     --proposal-line: #ab570a; --proposal-bg: #ffefcf;
@@ -160,8 +160,10 @@
         <button id="btnUpdateNow">지금 업데이트</button>
       </div>
     </div>
-    <div id="list"></div>
-    <div id="empty" style="display:none"></div>
+    <main aria-label="영상 목록">
+      <div id="list"></div>
+      <div id="empty" style="display:none"></div>
+    </main>
   </div>
 </div>
 

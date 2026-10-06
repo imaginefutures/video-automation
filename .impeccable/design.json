@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-06T07:32:53.285561+00:00",
+  "generatedAt": "2026-10-06T09:38:58.695863+00:00",
   "title": "Design System: video-cut",
   "extensions": {
     "colorMeta": {
@@ -217,16 +217,16 @@
       "approval-deep": {
         "role": "primary",
         "displayName": "Approval Deep",
-        "canonical": "#0066dd",
+        "canonical": "#0058c0",
         "tonalRamp": [
-          "#001a37",
-          "#002e63",
-          "#004290",
-          "#0057bc",
-          "#3385e4",
-          "#73abec",
-          "#b2d1f5",
-          "#e6f0fc"
+          "#001630",
+          "#002856",
+          "#00397d",
+          "#004ba3",
+          "#3379cd",
+          "#73a3dc",
+          "#b2cdec",
+          "#e6eef9"
         ]
       },
       "delete-red": {
@@ -408,7 +408,7 @@
       "refersTo": "badge-pending",
       "description": "홈 화면 상태 배지: 검토 대기(호박), 확정(파랑), 처리 중(중립), 처리 실패(잉크 + 경고 아이콘).",
       "html": "<span class=\"ds-badge ds-badge-pending\">검토 중 · 12건 남음</span> <span class=\"ds-badge ds-badge-confirmed\">확정됨</span> <span class=\"ds-badge ds-badge-neutral\">처리 중</span> <span class=\"ds-badge ds-badge-failed\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M10.3 3.9 2.4 17.6A2 2 0 0 0 4.1 20.6h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z\"/><path d=\"M12 9v4.5\"/><path d=\"M12 17h.01\"/></svg>처리 실패</span>",
-      "css": ".ds-badge{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;display:inline-flex;font-size:12px;font-weight:600;padding:3px 10px;border-radius:9999px;white-space:nowrap}.ds-badge-pending{background:#ffefcf;color:#ab570a}.ds-badge-confirmed{background:#d3e5ff;color:#0066dd}.ds-badge-neutral{background:rgba(0,0,0,0.045);color:#666}.ds-badge{gap:5px;align-items:center}.ds-badge-failed{background:#171717;color:#fff}"
+      "css": ".ds-badge{font-family:-apple-system, \"Geist\", \"Inter\", \"Pretendard\", \"Apple SD Gothic Neo\", sans-serif;display:inline-flex;font-size:12px;font-weight:600;padding:3px 10px;border-radius:9999px;white-space:nowrap}.ds-badge-pending{background:#ffefcf;color:#ab570a}.ds-badge-confirmed{background:#d3e5ff;color:#0058c0}.ds-badge-neutral{background:rgba(0,0,0,0.045);color:#666}.ds-badge{gap:5px;align-items:center}.ds-badge-failed{background:#171717;color:#fff}"
     },
     {
       "name": "Manuscript Marks",
@@ -467,7 +467,7 @@
       },
       {
         "name": "The Token-Only Rule",
-        "body": "새 컴포넌트는 `:root` 변수만 쓰고 hex를 직접 쓰지 않는다. 예외는 문서화된 것뿐이다: 토스트·툴팁·비디오 컨트롤 바의 Press Ink 고정 배경, CSS 변수를 못 읽는 파형 캔버스(같은 값을 JS에 hex로 둔다, 바뀌면 양쪽 함께 갱신).",
+        "body": "새 컴포넌트는 `:root` 변수만 쓰고 hex를 직접 쓰지 않는다. 예외는 문서화된 것뿐이다: 토스트·툴팁·비디오 컨트롤 바의 Press Ink 고정 배경, CSS 변수를 못 읽는 파형 캔버스(파형 #4d4d4d, 재생헤드 Approval Blue, 잘림 회색 해치, 잔음 의심 Query 색 - 같은 값을 JS에 직접 두고, 바뀌면 양쪽 함께 갱신).",
         "section": "colors"
       },
       {
