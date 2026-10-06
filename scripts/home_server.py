@@ -172,6 +172,7 @@ def project_status(folder: Path) -> dict:
             info["error"] = pnew.get("error") or "처리가 예기치 않게 중단됐습니다 - edit/run.log를 확인하세요"
         else:
             info["status"] = "processing"
+            info["resumable"] = _resumable(folder)
         return info
 
     if not ng_path.exists():
@@ -190,6 +191,7 @@ def project_status(folder: Path) -> dict:
             info["error"] = pstatus.get("error") or "처리가 예기치 않게 중단됐습니다 - edit/run.log를 확인하세요"
             return info
         info["status"] = "processing"
+        info["resumable"] = _resumable(folder)
         return info
 
     ng = _read_json(ng_path, [])
@@ -382,32 +384,84 @@ def create_project(title: str, content_length: int, rfile) -> dict:
                 pass
             raise
 
-        edit_dir(folder)  # run.py가 edit/run.log를 열 수 있도록 미리 만들어 둠
-        port = _alloc_port(_preferred_port(name))
-        log_path = folder / "edit" / "run.log"
-        log_f = open(log_path, "a")
-        proc = subprocess.Popen(
-            [sys.executable, str(HERE / "run.py"), str(folder), "--port", str(port), "--no-open"],
-            cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
-            start_new_session=True,
-            # 버퍼링되면 run.py의 "== 단계" 줄이 하위 프로세스 출력보다 늦게 찍혀 run.log 순서가
-            # 뒤섞인다 - 진행 화면의 실패 로그(server.py _log_tail)가 이 순서에 기댄다.
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
-        )
-        with _active_lock:
-            _active[name] = {"port": port, "proc": proc, "log": log_f}
+        port, proc, log_path = _spawn_pipeline(name, folder)
     finally:
         with _active_lock:
             _uploading.discard(name)
+    return _wait_pipeline(name, port, proc, log_path)
 
+
+def _spawn_pipeline(name: str, folder: Path) -> tuple[int, subprocess.Popen, Path]:
+    """run.py를 백그라운드로 띄우고 _active에 등록한다 - 새 영상 생성과 멈춘 처리 이어하기
+    (resume_processing)가 같이 쓴다."""
+    edit_dir(folder)  # run.py가 edit/run.log를 열 수 있도록 미리 만들어 둠
+    port = _alloc_port(_preferred_port(name))
+    log_path = folder / "edit" / "run.log"
+    log_f = open(log_path, "a")
+    proc = subprocess.Popen(
+        [sys.executable, str(HERE / "run.py"), str(folder), "--port", str(port), "--no-open"],
+        cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
+        start_new_session=True,
+        # 버퍼링되면 run.py의 "== 단계" 줄이 하위 프로세스 출력보다 늦게 찍혀 run.log 순서가
+        # 뒤섞인다 - 진행 화면의 실패 로그(server.py _log_tail)가 이 순서에 기댄다.
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    with _active_lock:
+        _active[name] = {"port": port, "proc": proc, "log": log_f}
+    return port, proc, log_path
+
+
+def _wait_pipeline(name: str, port: int, proc: subprocess.Popen, log_path: Path) -> dict:
     deadline = time.time() + 15
     while time.time() < deadline:
-        if proc.poll() is not None:
-            raise RuntimeError(f"처리가 바로 종료됐습니다 - {log_path} 확인")
+        # 포트부터 본다 - run.py가 검토 서버를 띄운 직후 곧바로 실패해도(예: 깨진 영상) 그 서버의
+        # 진행 화면이 오류·로그·다시 시도를 보여주므로 거기로 보내는 게 낫다
         if _port_listening(port):
             return {"name": name, "url": f"http://127.0.0.1:{port}/"}
+        # run.py가 이미 끝났어도 상태 파일에 자기 pid를 남겼다면 검토 서버(detached)는 띄운 뒤다 -
+        # 그 서버가 bind할 때까지 마저 기다린다. 그 전에 죽었으면(서버도 못 띄움) 바로 알린다.
+        if proc.poll() is not None and (read_pipeline_status(log_path.parent.parent) or {}).get("pid") != proc.pid:
+            raise RuntimeError(f"처리가 바로 종료됐습니다 - {log_path} 확인")
         time.sleep(0.2)
     raise RuntimeError("처리 서버가 제시간에 뜨지 않았습니다")
+
+
+def _external_run_alive(folder: Path) -> bool:
+    """이 홈 서버가 띄우지 않은 run.py(터미널에서 직접 실행 등)가 이 폴더를 처리 중인지 - pid를
+    남기는 새 상태 파일이 있으면 그걸로, 없으면(10-06 이전 run.py) 프로세스 목록의 명령줄로
+    본다. 이어하기 버튼이 같은 폴더에 run.py를 두 개 띄우지 않게 하는 안전장치."""
+    st = read_pipeline_status(folder)
+    if st is not None and st.get("state") == "running":
+        return True
+    try:
+        out = subprocess.run(["ps", "-axo", "command"], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    pat = re.compile(r"run\.py\s+(\S*/)?" + re.escape(folder.name) + r"/?(\s|$)")
+    return any(pat.search(line) for line in out.splitlines())
+
+
+def _resumable(folder: Path) -> bool:
+    """"처리 중"인데 이 홈 서버가 관리하지도 않고 어디서도 돌고 있지 않음 = 멈춘 처리. 홈 카드가
+    이걸로 "클릭하면 이어서 처리"를 보여준다(10-06: 예전엔 터미널 명령을 직접 치라는 안내뿐)."""
+    return not _is_managed(folder.name) and not _external_run_alive(folder)
+
+
+def resume_processing(name: str) -> dict:
+    """멈춘 처리를 홈 화면에서 이어 돌린다 - run.py는 단계별 결과 파일을 캐시하므로 끝난 단계는
+    건너뛰고 멈춘 단계부터 다시 돈다. 이미 어디서든 돌고 있으면 새로 띄우지 않는다."""
+    folder = videos_root() / name
+    if not is_project_folder(folder):
+        raise ValueError(f"알 수 없는 영상: {name}")
+    with _active_lock:
+        if name in _uploading:
+            raise ValueError("업로드가 아직 진행 중입니다")
+    if _is_managed(name):
+        return open_review(name)
+    if _external_run_alive(folder):
+        raise ValueError("다른 곳(터미널 등)에서 이미 처리 중입니다 - 끝날 때까지 기다려 주세요")
+    port, proc, log_path = _spawn_pipeline(name, folder)
+    return _wait_pipeline(name, port, proc, log_path)
 
 
 def _stream_to_file(rfile, dest: Path, length: int, chunk_size: int = 4 * 1024 * 1024) -> None:
@@ -621,6 +675,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = open_review(str(body.get("name", "")))
                 return self._json({"ok": True, **result})
             except Exception as e:  # surface to the UI instead of a silent 500
+                return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/process":
+            try:
+                result = resume_processing(str(body.get("name", "")))
+                return self._json({"ok": True, **result})
+            except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/api/setup/keys":
             valid_keys = {key for key, _, _ in REQUIRED_API_KEYS}
