@@ -51,8 +51,10 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -83,6 +85,13 @@ PIPELINE_STAGES: list[tuple[str, int]] = [
 ]
 _PIPELINE_TOTAL_STEPS = sum(n for _, n in PIPELINE_STAGES)
 _pipeline_done = 0
+# 10-06: 진행 화면이 "처리 준비 중" 스피너로 영원히 돌던 문제 - (1) 상태 파일을 단계가 *끝난
+# 뒤에만* 써서 첫 단계(정리) 내내 아무 정보가 없었고, (2) run.py가 step() 밖에서 죽으면(예외,
+# kill, 메모리 부족) 상태 파일이 영영 안 생기거나 "running"으로 멈춰 있었다. 이제 단계 *시작*에
+# 쓰고, pid를 남겨 server.py가 프로세스 생존을 직접 확인하며(common.pid_alive), 잡히는 예외는
+# __main__에서 에러로 기록한다.
+_status_folder: Path | None = None
+_status_state: str | None = None
 
 
 def _stage_breakdown(done: int) -> list[dict]:
@@ -103,12 +112,21 @@ def _stage_breakdown(done: int) -> list[dict]:
 
 def _write_pipeline_status(folder: Path, stage: str, state: str, error: str | None = None) -> None:
     """Best-effort only - a failed write here must never fail the pipeline itself."""
+    global _status_folder, _status_state
+    _status_folder, _status_state = folder, state
     try:
         write_json(edit_dir(folder) / "pipeline_status.json",
                    {"stage": stage, "done": _pipeline_done, "total": _PIPELINE_TOTAL_STEPS,
-                    "state": state, "error": error, "stages": _stage_breakdown(_pipeline_done)})
+                    "state": state, "error": error, "stages": _stage_breakdown(_pipeline_done),
+                    "pid": os.getpid(), "stage_started_at": time.time()})
     except OSError:
         pass
+
+
+def _step_error(e: subprocess.CalledProcessError) -> str:
+    """str(e)는 전체 명령줄(긴 절대경로 여러 개)이라 진행 화면·홈 카드에 그대로 띄우면 읽을 수가
+    없다 - 사람이 읽는 한 줄만 남기고, 원인은 진행 화면이 run.log의 그 단계 출력으로 보여준다."""
+    return f"실패했습니다 (종료 코드 {e.returncode})"
 
 
 def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback: bool = False) -> None:
@@ -123,6 +141,8 @@ def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback
     멈추지 않는다."""
     global _pipeline_done
     print(f"\n== {title}")
+    if folder is not None:
+        _write_pipeline_status(folder, title, "running")
     try:
         subprocess.run([sys.executable, *cmd], check=True, cwd=HERE.parent)
     except subprocess.CalledProcessError as e:
@@ -131,7 +151,7 @@ def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback
                   f"ffmpeg 문제가 흔함). 각 단계는 결과 파일로 캐시되므로, 원인을 해결한 뒤 "
                   f"같은 명령으로 다시 실행하면 이 단계부터 이어서 진행됩니다.")
             if folder is not None:
-                _write_pipeline_status(folder, title, "error", str(e))
+                _write_pipeline_status(folder, title, "error", _step_error(e))
             raise
         print(f"\n[자동 대체] {title} - LLM 호출이 실패한 것으로 보여 결정론적 모드(--no-llm)로 "
               f"다시 시도합니다. 검토 항목이 평소보다 많을 수 있습니다.")
@@ -147,11 +167,9 @@ def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback
                   f"원인입니다. 각 단계는 결과 파일로 캐시되므로, 원인을 해결한 뒤 같은 명령으로 "
                   f"다시 실행하면 이 단계부터 이어서 진행됩니다.")
             if folder is not None:
-                _write_pipeline_status(folder, title, "error", str(e2))
+                _write_pipeline_status(folder, title, "error", _step_error(e2))
             raise
     _pipeline_done += 1
-    if folder is not None:
-        _write_pipeline_status(folder, title, "running")
 
 
 def start_server(folder: Path, port: int, no_open: bool) -> subprocess.Popen:
@@ -260,6 +278,8 @@ def main() -> None:
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--skip-server", action="store_true",
+                    help="검토 서버를 새로 띄우지 않는다 - 이미 떠 있는 서버의 진행 화면 '다시 시도'(server.py)가 씀")
     args = ap.parse_args()
 
     load_env()
@@ -288,8 +308,10 @@ def main() -> None:
     # R2-시작-마찰-제거: 처리 시작과 동시에 서버를 띄우고 브라우저를 연다 - 더 이상 파이프라인이
     # 다 끝난 뒤에야 열지 않는다. 서버는 자신의 백그라운드 스레드로 transcript.json이 생기길
     # 기다리므로, 지금 당장 Session을 만들 수 없어도 바로 bind해서 진행 화면을 보여준다.
-    server_proc = start_server(folder, args.port, args.no_open)
-    print(f"review server pid {server_proc.pid} (detached) - http://127.0.0.1:{args.port}/")
+    if not args.skip_server:
+        server_proc = start_server(folder, args.port, args.no_open)
+        print(f"review server pid {server_proc.pid} (detached) - http://127.0.0.1:{args.port}/")
+    _write_pipeline_status(folder, "처리 시작", "running")
 
     # --serve는 처리 없이 검토 화면만 여니 API 키가 필요 없음. 서버를 이미 띄운 뒤라(위) 여기서
     # 키가 없어 sys.exit()하면 - 사람이 터미널로 직접 돌릴 땐 터미널에 바로 보이지만, 홈 화면
@@ -350,9 +372,18 @@ def main() -> None:
     else:
         print("5/7 pauses: cached")
 
+    _write_pipeline_status(folder, "처리 완료", "done")
     notify("처리 완료", f"{folder.name} 검토 준비됨")
     print(f"\n review UI: http://127.0.0.1:{args.port}/  (folder: {folder})")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException as e:
+        # step()/키·ffmpeg 확인이 이미 에러를 기록했으면 그대로 둔다. 그 밖(migrate, 분할 촬영
+        # 이어붙이기, Ctrl+C 등)에서 죽으면 여기서 남겨야 진행 화면이 스피너로 멈추지 않는다.
+        if _status_folder is not None and _status_state != "error":
+            _write_pipeline_status(_status_folder, "처리 중단", "error",
+                                   str(e) or type(e).__name__)
+        raise

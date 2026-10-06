@@ -61,6 +61,11 @@ def redetect(folder: Path, no_llm: bool = False) -> Path | None:
     edit = edit_dir(folder)
     backup_dir = backup_and_clear(edit)
     run_module.run_ng_pipeline(folder, edit, no_llm)
+    # run_ng_pipeline의 step()들이 pipeline_status.json을 running으로 남긴다 - 끝났다고 안 쓰면
+    # 검토 서버를 다시 띄울 때 "처리 미완료"로 보고 검토 화면 대신 진행/오류 화면을 연다(10-06
+    # server.py _try_build_session 게이트). 실패하면 step()이 error를 남기고, 그땐 진행 화면의
+    # "다시 시도"(run.py가 지워진 NG 단계부터 다시 돎)가 복구 경로다.
+    run_module._write_pipeline_status(folder, "재분석 완료", "done")
     return backup_dir
 
 

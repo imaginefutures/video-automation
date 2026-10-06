@@ -4,6 +4,7 @@ import getpass
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -220,6 +221,44 @@ def _stamp_schema_version(path: Path) -> None:
 def write_json(path: Path, data) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     _stamp_schema_version(path)
+
+
+def pid_alive(pid: int | None) -> bool:
+    """run.py가 pipeline_status.json에 남긴 pid가 아직 살아있는지. 홈 서버가 띄운 run.py는
+    죽어도 홈 서버가 poll()로 거둬가기 전까진 좀비로 남아 os.kill(pid, 0)이 성공한다 - 그래서
+    ps로 상태가 'Z'인지까지 본다(10-06: 처리 프로세스가 죽었는데 진행 화면이 "처리 준비 중"
+    스피너로 영원히 도는 문제)."""
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True,
+                              text=True, timeout=2).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return True  # 확인 못 하면 살아있다고 본다 - 멀쩡한 처리를 실패로 오표시하지 않게
+    return bool(stat) and not stat.startswith("Z")
+
+
+def read_pipeline_status(folder: Path) -> dict | None:
+    """run.py가 남긴 edit/pipeline_status.json - state는 running/error/done. 파일이 없거나 pid가
+    없는 옛 형식(10-06 이전 run.py)이면 None - 그런 폴더는 예전 기준(전사·NG 파일 유무)대로
+    다룬다. state가 running인데 그 pid가 죽었으면 여기서 error로 바꿔 돌려준다 - 검토 서버와
+    홈 서버가 같은 판정을 쓰게 한 곳에 둔다."""
+    try:
+        data = json.loads((folder / "edit" / "pipeline_status.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or not data.get("pid"):
+        return None
+    if data.get("state") == "running" and not pid_alive(data["pid"]):
+        data["state"] = "error"
+        data["error"] = "처리 프로세스가 예기치 않게 종료됐습니다"
+    return data
 
 
 # 점버전 모델(예: Opus 5.5, Fable 5.1)은 thinking.type.disabled를 거부하고 adaptive+effort만

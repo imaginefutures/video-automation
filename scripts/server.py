@@ -27,7 +27,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json
+from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status
 from build_edl import compute_kept_segments, BOUNDARY_PAD_SEC
 from plan_pauses import PRESETS, PROTECT_SEC, recommended_keep, trim_for_keep, usable_range
 from pattern_suggest import check as check_pattern, MIN_TRIGGER as PATTERN_MIN_TRIGGER
@@ -1291,6 +1291,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.path == "/api/retry" and self.session is None:
+            try:
+                return self._json({"ok": True, **_retry_pipeline(self.folder, self.server.server_address[1])})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 409)
         if self.session is None:  # R2: every POST endpoint mutates/reads a built Session
             return self._json({"ok": False, "ready": False, "error": "아직 처리 중입니다"}, 503)
         try:
@@ -1387,12 +1392,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _try_build_session(folder: Path) -> Session | None:
-    """None (never raises) until transcript.json exists AND Session() actually succeeds -
-    covers both "pipeline hasn't reached transcribe yet" and "transcript.json is still being
-    written" (a half-written file fails json.loads, same as missing). Every later-stage file
-    (ng.json, pauses.json, ...) already has a safe default inside Session._load(), so this is
-    the ONE real gate - see docs/백로그/R2-시작-마찰-제거.md."""
+    """None (never raises) until the pipeline has finished AND Session() actually succeeds.
+
+    10-06: 예전엔 transcript.json 하나만 게이트로 봤다(뒤 단계 파일은 Session._load()의 빈
+    기본값으로 버팀). 그래서 새 영상은 전사 직후 NG 탐지가 돌기도 전에 **빈 검토 화면**이 열렸고,
+    Session은 한 번 만들면 다시 안 읽어서 처리가 끝나도 그 화면엔 결과가 안 들어왔다 - 뒤 단계가
+    실패해도 진행 화면의 오류/다시 시도가 안 보였다. 이제 run.py가 상태 파일에 done을 쓸 때까지
+    기다린다. 상태 파일이 없거나 옛 형식(pid 없음)인 폴더는 예전처럼 transcript.json만 본다."""
     if not (folder / "edit" / "transcript.json").exists():
+        return None
+    st = read_pipeline_status(folder)
+    if st is not None and st.get("state") != "done":
         return None
     try:
         return Session(folder)
@@ -1414,21 +1424,61 @@ def home_port() -> int:
 
 
 def _pipeline_status(folder: Path) -> dict:
-    """Read-only progress readout written by run.py's step() after every pipeline stage - see
-    run.py's `step()` and docstring there. Missing/unreadable file just means "processing
-    hasn't written a status yet" (e.g. still in clean_media/transcribe), not an error."""
-    p = folder / "edit" / "pipeline_status.json"
-    default = {"stage": "처리 준비 중", "done": 0, "total": 0, "state": "running", "error": None,
-               "stages": [], "home_port": home_port()}
-    if not p.exists():
-        return default
+    """Read-only progress readout written by run.py's step() at the start of every pipeline stage -
+    see run.py's `step()` and docstring there. Missing/unreadable file just means run.py hasn't
+    written its first status yet (it does so right after launching this server), not an error.
+
+    10-06: run.py가 kill·메모리 부족 등으로 에러를 못 남기고 죽으면 상태가 "running"으로 멈춰
+    진행 화면이 영원히 돌았다 - 기록된 pid가 죽었으면 여기서 에러로 바꿔 돌려준다. 에러일 땐
+    edit/run.log 끝부분을 같이 실어 화면에서 원인을 바로 볼 수 있게 한다."""
+    out = {"stage": "처리 준비 중", "done": 0, "total": 0, "state": "running", "error": None,
+           "stages": [], "elapsed_sec": None, "log_tail": None, "home_port": home_port()}
+    data = read_pipeline_status(folder)  # pid가 죽었으면 이미 error로 바뀌어 옴
+    if data is None:
+        return out
+    out.update({k: data[k] for k in ("stage", "done", "total", "state", "error", "stages") if k in data})
+    if out["state"] == "running" and data.get("stage_started_at"):
+        out["elapsed_sec"] = max(0, round(time.time() - data["stage_started_at"]))
+    if out["state"] == "error":
+        out["log_tail"] = _log_tail(folder / "edit" / "run.log")
+    return out
+
+
+def _log_tail(path: Path, max_lines: int = 60) -> str | None:
+    """실패한 단계의 출력만 - run.py step()이 단계마다 찍는 "== 제목" 줄부터 끝까지. 그냥 마지막
+    N줄을 자르면 run.py 자신의 traceback만 남고 진짜 원인(ffmpeg/API 에러 문구)은 그 위에 있어
+    잘려 나갔다."""
     try:
-        data = json.loads(p.read_text())
-    except (OSError, json.JSONDecodeError):
-        return default
-    return {"stage": data.get("stage", default["stage"]), "done": data.get("done", 0),
-            "total": data.get("total", 0), "state": data.get("state", "running"),
-            "error": data.get("error"), "stages": data.get("stages", []), "home_port": home_port()}
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("== ")]
+    section = lines[starts[-1]:] if starts else lines
+    return "\n".join(section[-max_lines:]) or None
+
+
+_retry_lock = threading.Lock()
+
+
+def _retry_pipeline(folder: Path, port: int) -> dict:
+    """진행 화면의 "다시 시도" - 실패한 run.py를 같은 폴더로 다시 띄운다. 각 단계는 결과 파일로
+    캐시돼 있어 실패한 단계부터 이어서 돈다(run.py step() 안내 문구와 같은 전제). 이 서버가 이미
+    떠 있으니 --skip-server로 서버는 새로 안 띄운다. 에러 상태일 때만 허용 - 연타나 탭 두 개로
+    run.py가 두 개 뜨지 않게 락 안에서 확인하고, 새 pid를 바로 기록해 다음 확인부터 running으로
+    보이게 한다."""
+    with _retry_lock:
+        if _pipeline_status(folder)["state"] != "error":
+            raise ValueError("이미 처리가 진행 중입니다")
+        log_f = open(folder / "edit" / "run.log", "a")
+        proc = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve().parent / "run.py"), str(folder), "--port", str(port),
+             "--no-open", "--skip-server"],
+            cwd=str(Path(__file__).resolve().parent.parent), stdin=subprocess.DEVNULL, stdout=log_f,
+            stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"})
+        write_json(folder / "edit" / "pipeline_status.json",
+                   {"stage": "다시 시작하는 중", "state": "running", "stages": [], "pid": proc.pid,
+                    "stage_started_at": time.time()})
+    return {"pid": proc.pid}
 
 
 def _session_watcher(folder: Path, interval: float = 1.0) -> None:

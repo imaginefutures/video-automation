@@ -40,7 +40,7 @@ PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
-    api_keys_status, edit_dir, load_env, sanitize_project_name, write_env_keys,
+    api_keys_status, edit_dir, load_env, read_pipeline_status, sanitize_project_name, write_env_keys,
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS,
 )
 
@@ -161,6 +161,18 @@ def project_status(folder: Path) -> dict:
         break
     info["last_activity"] = last
     info["managed"] = _is_managed(folder.name)
+
+    # 10-06: ng.json이 생긴 뒤에도 무음 리듬 단계가 남아 있다 - 새 형식 상태 파일이 아직 done이
+    # 아니면 ng.json 유무와 상관없이 "처리 중/실패"로 본다(검토 서버도 done 전엔 안 열림).
+    pnew = read_pipeline_status(folder)
+    if pnew is not None and pnew.get("state") != "done":
+        if pnew.get("state") == "error":
+            info["status"] = "error"
+            info["stage"] = pnew.get("stage")
+            info["error"] = pnew.get("error") or "처리가 예기치 않게 중단됐습니다 - edit/run.log를 확인하세요"
+        else:
+            info["status"] = "processing"
+        return info
 
     if not ng_path.exists():
         # 10-01 발견: run.py가 중간에 죽으면(예: LLM 재시도까지 실패) ng.json은 영원히 안 생기고
@@ -298,7 +310,11 @@ def open_review(name: str) -> dict:
     with _active_lock:
         active = _active.get(name)
         if active is None or active["proc"].poll() is not None:
-            if active is None and not (folder / "edit" / "ng.json").exists():
+            # 10-06: pipeline_status.json이 있으면(= 처리를 한 번은 시작함) 실패했더라도 server.py를
+            # 띄워 진행 화면으로 보낸다 - 거기서 로그를 보고 "다시 시도"할 수 있다. 예전엔 여기서
+            # 막혀 실패한 카드를 눌러도 "아직 처리 중입니다"만 떴다.
+            if (active is None and not (folder / "edit" / "ng.json").exists()
+                    and not (folder / "edit" / "pipeline_status.json").exists()):
                 raise ValueError("아직 처리 중입니다 - 처리가 끝난 뒤에 검토할 수 있어요")
             port = _alloc_port(_preferred_port(name))
             log_path = folder / "edit" / "server.log"
@@ -374,6 +390,9 @@ def create_project(title: str, content_length: int, rfile) -> dict:
             [sys.executable, str(HERE / "run.py"), str(folder), "--port", str(port), "--no-open"],
             cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
             start_new_session=True,
+            # 버퍼링되면 run.py의 "== 단계" 줄이 하위 프로세스 출력보다 늦게 찍혀 run.log 순서가
+            # 뒤섞인다 - 진행 화면의 실패 로그(server.py _log_tail)가 이 순서에 기댄다.
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
         with _active_lock:
             _active[name] = {"port": port, "proc": proc, "log": log_f}
