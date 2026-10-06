@@ -1238,8 +1238,11 @@ class Handler(BaseHTTPRequestHandler):
     # the connection instead of hanging, so a fresh request for the same range succeeds.
     timeout = 10
 
-    def log_message(self, fmt, *args):  # quieter console: media range requests are constant noise
-        if "/media" not in str(args[0] if args else ""):
+    def log_message(self, fmt, *args):
+        # 조용히: /media 범위 요청과 진행 화면의 1초 간격 /api/status 폴링은 끊임없는 잡음이다 -
+        # 10-06: 폴링 줄이 server.log를 덮어 정작 서버가 죽은 이유(맨 끝 traceback)를 못 찾았다.
+        req = str(args[0] if args else "")
+        if "/media" not in req and "/api/status" not in req:
             super().log_message(fmt, *args)
 
     def _json(self, obj, status=200):

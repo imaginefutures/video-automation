@@ -242,6 +242,34 @@ _active: dict[str, dict] = {}
 _uploading: set[str] = set()  # "영상 생성" 업로드가 진행 중인 이름 - 같은 제목 동시 생성 레이스 방지
 
 
+class LaunchError(RuntimeError):
+    """하위 프로세스(server.py/run.py)가 뜨자마자 죽음 - `detail`에 그 실행이 남긴 출력을 담아
+    홈 화면이 경로 대신 내용을 바로 보여주게 한다(10-06: "로그 경로 확인"만 떠서 사용자가
+    파일을 직접 열어야 했고, 그 파일은 폴링 잡음으로 덮여 있었다)."""
+
+    def __init__(self, message: str, detail: str | None):
+        super().__init__(message)
+        self.detail = detail
+
+
+def _log_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _log_since(path: Path, offset: int, max_lines: int = 40) -> str | None:
+    """로그 파일에서 이번 실행이 쓴 부분(offset 이후)만 - 같은 영상의 이전 실행 기록은 뺀다."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            text = f.read().decode(errors="replace")
+    except OSError:
+        return None
+    return "\n".join(text.splitlines()[-max_lines:]) or None
+
+
 def _is_managed(name: str) -> bool:
     """이 홈 서버가 그 이름의 server.py/run.py를 지금 살아서 띄우고 있는지 - project_status()가
     "처리 중" 카드를 클릭 가능하게 할지(막 업로드해서 아직 ng.json이 없는 경우) 판단하는 데 씀."""
@@ -320,18 +348,22 @@ def open_review(name: str) -> dict:
                 raise ValueError("아직 처리 중입니다 - 처리가 끝난 뒤에 검토할 수 있어요")
             port = _alloc_port(_preferred_port(name))
             log_path = folder / "edit" / "server.log"
+            log_offset = _log_size(log_path)
             log_f = open(log_path, "a")
             proc = subprocess.Popen(
                 [sys.executable, str(HERE / "server.py"), str(folder), "--port", str(port), "--no-open"],
                 cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
             )
-            _active[name] = {"port": port, "proc": proc, "log": log_f}
+            _active[name] = {"port": port, "proc": proc, "log": log_f,
+                             "log_path": log_path, "log_offset": log_offset}
         active = _active[name]
 
     deadline = time.time() + 12
     while time.time() < deadline:
         if active["proc"].poll() is not None:
-            raise RuntimeError(f"검토 서버가 바로 종료됐습니다 - {folder / 'edit' / 'server.log'} 확인")
+            raise LaunchError("검토 서버가 바로 종료됐습니다",
+                              _log_since(active.get("log_path", folder / "edit" / "server.log"),
+                                         active.get("log_offset", 0)))
         if _port_listening(active["port"]):
             return {"url": f"http://127.0.0.1:{active['port']}/"}
         time.sleep(0.2)
@@ -397,6 +429,7 @@ def _spawn_pipeline(name: str, folder: Path) -> tuple[int, subprocess.Popen, Pat
     edit_dir(folder)  # run.py가 edit/run.log를 열 수 있도록 미리 만들어 둠
     port = _alloc_port(_preferred_port(name))
     log_path = folder / "edit" / "run.log"
+    log_offset = _log_size(log_path)
     log_f = open(log_path, "a")
     proc = subprocess.Popen(
         [sys.executable, str(HERE / "run.py"), str(folder), "--port", str(port), "--no-open"],
@@ -407,7 +440,8 @@ def _spawn_pipeline(name: str, folder: Path) -> tuple[int, subprocess.Popen, Pat
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     with _active_lock:
-        _active[name] = {"port": port, "proc": proc, "log": log_f}
+        _active[name] = {"port": port, "proc": proc, "log": log_f,
+                         "log_path": log_path, "log_offset": log_offset}
     return port, proc, log_path
 
 
@@ -421,7 +455,8 @@ def _wait_pipeline(name: str, port: int, proc: subprocess.Popen, log_path: Path)
         # run.py가 이미 끝났어도 상태 파일에 자기 pid를 남겼다면 검토 서버(detached)는 띄운 뒤다 -
         # 그 서버가 bind할 때까지 마저 기다린다. 그 전에 죽었으면(서버도 못 띄움) 바로 알린다.
         if proc.poll() is not None and (read_pipeline_status(log_path.parent.parent) or {}).get("pid") != proc.pid:
-            raise RuntimeError(f"처리가 바로 종료됐습니다 - {log_path} 확인")
+            raise LaunchError("처리가 바로 종료됐습니다",
+                              _log_since(log_path, (_active.get(name) or {}).get("log_offset", 0)))
         time.sleep(0.2)
     raise RuntimeError("처리 서버가 제시간에 뜨지 않았습니다")
 
@@ -684,13 +719,13 @@ class Handler(BaseHTTPRequestHandler):
                 result = open_review(str(body.get("name", "")))
                 return self._json({"ok": True, **result})
             except Exception as e:  # surface to the UI instead of a silent 500
-                return self._json({"ok": False, "error": str(e)}, 400)
+                return self._json({"ok": False, "error": str(e), "detail": getattr(e, "detail", None)}, 400)
         if path == "/api/process":
             try:
                 result = resume_processing(str(body.get("name", "")))
                 return self._json({"ok": True, **result})
             except Exception as e:
-                return self._json({"ok": False, "error": str(e)}, 400)
+                return self._json({"ok": False, "error": str(e), "detail": getattr(e, "detail", None)}, 400)
         if path == "/api/setup/keys":
             valid_keys = {key for key, _, _ in REQUIRED_API_KEYS}
             pairs = {k: v for k, v in body.items()
