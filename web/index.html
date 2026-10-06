@@ -493,14 +493,17 @@ function renderPipelineProgress(st) {
   // 10-06: 실패했을 때 "왜"와 "이제 뭘 하나"가 없어 스피너만 보고 기다리던 문제 - 로그 끝부분과
   // 다시 시도(캐시돼 있어 실패한 단계부터 이어짐)/홈으로 버튼을 같이 보여준다.
   const homeUrl = `http://127.0.0.1:${st.home_port || 8764}/`;
+  window._pipelineErrText = `${st.stage || ''} 단계 실패 - ${st.error || ''}\n\n${st.log_tail || '(로그 없음)'}`;
   const errBlock = st.state === 'error'
     ? `<p style="color:#f66;max-width:520px;margin:2px 0 0">오류: ${esc(st.error || '')}</p>`
-      + (st.log_tail ? `<pre style="max-width:min(720px,92vw);max-height:40vh;overflow:auto;margin:0;padding:10px 12px;
+      + (st.log_tail ? `<pre style="user-select:text;-webkit-user-select:text;max-width:min(720px,92vw);max-height:40vh;overflow:auto;margin:0;padding:10px 12px;
                  background:#0d0e10;border:1px solid #2a2d31;border-radius:6px;color:#aaa;font-size:11.5px;
                  text-align:left;white-space:pre-wrap;word-break:break-all">${esc(st.log_tail)}</pre>` : '')
       + `<div style="display:flex;gap:10px">
            <button id="pipelineRetry" onclick="retryPipeline()" style="padding:8px 16px;border-radius:6px;border:0;
                    background:#7ab8ff;color:#0d0e10;font-weight:600;cursor:pointer">다시 시도</button>
+           <button onclick="copyText(window._pipelineErrText || '', this)" style="padding:8px 16px;border-radius:6px;
+                   border:1px solid #3a3d42;background:transparent;color:#ddd;cursor:pointer">로그 복사</button>
            <a href="${homeUrl}" style="padding:8px 16px;border-radius:6px;border:1px solid #3a3d42;color:#ddd;
                    text-decoration:none">홈으로</a>
          </div>
@@ -546,6 +549,24 @@ function renderPipelineProgress(st) {
     ${st.state === 'error' ? '' : '<p style="margin:0;color:#888;font-size:13px">처리가 끝나면 이 페이지가 자동으로 검토 화면으로 바뀝니다</p>'}`;
   // 매초 폴링마다 다시 그리면 로그 <pre> 스크롤이 맨 위로 튄다 - 내용이 바뀔 때만 교체
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+}
+// 오류 로그 복사 - 사용자가 로그를 그대로 붙여 보내는 게 원인을 찾는 가장 빠른 길이라(10-06 실제로
+// 그렇게 원인을 찾음) 드래그 선택에 기대지 않고 버튼 하나로. clipboard API가 막힌 환경 대비 폴백 포함.
+async function copyText(text, btn) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+    ta.remove();
+  }
+  if (btn) {
+    const label = btn.dataset.label || btn.textContent;
+    btn.dataset.label = label;
+    btn.textContent = ok ? '복사됨 ✓' : '복사 실패 - 직접 선택하세요';
+    setTimeout(() => { btn.textContent = label; }, 1800);
+  }
 }
 async function retryPipeline() {
   const btn = document.getElementById('pipelineRetry');

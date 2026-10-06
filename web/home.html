@@ -294,17 +294,39 @@ async function showErrorDetail(p, card) {
   try { log = (await (await fetch(`/api/log?name=${encodeURIComponent(p.name)}`)).json()).log_tail; } catch (e) { /* 로그 없이도 창은 띄운다 */ }
   showModal(`<h2 style="margin:0 0 6px;font-size:16px">${esc(p.name)} 처리 실패</h2>
     <p style="margin:0 0 10px;color:var(--danger)">${esc(p.stage ? p.stage + ' 단계에서 ' : '')}${esc(p.error || '처리 중 오류가 발생했습니다')}</p>
-    ${log ? `<pre style="max-height:45vh;overflow:auto;margin:0;padding:10px 12px;background:var(--chip);border-radius:6px;
+    ${log ? `<pre style="user-select:text;-webkit-user-select:text;max-height:45vh;overflow:auto;margin:0;padding:10px 12px;background:var(--chip);border-radius:6px;
                 font-size:11.5px;white-space:pre-wrap;word-break:break-all">${esc(log)}</pre>`
           : '<p style="margin:0;color:var(--muted);font-size:13px">남아 있는 처리 로그가 없습니다.</p>'}
     <p style="margin:10px 0 0;color:var(--muted);font-size:12px">다시 시도하면 이미 끝난 단계는 건너뛰고 실패한 단계부터 이어서 처리합니다.</p>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button id="modalNo">닫기</button>
+      <button id="modalCopy">로그 복사</button>
       <button id="modalRetry" class="primary">다시 시도</button>
     </div>`);
   $('#modalPanel').style.width = 'min(760px, 92vw)';
   $('#modalNo').addEventListener('click', hideModal);
+  $('#modalCopy').addEventListener('click', (ev) => copyText(
+    `${p.name} 처리 실패 - ${p.stage ? p.stage + ' 단계에서 ' : ''}${p.error || ''}\n\n${log || '(로그 없음)'}`, ev.currentTarget));
   $('#modalRetry').addEventListener('click', () => { hideModal(); startProcessing(p.name, card); });
+}
+
+// 오류 로그 복사 - 사용자가 로그를 그대로 붙여 보내는 게 원인을 찾는 가장 빠른 길이라(10-06 실제로
+// 그렇게 원인을 찾음) 드래그 선택에 기대지 않고 버튼 하나로. clipboard API가 막힌 환경 대비 폴백 포함.
+async function copyText(text, btn) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+    ta.remove();
+  }
+  if (btn) {
+    const label = btn.dataset.label || btn.textContent;
+    btn.dataset.label = label;
+    btn.textContent = ok ? '복사됨 ✓' : '복사 실패 - 직접 선택하세요';
+    setTimeout(() => { btn.textContent = label; }, 1800);
+  }
 }
 
 // 서버/처리 프로세스가 뜨자마자 죽으면 홈 서버가 그 실행의 출력(detail)을 같이 보낸다 - 토스트는
@@ -312,12 +334,13 @@ async function showErrorDetail(p, card) {
 function showLaunchError(data, fallback) {
   if (!data.detail) { toast(data.error || fallback); return; }
   showModal(`<h2 style="margin:0 0 6px;font-size:16px">${esc(data.error || fallback)}</h2>
-    <pre style="max-height:50vh;overflow:auto;margin:8px 0 0;padding:10px 12px;background:var(--chip);border-radius:6px;
+    <pre style="user-select:text;-webkit-user-select:text;max-height:50vh;overflow:auto;margin:8px 0 0;padding:10px 12px;background:var(--chip);border-radius:6px;
                 font-size:11.5px;white-space:pre-wrap;word-break:break-all">${esc(data.detail)}</pre>
-    <div style="display:flex;gap:8px;margin-top:14px"><button id="modalNo">닫기</button></div>`);
+    <div style="display:flex;gap:8px;margin-top:14px"><button id="modalNo">닫기</button><button id="modalCopy">로그 복사</button></div>`);
   $('#modalPanel').style.width = 'min(760px, 92vw)';
   const pre = $('#modalBox pre'); pre.scrollTop = pre.scrollHeight;  // 파이썬 에러는 원인이 맨 끝 줄
   $('#modalNo').addEventListener('click', hideModal);
+  $('#modalCopy').addEventListener('click', (ev) => copyText(`${data.error || fallback}\n\n${data.detail}`, ev.currentTarget));
 }
 
 async function resumeProcessing(name, card) {
