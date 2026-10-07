@@ -27,9 +27,13 @@ protect). In the review UI each gap is a gauge the user can
 drag (down to 0 = delete the pause entirely) and double-click to return to this
 recommendation. Changing a global target in the UI moves every recommendation with it.
 
-The trim never touches speech: it removes the MIDDLE of the gap, leaving the kept length
-split around it, plus PROTECT_SEC after the previous word and before the next (2.4 hard
-rule 4: 10-20ms boundary protection).
+The trim never touches speech: it removes a window from inside the gap, leaving the kept
+length split around it, plus PROTECT_SEC after the previous word and before the next (2.4
+hard rule 4: 10-20ms boundary protection). Where that window sits is not a geometric half-split
+any more (2026-10-08, 현재-설계/무음-리듬.md 재설계): with an audio map available, it's centered
+on the gap's quietest instant instead of its midpoint, and it steps aside for a whole breath
+rather than slicing through one - a breath that would otherwise land in the removed middle
+gets fully kept, even if that means removing a bit less than the target (see `trim_for_keep`).
 
 Writes <folder>/edit/pauses.json. Existing labels are reused for unchanged gaps, so
 re-running does not re-pay for classification.
@@ -47,7 +51,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, log_llm_usage
-from audio_map import load_audio_map, true_onset
+from audio_map import load_audio_map, true_onset, min_energy_in
 
 SHOW_MIN = 0.12       # below this a gap is articulation, not a pause; Scribe jitter is 50-100ms
 LLM_MIN = 0.35        # gaps this long get context-classified; shorter ones default to NORMAL
@@ -119,16 +123,51 @@ def recommended_keep(gap: dict, targets: dict[str, float | None]) -> float:
     return round(target, 3)
 
 
-def trim_for_keep(gap: dict, keep_sec: float) -> dict | None:
-    """The span to remove so that `keep_sec` of the gap remains (None = nothing removed)."""
+def removal_window(us: float, ue: float, rm: float, amap: dict | None) -> tuple[float, float]:
+    """Where in [us, ue] to place the `rm`-second span to remove. Without an audio map this
+    is just the geometric center (old behavior). With one: a breath anywhere in [us, ue] is
+    never sliced - the window is confined to whichever side of the breath has room for it
+    (preferring the side that already fits `rm`), and within whatever range it's confined to,
+    it's centered on the quietest point rather than that range's midpoint, so the actual cut
+    edges land on silence instead of wherever the math happens to fall."""
+    if rm <= 0:
+        return us, us
+    if not amap:
+        mid = (us + ue) / 2
+        return mid - rm / 2, mid + rm / 2
+
+    lo, hi = us, ue
+    breath = next((b for b in amap.get("breaths", []) if b["start"] < ue and b["end"] > us), None)
+    if breath:
+        before, after = max(0.0, breath["start"] - us), max(0.0, ue - breath["end"])
+        if after >= rm and after >= before:
+            lo, hi = breath["end"], ue
+        elif before > 0:
+            lo, hi = us, breath["start"]
+        # else: breath leaves no room on either side - fall through using the full [us, ue]
+        # and accept that the removed window may end up shorter than `rm` once clamped below.
+
+    center, _ = min_energy_in(amap, lo, hi)
+    start, end = center - rm / 2, center + rm / 2
+    if start < lo:
+        start, end = lo, lo + rm
+    if end > hi:
+        start, end = hi - rm, hi
+    return max(us, start), min(ue, end)
+
+
+def trim_for_keep(gap: dict, keep_sec: float, amap: dict | None = None) -> dict | None:
+    """The span to remove so that about `keep_sec` of the gap remains (None = nothing
+    removed). `amap` is optional so this still works pre-audio_map.py (e.g. tests, or a
+    video processed before it existed) - it just falls back to the old symmetric split."""
     us, ue = usable_range(gap["gap_start"], gap["gap_end"])
     usable = ue - us
     if usable <= 0 or keep_sec >= usable - 0.01:
         return None
-    if keep_sec <= 0.001:
-        return {"start": round(us, 3), "end": round(ue, 3)}
-    half = keep_sec / 2
-    return {"start": round(us + half, 3), "end": round(ue - half, 3)}
+    start, end = removal_window(us, ue, usable - max(0.0, keep_sec), amap)
+    if end - start < 0.01:
+        return None
+    return {"start": round(start, 3), "end": round(end, 3)}
 
 
 def build_gaps(words: list[dict], amap: dict | None = None) -> list[dict]:
@@ -227,7 +266,7 @@ def plan(folder: Path, use_llm: bool = True) -> Path:
         g["style"] = style
         g["llm_labeled"] = g["id"] in labels
         g["rec_keep"] = recommended_keep(g, targets)
-        g["trim"] = trim_for_keep(g, g["rec_keep"])
+        g["trim"] = trim_for_keep(g, g["rec_keep"], amap)
 
     trimmed = [g for g in gaps if g["trim"]]
     removed = sum(g["trim"]["end"] - g["trim"]["start"] for g in trimmed)
