@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주제별 분할</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    /* "편집자의 교정지" 토큰 - web/index.html과 같은 값 (see DESIGN.md) */
+    --bg: #ffffff; --panel: #fafafa; --surface-2: #f5f5f5; --ink: #171717; --muted: #666666; --line: #ebebeb; --line-strong: #a1a1a1;
+    --proposal-bg: #ffefcf; --proposal-line: #ab570a;
+    --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0058c0;
+    --chip: rgba(0,0,0,0.045); --chip-hover: rgba(0,0,0,0.08);
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 9999px;
+    --sidebar-w: 248px; --video-w: clamp(200px, 24vw, 420px);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font: 15px/1.5 -apple-system, "Geist", "Inter", "Pretendard", "Apple SD Gothic Neo", sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; color: inherit; }
+  kbd { display: inline-block; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,0.06); font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  svg.i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+
+  #app { display: flex; height: 100vh; }
+
+  /* ---------------------------------------------------------------- sidebar */
+  #sidebar { width: var(--sidebar-w); flex: 0 0 auto; height: 100vh; background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; }
+  #sideHead { padding: 16px 16px 10px; border-bottom: 1px solid var(--line); }
+  .title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #sidebar h1 { font-size: 14px; font-weight: 700; margin: 0; letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-row { display: flex; gap: 4px; }
+  .icon-btn { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-full);
+    background: var(--chip); padding: 0; }
+  .icon-btn:hover:not(:disabled) { background: var(--chip-hover); }
+  .icon-btn:disabled { opacity: 0.4; cursor: default; }
+  .sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  #sideScroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 10px; }
+  .label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); padding: 0 6px 6px; }
+  .seg-item { display: grid; grid-template-columns: 22px 1fr auto; gap: 2px 6px; align-items: start; width: 100%; text-align: left;
+    border: 0; background: transparent; border-radius: var(--r-md); padding: 7px 8px; }
+  .seg-item:hover { background: var(--chip); }
+  .seg-item.active { background: var(--accent-soft); }
+  .seg-item .n { font-size: 12px; color: var(--muted); }
+  .seg-item .t { font-size: 13.5px; line-height: 1.35; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; }
+  .seg-item .st { grid-column: 2 / 4; font-size: 12px; color: var(--proposal-line); }
+  .seg-item .st.ok { color: var(--accent-strong); font-weight: 600; }
+  .seg-item .d { font-size: 12px; color: var(--muted); }
+  .seg-item .d.out { color: var(--proposal-line); font-weight: 600; }
+  #sideFoot { padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+  .btn-secondary { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 7px 14px; font-size: 13px; }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--line-strong); }
+  .btn-secondary:disabled { opacity: 0.4; cursor: default; }
+  .keys { font-size: 12px; color: var(--muted); display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
+  .keys > kbd { justify-self: start; }
+  .note { font-size: 12px; color: var(--muted); }
+  /* 설명은 i 아이콘 툴팁으로 - 화면에 늘 떠 있는 글을 줄인다 */
+  .info { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--r-full);
+    border: 1px solid var(--line-strong); color: var(--muted); font: 600 10.5px/1 var(--mono); cursor: help; vertical-align: middle; margin-left: 6px; flex: 0 0 auto; }
+  .info:hover, .info:focus-visible { border-color: var(--ink); color: var(--ink); }
+  #keysBox summary { font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+  #keysBox summary:hover { color: var(--ink); }
+  #keysBox[open] summary { margin-bottom: 8px; }
+
+  /* ---------------------------------------------------------------- manuscript */
+  #main { flex: 1 1 auto; height: 100vh; overflow-y: auto; position: relative; }
+  #doc { max-width: 880px; padding: 28px 40px 50vh; }
+  @media (min-width: 681px) and (max-width: 1700px) { #doc { margin-right: calc(var(--video-w) + 24px); } }
+  @media (min-width: 1701px) { #doc { margin: 0 auto; } }
+
+  .seg { scroll-margin-top: 20px; }
+  .seg-head { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 16px; margin: 8px 0 10px; }
+  .seg-head .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .seg-num { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .seg-title { font-size: 16px; font-weight: 700; min-width: 40px; border-radius: var(--r-sm); padding: 1px 4px; margin-left: -4px; cursor: text; }
+  .seg-title:hover { background: var(--chip); }
+  .seg-title.empty { color: var(--muted); font-weight: 400; }
+  .seg-title[contenteditable="true"] { background: var(--bg); outline: 2px solid var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .seg-meta { font-size: 12.5px; color: var(--muted); }
+  .seg-meta .out { color: var(--proposal-line); font-weight: 600; }
+  .seg-actions { margin-left: auto; display: flex; gap: 4px; }
+  .seg-actions button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: var(--chip); border-radius: var(--r-md); padding: 4px 9px; font-size: 12.5px; }
+  .seg-actions button:hover { background: var(--chip-hover); }
+  .issues { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .issues li { font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
+  .issues .tag { flex: 0 0 auto; font-size: 12px; font-weight: 600; border-radius: var(--r-full); padding: 1px 8px; }
+  .issues .boundary .tag { background: var(--proposal-bg); color: var(--proposal-line); }
+  .issues .reference .tag { background: var(--chip); color: var(--muted); }
+  .issues a { color: inherit; font-family: var(--mono); font-size: 12px; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); }
+
+  .sent { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 2px 6px; margin: 0 -6px; border-radius: var(--r-sm);
+    font-size: 17px; line-height: 1.85; cursor: pointer; }
+  .sent:hover { background: var(--panel); }
+  .sent .ts { font-size: 12px; color: var(--muted); padding-top: 6px; }
+  .sent .txt { border-radius: 3px; }
+  .sent.q-boundary .txt { background: var(--proposal-bg); }
+  .sent.q-reference .txt { text-decoration: underline dotted var(--line-strong); text-underline-offset: 5px; }
+  .sent.selected { background: var(--accent-soft); }
+  .sent.playing .ts { color: var(--accent); font-weight: 700; }
+  /* 마우스를 올린 문장에만 보이는 "여기서 나누기" - 키보드 S와 같은 동작 */
+  .split-btn { position: absolute; right: 6px; top: 4px; display: none; align-items: center; gap: 5px; border: 1px solid var(--line-strong);
+    background: var(--bg); border-radius: var(--r-full); padding: 2px 10px; font-size: 12px; color: var(--ink); }
+  .split-btn:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+  .sent:hover .split-btn, .sent.selected .split-btn { display: inline-flex; }
+  .sent .edited { font-size: 11px; color: var(--muted); margin-left: 6px; font-family: var(--mono); }
+  .sent .txt[contenteditable="true"] { background: var(--bg); outline: 2px solid var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); cursor: text; padding: 0 3px; }
+
+  /* 편 사이 경계 핸들 */
+  .boundary { position: relative; height: 34px; margin: 6px 0; display: flex; align-items: center; cursor: ns-resize; outline: none; }
+  .boundary::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--line-strong); }
+  .boundary .grip { position: relative; margin: 0 auto; display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--line-strong);
+    border-radius: var(--r-full); padding: 3px 12px; font-size: 12px; color: var(--muted); user-select: none; }
+  .boundary:hover .grip { border-color: var(--ink); color: var(--ink); }
+  .boundary .merge-btn { position: relative; margin-left: 8px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line);
+    background: var(--bg); border-radius: var(--r-full); padding: 3px 10px; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .boundary .merge-btn:hover { border-color: var(--ink); color: var(--ink); }
+  .boundary .bwrap { position: relative; margin: 0 auto; display: inline-flex; align-items: center; }
+  .boundary.focused::before, .boundary:focus-visible::before { border-top: 2px solid var(--accent); }
+  .boundary.focused .grip, .boundary:focus-visible .grip { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+  .boundary.dragging { opacity: 0.35; }
+  #dropLine { position: absolute; height: 0; border-top: 2px solid var(--accent); pointer-events: none; display: none; z-index: 5; }
+  #dropLine span { position: absolute; right: 0; top: -22px; background: var(--ink); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: var(--r-sm); font-family: var(--mono); }
+
+  /* ---------------------------------------------------------------- floating video */
+  #videoWrap { position: fixed; top: 16px; right: 16px; width: var(--video-w); border-radius: 14px; overflow: hidden; background: #000;
+    box-shadow: 0 20px 50px -12px rgba(0,0,0,0.7), 0 0 0 1px var(--line); z-index: 10; }
+  #videoWrap video { display: block; width: 100%; }
+  #nowPlaying { background: var(--ink); color: #fff; font-size: 12px; padding: 6px 10px; display: flex; justify-content: space-between; gap: 8px; }
+  @media (max-width: 680px) {
+    #videoWrap { display: none; }
+    /* 좁은 화면: 사이드바를 위로 올리고 대본이 전체 폭을 쓴다 */
+    #app { flex-direction: column; }
+    #sidebar { width: 100%; height: auto; max-height: 38vh; border-right: 0; border-bottom: 1px solid var(--line); }
+    #sideFoot { display: none; }
+    #main { height: auto; flex: 1 1 auto; min-height: 0; }
+    #doc { padding: 16px 16px 50vh; }
+    .sent { grid-template-columns: 44px 1fr; gap: 6px; font-size: 16px; }
+    .seg-actions { margin-left: 0; }
+  }
+
+  /* 내보내기 - 확정 버튼(DESIGN.md Confirm)과 진행·결과 모달 */
+  .btn-confirm { width: 100%; border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--accent-ink); padding: 10px 9px; font-size: 13.5px; font-weight: 600; }
+  .btn-confirm:hover:not(:disabled) { filter: brightness(1.06); }
+  .btn-confirm:disabled { opacity: 0.5; cursor: default; }
+  #exportNote { font-size: 12px; color: var(--muted); margin-top: -4px; }
+  #exportNote.stale { color: var(--proposal-line); font-weight: 600; }
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 20; }
+  #modal.show { display: flex; }
+  #modal .box { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 22px 26px; width: min(640px, 92vw); max-height: 82vh; overflow-y: auto;
+    box-shadow: 0 24px 60px -14px rgba(0,0,0,0.25); }
+  #modal h2 { margin: 0 0 4px; font-size: 16px; }
+  #modal .note { font-size: 12.5px; color: var(--muted); margin: 0 0 14px; }
+  .progress-track { height: 6px; border-radius: var(--r-full); background: var(--surface-2); overflow: hidden; margin: 12px 0 6px; }
+  .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 200ms ease; }
+  .out-row { display: grid; grid-template-columns: 26px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+  .out-row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .out-row a { font-size: 12.5px; color: var(--accent-strong); text-decoration: none; border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px 9px; }
+  .out-row a:hover { border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  .modal-actions .primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); border-radius: var(--r-md); padding: 7px 14px; font-size: 13px; text-decoration: none; }
+  .modal-actions .primary:disabled { opacity: 0.5; cursor: default; }
+  .err-box { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; max-height: 30vh; overflow: auto; }
+
+  /* 인트로 이미지 - 편 머리의 버튼(고른 이미지 썸네일)과 4장 중 고르는 창 */
+  .seg-actions .intro-btn img { height: 18px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 3px; display: block; }
+  .seg-actions .intro-btn.none { color: var(--muted); }
+  .intro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 4px; }
+  .intro-cand { position: relative; padding: 0; border: 2px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); overflow: hidden; }
+  .intro-cand:hover { border-color: var(--line-strong); }
+  .intro-cand.on { border-color: var(--accent); }
+  .intro-cand img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+  .intro-cand .badge { position: absolute; left: 8px; top: 8px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; border-radius: var(--r-full); padding: 1px 9px; }
+  .intro-warn { font-size: 12.5px; color: var(--proposal-line); margin: 8px 0 0; }
+  .intro-cell { display: flex; flex-direction: column; gap: 4px; }
+  .intro-cell .cap { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .intro-core { font-size: 13px; margin: 2px 0 0; }
+  .intro-core b { color: var(--muted); font-weight: 600; margin-right: 6px; }
+  .issues .ok-btn { flex: 0 0 auto; margin-left: auto; border: 1px solid var(--line); background: var(--bg); border-radius: var(--r-full); padding: 0 9px; font-size: 12px; color: var(--muted); }
+  .issues .ok-btn:hover { border-color: var(--ink); color: var(--ink); }
+  #brandNote { font-size: 12px; color: var(--muted); }
+  #brandNote a { color: inherit; }
+
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 9px 16px;
+    border-radius: 9px; font-size: 13.5px; opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 30; }
+  #toast.show { opacity: 1; }
+  #loading { padding: 40px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div id="sideHead">
+      <div class="title-row">
+        <h1 id="name">주제별 분할</h1>
+        <div class="history-row">
+          <a href="http://127.0.0.1:8764/#split" id="homeLink" class="icon-btn" title="프로젝트 홈으로" aria-label="프로젝트 홈으로" style="text-decoration:none;color:inherit">
+            <svg class="i" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg></a>
+          <button class="icon-btn" id="btnUndo" aria-label="되돌리기" title="되돌리기 (⌘Z)" disabled>
+            <svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+          <button class="icon-btn" id="btnRedo" aria-label="다시 실행" title="다시 실행 (⇧⌘Z)" disabled>
+            <svg class="i" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+        </div>
+      </div>
+      <div class="sub" id="summary"></div>
+    </div>
+    <div id="sideScroll">
+      <div class="label" id="segCount">편</div>
+      <div id="segList"></div>
+    </div>
+    <div id="sideFoot">
+      <details id="keysBox"><summary>단축키</summary>
+      <div class="keys">
+        <span>드래그 <kbd>↑↓</kbd></span><span>경계 옮기기</span>
+        <kbd>S</kbd><span>여기서 나누기</span>
+        <kbd>M</kbd><span>경계 없애기 (합치기)</span>
+        <span>더블클릭</span><span>제목·대본 글자 고치기</span>
+        <kbd>Space</kbd><span>재생 / 멈춤</span>
+      </div>
+      </details>
+      <button class="btn-secondary" id="btnTitles" title="지금 나눈 경계와 고친 대본을 읽고 모든 편의 제목을 다시 짓습니다">제목 자동 작성</button>
+      <button class="btn-secondary" id="btnReset" disabled>제안으로 되돌리기</button>
+      <button class="btn-confirm" id="btnExport" title="편별 영상과 대본을 out 폴더에 만들고 내려받습니다">내보내기</button>
+      <div id="exportNote"></div>
+      <div id="brandNote"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="dropLine"><span></span></div>
+    <div id="doc"><div id="loading">불러오는 중…</div></div>
+  </main>
+</div>
+
+<div id="videoWrap">
+  <video id="player" src="/media" preload="metadata" controls></video>
+  <div id="nowPlaying"><span id="npLabel">대기</span><span class="mono" id="npTime">00:00</span></div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="modal"><div class="box" role="dialog" aria-modal="true" aria-label="내보내기" id="modalBox"></div></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const player = $('#player');
+let S = null;              // /api/state 응답
+let dec = null;            // {ends, titles, text_edits} - 지금 화면 상태
+let segs = [];             // 서버가 계산한 편 (자르는 시각 포함)
+let undoStack = [], redoStack = [];
+let selSent = null, focusB = null;   // 선택한 문장 번호, 선택한 경계(= 앞 편 번호, 0부터)
+let stopAt = null;
+
+const fmt = t => { t = Math.max(0, t); const m = Math.floor(t / 60), s = Math.floor(t % 60); return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; };
+const fmtDur = t => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
+const clone = o => JSON.parse(JSON.stringify(o));
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2200); }
+const sentText = i => (dec.text_edits && dec.text_edits[i] != null) ? dec.text_edits[i] : S.sentences[i].text;
+
+async function load() {
+  S = await (await fetch('/api/state')).json();
+  dec = S.decisions; segs = S.segments;
+  dec.intros ||= []; dec.dismissed ||= [];
+  if (S.exporting) pollExport();
+  try { $('#keysBox').open = localStorage.getItem('split.keysOpen') === '1'; } catch (e) { /* 저장소 없음 - 접힌 채로 */ }
+  $('#keysBox').addEventListener('toggle', () => { try { localStorage.setItem('split.keysOpen', $('#keysBox').open ? '1' : '0'); } catch (e) { /* 무시 */ } });
+  $('#name').textContent = S.name; $('#name').title = S.name;
+  $('#homeLink').href = `http://127.0.0.1:${S.home_port || 8764}/#split`;
+  document.title = `${S.name} · 주제별 분할`;
+  render();
+}
+
+// 모든 변경은 서버에 저장하고, 서버가 계산한 자르는 시각으로 다시 그린다
+async function commit(next, action) {
+  undoStack.push(clone(dec)); redoStack = [];
+  await save(next, action);
+}
+async function save(next, action) {
+  const r = await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...next, action }) });
+  const data = await r.json();
+  if (!r.ok) { toast(data.error || '저장하지 못했습니다'); undoStack.pop(); return; }
+  dec = data.decisions; segs = data.segments; S.edited = true;
+  dec.intros ||= []; dec.dismissed ||= [];
+  if (S.export) S.export.stale = S.export.decisions_updated_at !== dec.updated_at;
+  render();
+}
+
+const issueKey = it => `${it.sent}:${it.kind}`;
+function issuesBySent() {
+  const m = {}, off = new Set(dec.dismissed || []);
+  for (const it of S.issues) if (!off.has(issueKey(it))) (m[it.sent] ||= []).push(it);
+  return m;
+}
+function dismissIssue(it) {
+  const n = clone(dec); n.dismissed = [...new Set([...(n.dismissed || []), issueKey(it)])];
+  commit(n, 'dismiss_issue'); toast('문제 없음으로 표시했습니다 (⌘Z로 취소)');
+}
+// 편이 내보낼 준비가 됐나 - 빠진 것 목록 (비면 준비됨)
+function segMissing(g, k, ibs) {
+  const miss = [];
+  if (!dec.titles[k]) miss.push('제목');
+  if (!dec.intros[k]) miss.push('인트로');
+  const b = segIssues(g, ibs).filter(i => i.kind === 'boundary').length;
+  if (b) miss.push(`경계 확인 ${b}건`);
+  if (!S.outro) miss.push('아웃트로');
+  return miss;
+}
+
+function render() {
+  const keepTop = $('#main').scrollTop;
+  const ibs = issuesBySent();
+  const lo = S.min_minutes, hi = S.max_minutes;
+  $('#summary').innerHTML = `<span class="mono">${fmt(S.duration)}</span> · 문장 ${S.sentences.length}개 · 대본: ${S.source === 'srt' ? '자막 파일' : '전사'}<br>목표 한 편 ${lo}~${hi}분`;
+  const readyN = segs.filter((g, k) => !segMissing(g, k, ibs).length).length;
+  $('#segCount').textContent = `편 ${segs.length}개 · 준비 ${readyN}/${segs.length}`;
+  $('#btnReset').disabled = !S.edited;
+  renderExportNote();
+  $('#btnUndo').disabled = !undoStack.length; $('#btnRedo').disabled = !redoStack.length;
+
+  // 사이드바 목록
+  const list = $('#segList'); list.innerHTML = '';
+  segs.forEach((g, k) => {
+    const b = document.createElement('button'); b.className = 'seg-item'; b.dataset.k = k;
+    const miss = segMissing(g, k, ibs);
+    b.innerHTML = `<span class="n mono">${k + 1}</span><span class="t"></span><span class="d mono ${g.length_ok ? '' : 'out'}">${fmtDur(g.duration)}</span>` +
+      `<span class="st ${miss.length ? '' : 'ok'}">${miss.length ? '필요: ' + miss.join(' · ') : '✓ 준비됨'}</span>`;
+    b.querySelector('.t').textContent = g.title || '제목 없음';
+    b.title = g.title || '';
+    b.onclick = () => document.getElementById(`seg-${k}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    list.appendChild(b);
+  });
+
+  // 대본
+  const doc = $('#doc'); doc.innerHTML = '';
+  segs.forEach((g, k) => {
+    if (k > 0) doc.appendChild(boundaryEl(k - 1));
+    const sec = document.createElement('section'); sec.className = 'seg'; sec.id = `seg-${k}`;
+    const head = document.createElement('div'); head.className = 'seg-head';
+    const lenCls = g.length_ok ? '' : 'out';
+    head.innerHTML = `<div class="row">
+        <span class="seg-num">${k + 1}편</span>
+        <span class="seg-title ${g.title ? '' : 'empty'}" title="더블클릭해서 제목 고치기"></span>
+        <span class="seg-meta"><span class="mono ${lenCls}">${fmtDur(g.duration)}</span>${g.length_ok ? '' : ` <span class="out">목표 ${lo}~${hi}분 밖</span>`} · <span class="mono">${fmt(g.start)}~${fmt(g.end)}</span></span>
+        <span class="seg-actions">
+          <button data-play="all"><svg class="i" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>편 재생</button>
+          <button data-play="head">시작 3초</button>
+          <button data-play="tail">끝 3초</button>
+          <button class="intro-btn ${dec.intros[k] ? '' : 'none'}" title="이 편 앞에 ${S.intro_sec}초 붙는 인트로 이미지">${dec.intros[k]
+            ? `<img src="/api/intro/img?f=${encodeURIComponent(dec.intros[k])}" alt="">인트로` : '인트로 없음'}</button>
+        </span></div>`;
+    const tEl = head.querySelector('.seg-title');
+    tEl.textContent = g.title || '제목 없음';
+    tEl.ondblclick = () => editInline(tEl, g.title || '', v => { const n = clone(dec); n.titles[k] = v; commit(n, 'title'); });
+    head.querySelector('.intro-btn').onclick = () => openIntro(k);
+    head.querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
+      const p = b.dataset.play;
+      if (p === 'all') playRange(g.start, g.end, `${k + 1}편`);
+      if (p === 'head') playRange(g.start, Math.min(g.end, g.start + 3), `${k + 1}편 시작`);
+      if (p === 'tail') playRange(Math.max(g.start, g.end - 3), g.end, `${k + 1}편 끝`);
+    });
+    const its = segIssues(g, ibs);
+    if (its.length) {
+      const ul = document.createElement('ul'); ul.className = 'issues';
+      for (const it of its) {
+        const li = document.createElement('li'); li.className = it.kind;
+        li.innerHTML = `<span class="tag">${it.kind === 'boundary' ? '경계 확인' : '경계로는 못 고침'}</span><span><a>${fmt(S.sentences[it.sent].start)}</a> <span class="nt"></span></span><button class="ok-btn" title="확인했고 고칠 필요 없음 - 이 알림을 없앱니다">문제 없음</button>`;
+        li.querySelector('.nt').textContent = it.note;
+        li.querySelector('.ok-btn').onclick = () => dismissIssue(it);
+        li.querySelector('a').onclick = () => selectSent(it.sent, true);
+        ul.appendChild(li);
+      }
+      head.appendChild(ul);
+    }
+    sec.appendChild(head);
+    for (let i = g.start_sent; i <= g.end_sent; i++) sec.appendChild(sentEl(i, ibs[i]));
+    doc.appendChild(sec);
+  });
+  $('#main').scrollTop = keepTop;
+  if (focusB != null) { const b = doc.querySelector(`.boundary[data-b="${focusB}"]`); if (b) { b.classList.add('focused'); b.focus({ preventScroll: true }); } }
+  markActive();
+  pollRefine();
+}
+
+const segIssues = (g, ibs) => { const out = []; for (let i = g.start_sent; i <= g.end_sent; i++) if (ibs[i]) out.push(...ibs[i]); return out; };
+
+function sentEl(i, its) {
+  const s = S.sentences[i];
+  const el = document.createElement('div'); el.className = 'sent'; el.dataset.i = i;
+  if (its) el.classList.add(its.some(x => x.kind === 'boundary') ? 'q-boundary' : 'q-reference');
+  if (i === selSent) el.classList.add('selected');
+  el.innerHTML = `<span class="ts mono">${fmt(s.start)}</span><span><span class="txt"></span></span>`;
+  const txt = el.querySelector('.txt'); txt.textContent = sentText(i);
+  const seg = segs.find(g => g.start_sent <= i && i <= g.end_sent);
+  if (seg && i !== seg.start_sent) {
+    const btn = document.createElement('button'); btn.className = 'split-btn'; btn.title = '이 문장부터 새 편으로 나누기 (S)';
+    btn.innerHTML = '<svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9"/><path d="M14.5 14.5 20 20"/><path d="M8.1 8.1 12 12"/></svg>여기서 나누기';
+    btn.onclick = e => { e.stopPropagation(); splitAt(i); toast('나눴습니다 - 새 편의 제목을 더블클릭해 입력하세요'); };
+    el.appendChild(btn);
+  }
+  if (dec.text_edits && dec.text_edits[i] != null) el.lastChild.insertAdjacentHTML('beforeend', '<span class="edited">수정됨</span>');
+  if (its) el.title = its.map(x => x.note).join('\n');
+  el.onclick = e => { if (txt.isContentEditable) return; selectSent(i); playRange(s.start, null, `문장 ${fmt(s.start)}`); };
+  txt.ondblclick = e => { e.stopPropagation(); player.pause();
+    editInline(txt, sentText(i), v => { const n = clone(dec); n.text_edits = { ...(n.text_edits || {}) }; if (v === s.text) delete n.text_edits[i]; else n.text_edits[i] = v; commit(n, 'text_edit'); }); };
+  return el;
+}
+
+// 경계를 무엇에 맞춰 잘랐는지 (split_refine.py)
+const CUT_REASON = { black: '검은 화면', scene: '장면 전환', caption: '자막 바뀜', audio: '소리 쉼', pending: '다듬는 중…' };
+let refinePoll = null;
+function pollRefine() {
+  clearTimeout(refinePoll);
+  if (!segs.some(g => g.cut_reason === 'pending')) return;
+  refinePoll = setTimeout(async () => {
+    try { segs = (await (await fetch('/api/segments')).json()).segments; render(); } catch (e) { /* 다음 저장 때 다시 */ }
+  }, 1200);
+}
+
+function boundaryEl(b) {
+  // b = 앞 편 번호(0부터). 이 경계 = dec.ends[b] 문장 뒤
+  const el = document.createElement('div'); el.className = 'boundary'; el.tabIndex = 0; el.dataset.b = b;
+  el.setAttribute('role', 'separator'); el.setAttribute('aria-label', `${b + 1}편과 ${b + 2}편 사이 경계`);
+  const why = CUT_REASON[segs[b].cut_reason] || '';
+  el.innerHTML = `<span class="bwrap"><span class="grip" title="위아래로 끌어서 경계 옮기기${why ? ' · 자르는 위치: ' + why : ''}"><svg class="i" viewBox="0 0 24 24"><path d="m8 8 4-4 4 4"/><path d="m8 16 4 4 4-4"/></svg><span class="mono">${fmt(segs[b].end)}</span> 경계${why ? ' · ' + why : ''}</span>` +
+    `<button class="merge-btn" title="이 경계를 없애고 앞뒤 편을 하나로 합치기 (M)"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>경계 없애기</button></span>`;
+  el.querySelector('.merge-btn').onclick = e => { e.stopPropagation(); mergeAt(b); toast(`${b + 1}편과 ${b + 2}편을 합쳤습니다 (⌘Z로 취소)`); };
+  el.onfocus = () => { focusB = b; document.querySelectorAll('.boundary.focused').forEach(x => x.classList.remove('focused')); el.classList.add('focused'); };
+  el.onpointerdown = e => startDrag(e, b, el);
+  return el;
+}
+
+// ------------------------------------------------------------------ 경계 옮기기
+function moveBoundary(b, newEnd, action) {
+  const lo = b === 0 ? 0 : dec.ends[b - 1] + 1;       // 앞 편은 최소 한 문장
+  const hi = dec.ends[b + 1] - 1;                      // 뒤 편도 최소 한 문장
+  newEnd = Math.max(lo, Math.min(hi, newEnd));
+  if (newEnd === dec.ends[b]) return;
+  const n = clone(dec); n.ends[b] = newEnd; focusB = b; commit(n, action);
+}
+
+function startDrag(e, b, el) {
+  if (e.button !== 0 || e.target.closest('button')) return;
+  e.preventDefault(); el.focus({ preventScroll: true });
+  const startY = e.clientY; let moved = false, target = null;
+  const line = $('#dropLine'), main = $('#main');
+  const lo = b === 0 ? 0 : dec.ends[b - 1] + 1, hi = dec.ends[b + 1] - 1;
+  const onMove = ev => {
+    if (!moved && Math.abs(ev.clientY - startY) < 4) return;
+    moved = true; el.classList.add('dragging');
+    // 포인터에 가장 가까운 문장 사이 틈을 찾는다 (경계 = 문장 k 뒤)
+    let best = null, bestD = Infinity;
+    for (let k = lo; k <= hi; k++) {
+      const a = document.querySelector(`.sent[data-i="${k}"]`); if (!a) continue;
+      const y = a.getBoundingClientRect().bottom; const d = Math.abs(ev.clientY - y);
+      if (d < bestD) { bestD = d; best = { k, y }; }
+    }
+    if (!best) return;
+    target = best.k;
+    const mr = main.getBoundingClientRect();
+    const dr = $('#doc').getBoundingClientRect(), pad = 40;  // 대본 열 폭에만 긋는다 (영상 아래로 안 뻗게)
+    line.style.left = `${dr.left - mr.left + pad}px`; line.style.width = `${dr.width - pad * 2}px`;
+    line.style.display = 'block'; line.style.top = `${best.y - mr.top + main.scrollTop}px`;
+    const prevStart = segs[b].start, nextEnd = segs[b + 1].end, cut = S.sentences[target + 1].start;
+    line.firstChild.textContent = `${b + 1}편 ${fmtDur(cut - prevStart)} · ${b + 2}편 ${fmtDur(nextEnd - cut)}`;
+    // 가장자리에서 자동 스크롤
+    if (ev.clientY < mr.top + 60) main.scrollTop -= 14; else if (ev.clientY > mr.bottom - 60) main.scrollTop += 14;
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
+    line.style.display = 'none'; el.classList.remove('dragging');
+    if (moved && target != null) moveBoundary(b, target, 'drag');
+  };
+  window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
+}
+
+function splitAt(i) {
+  const k = segs.findIndex(g => g.start_sent <= i && i <= g.end_sent);
+  if (k < 0) return;
+  if (i === segs[k].start_sent) { toast('이미 편의 첫 문장입니다'); return; }
+  const n = clone(dec); n.ends.splice(k, 0, i - 1); n.titles.splice(k + 1, 0, '');
+  n.intros = padIntros(n.intros, segs.length); n.intros.splice(k + 1, 0, null);
+  focusB = k; commit(n, 'split');
+}
+function mergeAt(b) {
+  const n = clone(dec);
+  const keep = n.titles[b] || n.titles[b + 1] || '';
+  n.ends.splice(b, 1); n.titles.splice(b, 2, keep);
+  n.intros = padIntros(n.intros, segs.length); n.intros.splice(b, 2, n.intros[b] || n.intros[b + 1] || null);
+  focusB = null; commit(n, 'merge');
+}
+
+// ------------------------------------------------------------------ 선택·편집·재생
+function selectSent(i, scroll) {
+  selSent = i;
+  document.querySelectorAll('.sent.selected').forEach(x => x.classList.remove('selected'));
+  const el = document.querySelector(`.sent[data-i="${i}"]`);
+  if (el) { el.classList.add('selected'); if (scroll) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+
+function editInline(el, initial, done) {
+  if (el.isContentEditable) return;
+  el.contentEditable = 'true'; el.textContent = initial; el.classList.remove('empty'); el.focus();
+  document.getSelection().selectAllChildren(el);
+  let finished = false;
+  const end = ok => {
+    if (finished) return; finished = true;
+    el.contentEditable = 'false';
+    const v = el.textContent.replace(/\s+/g, ' ').trim();
+    if (ok && v !== initial.trim()) done(v); else render();
+  };
+  el.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); end(true); } if (e.key === 'Escape') end(false); };
+  el.onblur = () => end(true);
+}
+
+function playRange(a, b, label) {
+  player.currentTime = a; stopAt = b; player.play();
+  $('#npLabel').textContent = label;
+}
+player.addEventListener('timeupdate', () => {
+  const t = player.currentTime;
+  $('#npTime').textContent = fmt(t);
+  if (stopAt != null && t >= stopAt) { player.pause(); stopAt = null; }
+  const cur = document.querySelector('.sent.playing');
+  const i = S ? S.sentences.findIndex(s => s.start <= t && t < s.end + s.gap_after) : -1;
+  if (cur && +cur.dataset.i !== i) cur.classList.remove('playing');
+  if (i >= 0) { const el = document.querySelector(`.sent[data-i="${i}"]`); if (el) el.classList.add('playing'); }
+});
+
+function markActive() {
+  const main = $('#main'), top = main.getBoundingClientRect().top + 80;
+  let k = 0;
+  document.querySelectorAll('.seg').forEach((s, idx) => { if (s.getBoundingClientRect().top <= top) k = idx; });
+  document.querySelectorAll('.seg-item').forEach(x => x.classList.toggle('active', +x.dataset.k === k));
+}
+$('#main').addEventListener('scroll', () => requestAnimationFrame(markActive));
+
+// ------------------------------------------------------------------ 키보드
+document.addEventListener('keydown', e => {
+  if (e.target.isContentEditable || $('#modal').classList.contains('show')) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (e.key === ' ') { e.preventDefault(); player.paused ? (stopAt = null, player.play()) : player.pause(); return; }
+  if (focusB != null && document.activeElement?.classList.contains('boundary')) {
+    if (e.key === 'ArrowUp') { e.preventDefault(); moveBoundary(focusB, dec.ends[focusB] - 1, 'key'); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveBoundary(focusB, dec.ends[focusB] + 1, 'key'); return; }
+    if (e.key.toLowerCase() === 'm') { e.preventDefault(); mergeAt(focusB); return; }
+  }
+  if (e.key.toLowerCase() === 's' && !mod && selSent != null) { e.preventDefault(); splitAt(selSent); return; }
+  if (e.key === 'Escape') { selSent = null; focusB = null; document.activeElement?.blur(); render(); }
+});
+
+function undo() { if (!undoStack.length) return; redoStack.push(clone(dec)); save(undoStack.pop(), 'undo'); }
+function redo() { if (!redoStack.length) return; undoStack.push(clone(dec)); save(redoStack.pop(), 'redo'); }
+$('#btnUndo').onclick = undo; $('#btnRedo').onclick = redo;
+$('#btnReset').onclick = async () => {
+  undoStack.push(clone(dec)); redoStack = [];
+  const r = await fetch('/api/reset', { method: 'POST' }); S = await r.json(); dec = S.decisions; segs = S.segments; focusB = null;
+  render(); toast('제안 상태로 되돌렸습니다 (⌘Z로 취소)');
+};
+
+$('#btnTitles').onclick = async () => {
+  const btn = $('#btnTitles'); btn.disabled = true; btn.textContent = '제목 짓는 중…';
+  try {
+    const r = await fetch('/api/titles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dec) });
+    const data = await r.json();
+    if (!r.ok) { toast(data.error || '제목을 짓지 못했습니다'); return; }
+    const n = clone(dec); n.titles = data.titles;
+    await commit(n, 'auto_titles');
+    toast(`${data.titles.length}편 제목을 다시 지었습니다 (⌘Z로 되돌리기)`);
+  } catch (e) { toast('서버에 연결할 수 없습니다'); }
+  finally { btn.disabled = false; btn.textContent = '제목 자동 작성'; }
+};
+
+// ------------------------------------------------------------------ 인트로 이미지 (split_intro.py)
+const padIntros = (a, n) => { a = [...(a || [])]; while (a.length < n) a.push(null); return a; };
+let introBusy = null;   // 만드는 중인 편 번호
+function openIntro(k) {
+  const g = segs[k], key = `${g.start_sent}-${g.end_sent}`, cand = S.intro_candidates[key];
+  const cur = dec.intros[k], title = dec.titles[k] || '';
+  const files = cand ? cand.files : [];
+  if (cur && !files.includes(cur)) files.unshift(cur);   // 경계를 옮겨서 후보 목록이 바뀌어도 고른 건 보인다
+  const caps = {}; if (cand) cand.files.forEach((f, i) => { caps[f] = (cand.captions || [])[i] || ''; });
+  const grid = files.map(f => `<div class="intro-cell"><button class="intro-cand ${f === cur ? 'on' : ''}" data-f="${esc(f)}">
+      <img src="/api/intro/img?f=${encodeURIComponent(f)}" alt="인트로 후보">${f === cur ? '<span class="badge">선택됨</span>' : ''}</button>
+      ${caps[f] ? `<span class="cap">${esc(caps[f])}</span>` : ''}</div>`).join('');
+  const help = `편 앞에 ${S.intro_sec}초 붙습니다 (검은 화면에서 페이드 인·아웃). 이미지를 누르면 고릅니다 - 제목 글자가 정확한지도 확인하세요. 한 번 만들 때 약 400원 (Nano Banana 2 이미지 4장).`;
+  const busy = introBusy === k;
+  showModal(`<h2>${k + 1}편 인트로<span class="info" tabindex="0" title="${esc(help)}" aria-label="${esc(help)}">i</span></h2>
+    ${cand && cand.core ? `<p class="intro-core"><b>핵심</b>${esc(cand.core)}</p>` : ''}
+    ${files.length ? `<div class="intro-grid">${grid}</div>` : '<p class="note">아직 만든 이미지가 없습니다.</p>'}
+    ${cand && cand.title !== title ? `<p class="intro-warn">이 이미지들은 예전 제목 "${esc(cand.title)}"으로 만들었습니다 - 다시 만들면 지금 제목이 들어갑니다</p>` : ''}
+    ${!title ? '<p class="intro-warn">편 제목이 없습니다 - 제목을 먼저 정해야 인트로를 만들 수 있습니다</p>' : ''}
+    ${busy ? '<p class="note" style="margin-top:12px">만드는 중… 30초쯤 (창을 닫아도 계속됩니다)</p>' : ''}
+    <div class="modal-actions">
+      <button class="primary" id="mGen" ${busy || introBusy != null || !title ? 'disabled' : ''}>${busy ? '만드는 중…' : files.length ? '4장 다시 만들기' : '4장 만들기'}</button>
+      ${cur ? '<button class="btn-secondary" id="mNone">인트로 빼기</button>' : ''}
+      <button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button>
+    </div>`);
+  $('#mClose').onclick = hideModal;
+  if ($('#mNone')) $('#mNone').onclick = () => { setIntro(k, null); hideModal(); toast(`${k + 1}편 인트로를 뺐습니다`); };
+  $('#modalBox').querySelectorAll('.intro-cand').forEach(b => b.onclick = async () => { await setIntro(k, b.dataset.f); openIntro(k); });
+  $('#mGen').onclick = () => makeIntro(k);
+}
+async function setIntro(k, f) {
+  const n = clone(dec); n.intros = padIntros(n.intros, segs.length); n.intros[k] = f;
+  await commit(n, f ? 'intro_pick' : 'intro_none');
+}
+async function makeIntro(k) {
+  introBusy = k; openIntro(k);
+  try {
+    const r = await fetch('/api/intro/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, dec }) });
+    const data = await r.json();
+    if (!r.ok) { toast(data.error || '인트로를 만들지 못했습니다'); return; }
+    S.intro_candidates[data.key] = data;
+    if (data.failed) toast(`${data.failed}장은 실패해서 ${data.files.length}장만 만들었습니다`);
+  } catch (e) { toast('서버에 연결할 수 없습니다'); }
+  finally {
+    introBusy = null;
+    if ($('#modal').classList.contains('show') && $('#modalBox h2')?.textContent === `${k + 1}편 인트로`) openIntro(k);
+  }
+}
+
+// ------------------------------------------------------------------ 내보내기
+const fmtAt = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+function renderExportNote() {
+  const n = segs.length, ex = S.export, note = $('#exportNote');
+  $('#btnExport').textContent = S.exporting ? '내보내는 중…' : `내보내기 (${n}편)`;
+  note.className = ex && ex.stale ? 'stale' : '';
+  note.textContent = !ex ? ''
+    : ex.stale ? `${fmtAt(ex.at)}에 내보낸 뒤 편집했습니다 - 다시 내보내세요` : `${fmtAt(ex.at)}에 ${ex.count}편 내보냄`;
+  const chosen = segs.filter((g, k) => dec.intros[k]).length;
+  $('#brandNote').innerHTML = `인트로 ${chosen}/${n}편 · 아웃트로 ${S.outro ? `${S.outro_sec}초` : `없음 (<a href="http://127.0.0.1:${S.home_port || 8764}/" target="_blank">홈 환경설정</a>에서 올리기)`}`;
+}
+function showModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.add('show'); }
+function hideModal() { $('#modal').classList.remove('show'); }
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') hideModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#modal').classList.contains('show')) { e.stopImmediatePropagation(); hideModal(); } }, true);
+
+function resultsHtml(ex) {
+  const rows = (ex.items || []).map(it => `<div class="out-row"><span class="mono" style="color:var(--muted)">${it.n}</span>
+      <span class="t" title="${esc(it.title)}">${esc(it.title)} <span class="mono" style="color:var(--muted);font-size:12px">${fmtDur(it.duration)}</span></span>
+      <a href="/api/export/file?name=${encodeURIComponent(it.mp4)}" download>영상</a>
+      <a href="/api/export/file?name=${encodeURIComponent(it.txt)}" download>대본</a></div>`).join('');
+  return `<h2>${ex.count}편을 내보냈습니다</h2>
+    <p class="note">${fmtAt(ex.at)} · 프로젝트 폴더의 out 안에 있습니다${ex.stale ? ' · <b style="color:var(--proposal-line)">그 뒤에 편집했습니다 - 다시 내보내야 반영됩니다</b>' : ''}</p>
+    ${rows}
+    <div class="modal-actions">
+      <a class="primary" href="/api/export/zip" download>모두 받기 (zip)</a>
+      <button class="btn-secondary" id="mReveal">Finder에서 열기</button>
+      <button class="btn-secondary" id="mAgain">다시 내보내기</button>
+      <button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button>
+    </div>`;
+}
+function wireResults() {
+  $('#mReveal').onclick = () => fetch('/api/export/reveal', { method: 'POST' });
+  $('#mAgain').onclick = startExport;
+  $('#mClose').onclick = hideModal;
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function startExport() {
+  const r = await fetch('/api/export', { method: 'POST' });
+  const data = await r.json();
+  if (!r.ok && !String(data.error || '').includes('이미')) { toast(data.error || '내보내기를 시작하지 못했습니다'); return; }
+  S.exporting = true; renderExportNote(); pollExport();
+}
+async function pollExport() {
+  let st;
+  try { st = await (await fetch('/api/export/status')).json(); } catch (e) { setTimeout(pollExport, 1500); return; }
+  if (st.running) {
+    const pct = st.n ? Math.round((st.k / st.n) * 100) : 0;
+    showModal(`<h2>내보내는 중<span class="info" tabindex="0" title="편마다 영상을 프레임 단위로 잘라 다시 인코딩합니다. 창을 닫아도 계속 진행됩니다.">i</span></h2>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div style="font-size:13px"><span class="mono">${Math.min(st.k + 1, st.n)}/${st.n}</span> ${esc(st.title)}</div>
+      <div class="modal-actions"><button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button></div>`);
+    $('#mClose').onclick = hideModal;
+    setTimeout(pollExport, 800); return;
+  }
+  S.exporting = false; S.export = st.export; renderExportNote();
+  if (st.error) {
+    showModal(`<h2>내보내지 못했습니다</h2><div class="err-box">${esc(st.error)}</div>
+      <div class="modal-actions"><button class="btn-secondary" id="mAgain">다시 시도</button><button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button></div>`);
+    $('#mAgain').onclick = startExport; $('#mClose').onclick = hideModal; return;
+  }
+  if (st.export) { showModal(resultsHtml(st.export)); wireResults(); }
+}
+$('#btnExport').onclick = () => {
+  if (S.exporting) return pollExport();
+  if (S.export && !S.export.stale) { showModal(resultsHtml(S.export)); wireResults(); return; }
+  startExport();
+};
+
+load().catch(err => { $('#doc').innerHTML = ''; const p = document.createElement('div'); p.id = 'loading'; p.textContent = `불러오지 못했습니다: ${err}`; $('#doc').appendChild(p); });
+</script>
+</body>
+</html>

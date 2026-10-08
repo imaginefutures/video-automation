@@ -17,6 +17,14 @@ REQUIRED_API_KEYS = [
     ("ANTHROPIC_API_KEY", "Claude API 키 - NG 판별·분류·전체 검토에 씀", "https://console.anthropic.com/settings/keys"),
     ("ELEVENLABS_API_KEY", "ElevenLabs API 키 - Scribe 전사에 씀", "https://elevenlabs.io/app/settings/api-keys"),
 ]
+# 없어도 컷편집·분할은 돈다 - 설정 게이트·영상 생성 검사에서 빠진다. 분할의 인트로 이미지 생성에만 쓴다.
+OPTIONAL_API_KEYS = [
+    ("GEMINI_API_KEY", "Gemini API 키 (선택) - 분할 편마다 인트로 이미지 생성에 씀", "https://aistudio.google.com/apikey"),
+]
+
+# 채널 공통 이미지 - 사용자 브랜드 자산이라 git에서 뺀다(.gitignore의 brand/). 홈 환경설정에서 올린다.
+BRAND_DIR = PROJECT_ROOT / "brand"
+BRAND_OUTRO = BRAND_DIR / "outro.png"
 
 # 10-01 (홈 화면 영상 생성): *_final_gold/*.backup-*는 평가용/과거 스냅샷 접미사라 실제
 # 프로젝트로 취급하지 않는다 - scripts/home_server.py의 is_project_folder()와 여기
@@ -96,8 +104,9 @@ def api_keys_status() -> list[dict]:
     (네트워크 응답/devtools에 비밀값이 찍히는 걸 막음, `set`만 알려줌)."""
     load_env()
     return [
-        {"key": k, "desc": desc, "url": url, "set": bool(os.environ.get(k))}
-        for k, desc, url in REQUIRED_API_KEYS
+        {"key": k, "desc": desc, "url": url, "set": bool(os.environ.get(k)), "optional": optional}
+        for keys, optional in ((REQUIRED_API_KEYS, False), (OPTIONAL_API_KEYS, True))
+        for k, desc, url in keys
     ]
 
 
@@ -181,14 +190,26 @@ def video_dir(name_or_path: str | Path) -> Path:
     raise SystemExit(f"video folder not found: {name_or_path} (looked in {candidate})")
 
 
+SPLIT_SOURCE_NAME = "source.mp4"
+
+
+def is_split_project(folder: Path) -> bool:
+    """주제별 분할(docs/백로그/주제별-분할.md) 폴더인지 - 컷편집과 완전히 분리된 작업이라 폴더
+    구조도 다르다(splits/<이름>/source.mp4 + work/). 전사·음향 지도 코드는 그대로 공유하므로
+    작업 폴더와 원본 위치만 여기서 갈라 준다."""
+    return (folder / SPLIT_SOURCE_NAME).exists()
+
+
 def edit_dir(folder: Path) -> Path:
-    d = folder / "edit"
+    d = folder / ("work" if is_split_project(folder) else "edit")
     d.mkdir(exist_ok=True)
     return d
 
 
 def source_media(folder: Path) -> Path:
-    """clean.mp4 when it exists (FCP-compatible, faststart), else raw.mp4."""
+    """clean.mp4 when it exists (FCP-compatible, faststart), else raw.mp4. 분할 프로젝트는 source.mp4."""
+    if is_split_project(folder):
+        return folder / SPLIT_SOURCE_NAME
     clean = folder / "edit" / "clean.mp4"
     if clean.exists():
         return clean
@@ -199,7 +220,7 @@ def source_media(folder: Path) -> Path:
 
 
 def load_transcript(folder: Path) -> dict:
-    return json.loads((folder / "edit" / "transcript.json").read_text())
+    return json.loads((edit_dir(folder) / "transcript.json").read_text())
 
 
 def words_only(transcript: dict) -> list[dict]:

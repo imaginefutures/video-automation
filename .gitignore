@@ -8,3 +8,5 @@ __pycache__/
 videos/
 Reference/
 .claude/scheduled_tasks.lock
+splits/
+brand/

@@ -40,8 +40,8 @@ PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
-    api_keys_status, edit_dir, ensure_project_python, load_env, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
-    RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS,
+    api_keys_status, edit_dir, ensure_project_python, load_env, pid_alive, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
+    RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, BRAND_OUTRO,
 )
 
 BACKUP_RE = RESERVED_PROJECT_NAME_RE  # common.py와 공유 - sanitize_project_name() 참고
@@ -382,7 +382,7 @@ def create_project(title: str, content_length: int, rfile) -> dict:
     또는 RuntimeError로 던진다."""
     name = sanitize_project_name(title)
 
-    missing = [k["key"] for k in api_keys_status() if not k["set"]]
+    missing = [k["key"] for k in api_keys_status() if not k["set"] and not k["optional"]]
     if missing:
         raise ValueError(f"API 키가 없습니다 - 설정 패널에서 먼저 등록하세요 ({', '.join(missing)})")
 
@@ -510,6 +510,227 @@ def _stream_to_file(rfile, dest: Path, length: int, chunk_size: int = 4 * 1024 *
                 raise ConnectionError("업로드가 중간에 끊겼습니다")
             f.write(chunk)
             remaining -= len(chunk)
+
+
+# ----------------------------------------------------------------------------- 주제별 분할 (splits/)
+# docs/백로그/주제별-분할.md - 컷편집과 완전히 분리된 작업이라 폴더(splits/)·처리(split_run.py)·
+# 화면 서버(split_server.py)가 전부 따로다. 홈은 탭 하나로 목록·업로드·열기만 얹는다. _active 키는
+# "split:<이름>" - 같은 이름의 컷편집 영상과 섞이지 않게.
+SPLIT_SOURCE = "source.mp4"
+SPLIT_SRT = "source.srt"
+SRT_MAX_BYTES = 5 * 1024 * 1024
+
+
+def splits_root() -> Path:
+    override = os.environ.get("VIDEO_CUT_SPLITS_DIR")
+    return Path(override).resolve() if override else PROJECT_ROOT / "splits"
+
+
+def is_split_folder(p: Path) -> bool:
+    return p.is_dir() and not p.name.startswith(".") and (p / SPLIT_SOURCE).exists()
+
+
+def _split_key(name: str) -> str:
+    return f"split:{name}"
+
+
+def split_status(folder: Path) -> dict:
+    """읽기 전용 - split_run.py가 남기는 work/split_status.json과 산출물 유무로 판단한다."""
+    work = folder / "work"
+    info: dict = {"name": folder.name}
+    last = None
+    for c in (work / "split_decisions.json", work / "segments.json", folder / SPLIT_SOURCE):
+        try:
+            last = c.stat().st_mtime
+        except OSError:
+            continue
+        break
+    info["last_activity"] = last
+    key = _split_key(folder.name)
+    info["managed"] = _is_managed(key)
+
+    st = _read_json(work / "split_status.json", {})
+    seg = _read_json(work / "segments.json", None)
+    state = st.get("state")
+    running_elsewhere = state == "running" and pid_alive(st.get("pid"))
+    if state == "error":
+        info.update(status="error", stage=st.get("stage"), error=st.get("error") or "처리가 중단됐습니다")
+        return info
+    if state == "running" or (seg is None):
+        if not info["managed"] and not running_elsewhere and state == "running":
+            # 상태 파일은 running인데 프로세스가 없다 = 비정상 종료
+            info.update(status="error", stage=st.get("stage"), error="처리가 예기치 않게 중단됐습니다")
+            return info
+        info.update(status="processing", stage=st.get("stage"),
+                    resumable=not info["managed"] and not running_elsewhere)
+        return info
+
+    dec = _read_json(work / "split_decisions.json", None)
+    sents = _read_json(work / "sentences.json", {})
+    segs = seg.get("segments", [])
+    info.update(status="ready", edited=dec is not None,
+                count=len(dec["ends"]) if dec else len(segs),
+                duration=sents.get("duration"), source=sents.get("source"),
+                warnings=sum(1 for s in segs for it in s.get("check", {}).get("issues", [])
+                             if it.get("kind") == "boundary"))
+    ex = _read_json(work / "export.json", None)
+    if ex:
+        # 내보낸 뒤 다시 편집했으면 "내보냄"이 아니라 다시 검토 중으로 본다
+        info["exported_at"] = ex.get("at")
+        info["export_stale"] = (dec or {}).get("updated_at") != ex.get("decisions_updated_at")
+    return info
+
+
+def scan_splits() -> list[dict]:
+    root = splits_root()
+    if not root.is_dir():
+        return []
+    out = [split_status(p) for p in sorted(root.iterdir()) if is_split_folder(p)]
+    out.sort(key=lambda r: r.get("last_activity") or 0, reverse=True)
+    return out
+
+
+def _decode_srt(raw: bytes) -> str:
+    # 한국어 자막 도구 중엔 아직 CP949로 내보내는 게 있다
+    for enc in ("utf-8-sig", "cp949"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("자막 파일의 글자 인코딩을 읽지 못했습니다 (UTF-8 또는 CP949만 지원)")
+
+
+def upload_split_srt(title: str, content_length: int, rfile) -> dict:
+    """자막 파일은 영상보다 먼저 올린다 - 영상 업로드가 끝나는 즉시 처리를 시작하므로."""
+    from split_sentences import parse_srt
+    name = sanitize_project_name(title)
+    folder = splits_root() / name
+    if (folder / SPLIT_SOURCE).exists():
+        raise ValueError("이미 같은 이름의 분할 작업이 있습니다 - 다른 제목을 입력하세요")
+    if content_length <= 0 or content_length > SRT_MAX_BYTES:
+        raise ValueError("자막 파일이 비었거나 너무 큽니다 (최대 5MB)")
+    text = _decode_srt(rfile.read(content_length))
+    if not parse_srt(text):
+        raise ValueError("자막을 하나도 읽지 못했습니다 - .srt 형식인지 확인하세요")
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / SPLIT_SRT).write_text(text, encoding="utf-8")
+    return {"name": name}
+
+
+def create_split(title: str, content_length: int, rfile, has_srt: bool, min_min: float, max_min: float) -> dict:
+    name = sanitize_project_name(title)
+    if not 0 < min_min < max_min:
+        raise ValueError("목표 길이가 올바르지 않습니다 - 최소가 최대보다 작아야 합니다")
+    status = {k["key"]: k["set"] for k in api_keys_status()}
+    need = ["ANTHROPIC_API_KEY"] + ([] if has_srt else ["ELEVENLABS_API_KEY"])
+    missing = [k for k in need if not status.get(k, False)]
+    if missing:
+        raise ValueError(f"API 키가 없습니다 - 환경설정에서 먼저 등록하세요 ({', '.join(missing)})")
+    fstatus = ffmpeg_status()
+    if not (fstatus["ffmpeg"] and fstatus["ffprobe"]):
+        raise ValueError("ffmpeg/ffprobe가 설치돼 있지 않습니다 - 환경설정에서 먼저 설치하세요")
+
+    folder = splits_root() / name
+    if (folder / SPLIT_SOURCE).exists():
+        raise ValueError("이미 같은 이름의 분할 작업이 있습니다 - 다른 제목을 입력하세요")
+    if has_srt and not (folder / SPLIT_SRT).exists():
+        raise ValueError("자막 파일이 먼저 올라가지 않았습니다 - 다시 시도하세요")
+    key = _split_key(name)
+    with _active_lock:
+        if key in _uploading:
+            raise ValueError("이미 같은 이름으로 업로드가 진행 중입니다")
+        _uploading.add(key)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        if not has_srt:
+            (folder / SPLIT_SRT).unlink(missing_ok=True)  # 이전에 실패한 시도가 남긴 자막을 쓰지 않게
+        work = folder / "work"
+        work.mkdir(exist_ok=True)
+        (work / "options.json").write_text(json.dumps({"min_minutes": min_min, "max_minutes": max_min}))
+        part = folder / (SPLIT_SOURCE + ".part")
+        try:
+            _stream_to_file(rfile, part, content_length)
+            part.rename(folder / SPLIT_SOURCE)
+        except Exception:
+            part.unlink(missing_ok=True)
+            if not (folder / SPLIT_SOURCE).exists():
+                shutil.rmtree(folder, ignore_errors=True)  # 이번 시도로 만든 폴더 - 자막·옵션째 지운다
+            raise
+        _spawn_split(name, folder)
+    finally:
+        with _active_lock:
+            _uploading.discard(key)
+    return {"name": name}
+
+
+def _spawn_split(name: str, folder: Path) -> None:
+    work = folder / "work"
+    work.mkdir(exist_ok=True)
+    log_path = work / "run.log"
+    log_f = open(log_path, "a")
+    proc = subprocess.Popen(
+        [sys.executable, str(HERE / "split_run.py"), str(folder)],
+        cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
+        start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    with _active_lock:
+        _active[_split_key(name)] = {"port": None, "proc": proc, "log": log_f,
+                                     "log_path": log_path, "log_offset": _log_size(log_path)}
+
+
+def resume_split(name: str) -> dict:
+    folder = splits_root() / name
+    if not is_split_folder(folder):
+        raise ValueError(f"알 수 없는 분할 작업: {name}")
+    st = _read_json(folder / "work" / "split_status.json", {})
+    with _active_lock:
+        active = _active.get(_split_key(name))
+    if active and active["proc"].poll() is None:
+        if active["port"] is None:
+            raise ValueError("이미 처리 중입니다")
+        active["proc"].terminate()  # 떠 있는 분할 화면 서버는 옛 결과를 들고 있으니 내린다
+    if st.get("state") == "running" and pid_alive(st.get("pid")):
+        raise ValueError("다른 곳(터미널 등)에서 이미 처리 중입니다")
+    _spawn_split(name, folder)
+    return {"name": name}
+
+
+def open_split(name: str) -> dict:
+    folder = splits_root() / name
+    if not is_split_folder(folder):
+        raise ValueError(f"알 수 없는 분할 작업: {name}")
+    if split_status(folder)["status"] != "ready":
+        raise ValueError("아직 처리 중입니다 - 끝난 뒤에 열 수 있어요")
+    key = _split_key(name)
+    with _active_lock:
+        active = _active.get(key)
+        # 처리용 split_run.py 항목(port None)이 끝나 있으면 화면 서버로 교체
+        if active is None or active["proc"].poll() is not None or active["port"] is None:
+            port = _alloc_port(_preferred_port(key))
+            log_path = folder / "work" / "server.log"
+            log_offset = _log_size(log_path)
+            log_f = open(log_path, "a")
+            proc = subprocess.Popen(
+                [sys.executable, str(HERE / "split_server.py"), str(folder), "--port", str(port), "--no-open"],
+                cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
+            )
+            _active[key] = {"port": port, "proc": proc, "log": log_f, "log_path": log_path, "log_offset": log_offset}
+        active = _active[key]
+    deadline = time.time() + 12
+    while time.time() < deadline:
+        if active["proc"].poll() is not None:
+            raise LaunchError("분할 화면 서버가 바로 종료됐습니다", _log_since(active["log_path"], active["log_offset"]))
+        if _port_listening(active["port"]):
+            return {"url": f"http://127.0.0.1:{active['port']}/"}
+        time.sleep(0.2)
+    raise RuntimeError("분할 화면 서버가 제시간에 뜨지 않았습니다")
+
+
+def split_log_tail(name: str, max_lines: int = 60) -> str | None:
+    path = splits_root() / name / "work" / "run.log"
+    if not path.exists():
+        return None
+    return "\n".join(path.read_text(errors="replace").splitlines()[-max_lines:]) or None
 
 
 # ------------------------------------------------------------------------------ 설정: ffmpeg 설치
@@ -686,7 +907,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": f"알 수 없는 영상: {name}"}, 404)
             return self._json({"ok": True, "log_tail": pipeline_log_tail(folder)})
         if path == "/api/setup":
-            return self._json({"keys": api_keys_status(), **ffmpeg_status()})
+            return self._json({"keys": api_keys_status(), **ffmpeg_status(), "outro": BRAND_OUTRO.exists()})
+        if path == "/api/brand/outro":
+            if not BRAND_OUTRO.exists():
+                return self.send_error(404)
+            return self._file(BRAND_OUTRO, "image/png")
         if path == "/api/setup/ffmpeg/status":
             with _ffmpeg_install_lock:
                 return self._json(dict(_ffmpeg_install_state))
@@ -699,6 +924,13 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(urlsplit(self.path).query)
             limit = int((q.get("limit") or ["20"])[0])
             return self._json({"versions": read_changelog(limit)})
+        if path == "/api/splits":
+            return self._json({"splits": scan_splits(), "root": str(splits_root())})
+        if path == "/api/splits/log":
+            name = (parse_qs(urlsplit(self.path).query).get("name") or [""])[0]
+            if not name or not is_split_folder(splits_root() / name):
+                return self._json({"ok": False, "error": f"알 수 없는 분할 작업: {name}"}, 404)
+            return self._json({"ok": True, "log_tail": split_log_tail(name)})
         if path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
@@ -713,6 +945,17 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/videos/create":
             return self._handle_create_project()
+        if path in ("/api/splits/srt", "/api/splits/create"):
+            return self._handle_split_upload(path)
+        if path == "/api/brand/outro":
+            try:
+                save_outro(int(self.headers.get("Content-Length", 0)), self.rfile)
+                return self._json({"ok": True})
+            except (ValueError, ConnectionError) as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/brand/outro/delete":
+            BRAND_OUTRO.unlink(missing_ok=True)
+            return self._json({"ok": True})
 
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
@@ -728,8 +971,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **result})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e), "detail": getattr(e, "detail", None)}, 400)
+        if path in ("/api/splits/open", "/api/splits/process"):
+            try:
+                fn = open_split if path.endswith("open") else resume_split
+                return self._json({"ok": True, **fn(str(body.get("name", "")))})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e), "detail": getattr(e, "detail", None)}, 400)
         if path == "/api/setup/keys":
-            valid_keys = {key for key, _, _ in REQUIRED_API_KEYS}
+            valid_keys = {key for key, _, _ in REQUIRED_API_KEYS + OPTIONAL_API_KEYS}
             pairs = {k: v for k, v in body.items()
                      if k in valid_keys and isinstance(v, str) and v.strip() and "\n" not in v}
             if not pairs:
@@ -760,6 +1009,22 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._json({"ok": False, "error": str(e)}, 500)
 
+    def _handle_split_upload(self, path: str):
+        q = parse_qs(urlsplit(self.path).query)
+        title = (q.get("title") or [""])[0]
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            if path.endswith("srt"):
+                result = upload_split_srt(title, length, self.rfile)
+            else:
+                result = create_split(title, length, self.rfile, (q.get("srt") or ["0"])[0] == "1",
+                                      float((q.get("min") or ["3"])[0]), float((q.get("max") or ["10"])[0]))
+            return self._json({"ok": True, **result})
+        except ValueError as e:
+            return self._json({"ok": False, "error": str(e)}, 400)
+        except Exception as e:
+            return self._json({"ok": False, "error": str(e)}, 500)
+
     def _json(self, data, status: int = 200):
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -777,6 +1042,34 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+
+# ------------------------------------------------------------------------------ 설정: 아웃트로 이미지
+OUTRO_MAX_BYTES = 30 * 1024 * 1024
+OUTRO_W, OUTRO_H = 1920, 1080
+
+
+def save_outro(content_length: int, rfile) -> None:
+    """올린 이미지를 1920x1080 PNG로 맞춰 brand/outro.png에 둔다 - 비율이 다르면 잘라내지 않고 검은
+    여백을 둔다(로고·글자가 잘리면 안 되니까). 분할 내보내기가 편마다 본편 해상도로 다시 맞춘다."""
+    if not 0 < content_length <= OUTRO_MAX_BYTES:
+        raise ValueError("이미지가 비었거나 너무 큽니다 (30MB 이하)")
+    BRAND_OUTRO.parent.mkdir(exist_ok=True)
+    tmp = BRAND_OUTRO.with_name("upload.tmp")
+    _stream_to_file(rfile, tmp, content_length)
+    out = BRAND_OUTRO.with_name("outro.part.png")
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", str(tmp), "-frames:v", "1", "-vf",
+             f"scale={OUTRO_W}:{OUTRO_H}:force_original_aspect_ratio=decrease,"
+             f"pad={OUTRO_W}:{OUTRO_H}:(ow-iw)/2:(oh-ih)/2,setsar=1", str(out)],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            raise ValueError("이미지로 읽을 수 없는 파일입니다 (PNG·JPG를 올려주세요)")
+        out.replace(BRAND_OUTRO)
+    finally:
+        tmp.unlink(missing_ok=True)
+        out.unlink(missing_ok=True)
 
 
 def serve(port: int, open_browser: bool) -> None:
