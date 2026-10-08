@@ -155,7 +155,7 @@
   #modal .note { font-size: 12.5px; color: var(--muted); margin: 0 0 14px; }
   .progress-track { height: 6px; border-radius: var(--r-full); background: var(--surface-2); overflow: hidden; margin: 12px 0 6px; }
   .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 200ms ease; }
-  .out-row { display: grid; grid-template-columns: 26px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+  .out-row { display: grid; grid-template-columns: 26px 1fr auto auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
   .out-row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .out-row a { font-size: 12.5px; color: var(--accent-strong); text-decoration: none; border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px 9px; }
   .out-row a:hover { border-color: var(--accent); }
@@ -640,7 +640,8 @@ function resultsHtml(ex) {
   const rows = (ex.items || []).map(it => `<div class="out-row"><span class="mono" style="color:var(--muted)">${it.n}</span>
       <span class="t" title="${esc(it.title)}">${esc(it.title)} <span class="mono" style="color:var(--muted);font-size:12px">${fmtDur(it.duration)}</span></span>
       <a href="/api/export/file?name=${encodeURIComponent(it.mp4)}" download>영상</a>
-      <a href="/api/export/file?name=${encodeURIComponent(it.txt)}" download>대본</a></div>`).join('');
+      <a href="/api/export/file?name=${encodeURIComponent(it.txt)}" download>대본</a>
+      ${it.srt ? `<a href="/api/export/file?name=${encodeURIComponent(it.srt)}" download>자막</a>` : '<span></span>'}</div>`).join('');
   return `<h2>${ex.count}편을 내보냈습니다</h2>
     <p class="note">${fmtAt(ex.at)} · 프로젝트 폴더의 out 안에 있습니다${ex.stale ? ' · <b style="color:var(--proposal-line)">그 뒤에 편집했습니다 - 다시 내보내야 반영됩니다</b>' : ''}</p>
     ${rows}
