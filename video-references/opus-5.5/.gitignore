@@ -1,0 +1,6 @@
+# Videos and prompts belong to their creators: fetch.py downloads them locally, never commit them.
+*.mp4
+*.part
+*.md
+!_META.md
+_records.json
