@@ -19,7 +19,7 @@ label, so this stays at the standard tier rather than dropping to Haiku.
 Writes <folder>/edit/speaker_blocks.json.
 
 Usage:
-    python scripts/detect_speaker_blocks.py <videos/NAME> [--no-llm]
+    python scripts/detect_speaker_blocks.py <video-edit/NAME> [--no-llm]
 """
 from __future__ import annotations
 import argparse

@@ -2,7 +2,7 @@
 시작할 때 한 번에 쓴다.
 
 네 가지를 한 호출로 처리한다: API 키(`common.ensure_api_keys()`), `ffmpeg`/`ffprobe`(시스템
-바이너리, `shutil.which`로 확인), 영상 프로젝트 폴더에 `videos/` + 안내 파일 생성. `uv` 자체는
+바이너리, `shutil.which`로 확인), 영상 프로젝트 폴더에 `video-edit/` + 안내 파일 생성. `uv` 자체는
 여기서 확인 안 한다 - 이 스크립트가 실행됐다는 것 자체가 uv가 이미 있다는 뜻이라 부트스트랩
 문제라서, uv 유무는 에이전트가 이 스크립트를 실행하기 *전에* `which uv`로 직접 확인해야 한다
 (`SKILL.md` "에이전트가 지킬 것" 참고).
@@ -12,7 +12,7 @@
 실행했을 때(표준입력이 터미널이 아님) 키가 없으면 종료 코드 1로 멈추고 필요한 정보를 출력한다
 (`ensure_api_keys()`가 이미 그렇게 함).
 
-`videos/`는 인자로 받은 프로젝트 폴더(기본값: 현재 작업 디렉터리) 아래에 만든다 - 스킬 설치
+`video-edit/`는 인자로 받은 프로젝트 폴더(기본값: 현재 작업 디렉터리) 아래에 만든다 - 스킬 설치
 위치(`PROJECT_ROOT`)가 아니라 사용자가 실제로 영상을 두고 싶어하는 곳이라, 에이전트가 항상
 사용자의 작업 폴더 절대경로를 인자로 넘겨야 한다. 이미 있으면 손대지 않는다(안내 파일도 없을 때만
 새로 씀 - 사용자가 지운 거면 존중).
@@ -24,7 +24,7 @@ from __future__ import annotations
 import shutil
 import sys
 
-from common import ensure_api_keys, load_env, PROJECT_ROOT, REQUIRED_API_KEYS
+from common import VIDEO_EDIT_DIR, ensure_api_keys, load_env, migrate_work_dirs, PROJECT_ROOT, REQUIRED_API_KEYS
 import os
 from pathlib import Path
 
@@ -39,25 +39,26 @@ VIDEOS_GUIDE = """# 여기에 원본 영상 넣기
 
 영상마다 폴더를 하나 만들고 그 안에 `raw.mp4`로 넣으세요:
 
-    videos/<이름>/raw.mp4
+    video-edit/<이름>/raw.mp4
 
-예: `videos/강의1/raw.mp4` (이름은 자유, 한글도 가능)
+예: `video-edit/강의1/raw.mp4` (이름은 자유, 한글도 가능)
 
 넣은 뒤 Claude Code에서 이렇게 요청하세요:
 
-    videos/<이름> 컷편집 해줘
+    video-edit/<이름> 컷편집 해줘
 """
 
 
 def setup_videos_folder(project_dir: Path) -> None:
-    videos = project_dir / "videos"
+    migrate_work_dirs(project_dir)  # 예전 setup이 만든 <프로젝트>/videos/ -> video-edit/
+    videos = project_dir / VIDEO_EDIT_DIR
     videos.mkdir(exist_ok=True)
     guide = videos / "README.md"
     if guide.exists():
-        print(f"videos/ 확인됨 ({videos})")
+        print(f"video-edit/ 확인됨 ({videos})")
         return
     guide.write_text(VIDEOS_GUIDE)
-    print(f"videos/ 폴더를 만들었습니다: {videos}\n  -> 여기에 <이름>/raw.mp4로 원본을 넣으세요 (videos/README.md 참고)")
+    print(f"video-edit/ 폴더를 만들었습니다: {videos}\n  -> 여기에 <이름>/raw.mp4로 원본을 넣으세요 (video-edit/README.md 참고)")
 
 
 def install_git_hooks() -> None:

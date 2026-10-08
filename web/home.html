@@ -426,7 +426,7 @@ async function load() {
   const list = $('#list'); list.innerHTML = '';
   if (!projects.length) {
     $('#empty').style.display = 'block';
-    $('#empty').innerHTML = '아직 작업한 영상이 없습니다 - <code>videos/&lt;이름&gt;/raw.mp4</code>를 넣고 "videos/&lt;이름&gt; 컷편집 해줘"라고 요청하세요';
+    $('#empty').innerHTML = '아직 작업한 영상이 없습니다 - <code>video-edit/&lt;이름&gt;/raw.mp4</code>를 넣고 "video-edit/&lt;이름&gt; 컷편집 해줘"라고 요청하세요';
     return;
   }
   $('#empty').style.display = 'none';
@@ -736,7 +736,7 @@ async function checkSetupGate() {
     const proj = await (await fetch('/api/projects')).json();
     const n = (proj.projects || []).length;
     const hint = $('#setupGateExisting');
-    if (n) { hint.textContent = `videos/ 폴더에 이미 ${n}개의 영상이 있습니다 - 설정을 마치면 바로 보입니다`; hint.style.display = 'block'; }
+    if (n) { hint.textContent = `video-edit/ 폴더에 이미 ${n}개의 영상이 있습니다 - 설정을 마치면 바로 보입니다`; hint.style.display = 'block'; }
     else hint.style.display = 'none';
   } catch (e) { /* 부가 정보라 실패해도 게이트 자체는 정상 표시 */ }
   return false;

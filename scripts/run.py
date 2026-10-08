@@ -1,10 +1,10 @@
 """video-cut orchestrator: raw.mp4 in a folder -> review UI in the browser -> FCPXML.
 
-    python scripts/run.py <videos/NAME>            # full pipeline, then opens the review UI
-    python scripts/run.py <videos/NAME> --serve    # skip processing, just open the UI
-    python scripts/run.py <videos/NAME> --no-llm   # deterministic layers only (no API cost)
+    python scripts/run.py <video-edit/NAME>            # full pipeline, then opens the review UI
+    python scripts/run.py <video-edit/NAME> --serve    # skip processing, just open the UI
+    python scripts/run.py <video-edit/NAME> --no-llm   # deterministic layers only (no API cost)
     python scripts/run.py                          # no folder: auto-detect a loose mp4 dropped
-                                                    # straight into videos/ and create its project
+                                                    # straight into video-edit/ and create its project
                                                     # folder (백로그/R2-시작-마찰-제거.md)
 
 A project folder's raw.mp4 can also be several split-recording segments (e.g. 01_intro.mp4,
@@ -59,7 +59,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import load_env, ensure_api_keys, ensure_project_python, video_dir, edit_dir, write_json, PROJECT_ROOT  # noqa: E402
+from common import load_env, ensure_api_keys, ensure_project_python, video_dir, edit_dir, write_json, PROJECT_ROOT, VIDEO_EDIT_DIR  # noqa: E402
 import migrate  # noqa: E402
 
 # ----------------------------------------------------------------------------- R2: 처리 중 진행 화면
@@ -200,7 +200,7 @@ def start_server(folder: Path, port: int, no_open: bool) -> subprocess.Popen:
 
 
 def auto_create_project(videos_root: Path) -> Path | None:
-    """백로그/R2-시작-마찰-제거.md 2순위: `videos/` 바로 아래(하위 폴더 아님)에 이름 상관없이
+    """백로그/R2-시작-마찰-제거.md 2순위: `video-edit/` 바로 아래(하위 폴더 아님)에 이름 상관없이
     mp4 하나를 던져놓고 폴더 인자 없이 부르면, 그 파일 이름으로 프로젝트 폴더를 만들고
     `raw.mp4`로 옮긴 뒤 그 폴더를 반환한다. 여러 개면 어느 걸 하나의 영상으로 봐야 할지
     애매하므로(분할 촬영일 수도, 서로 다른 영상일 수도) 추측하지 않고 사용자에게 정리를
@@ -210,19 +210,19 @@ def auto_create_project(videos_root: Path) -> Path | None:
         return None
     if len(loose) > 1:
         names = ", ".join(p.name for p in loose)
-        sys.exit(f"videos/ 바로 아래에 영상이 여러 개 있습니다({names}) - 폴더를 자동으로 "
-                 f"만들 수 없음. 한 영상이면 videos/<이름>/raw.mp4로, 분할 촬영이면 "
-                 f"videos/<이름>/ 폴더를 만들어 그 안에 01_, 02_... 순서로 넣어주세요.")
+        sys.exit(f"video-edit/ 바로 아래에 영상이 여러 개 있습니다({names}) - 폴더를 자동으로 "
+                 f"만들 수 없음. 한 영상이면 video-edit/<이름>/raw.mp4로, 분할 촬영이면 "
+                 f"video-edit/<이름>/ 폴더를 만들어 그 안에 01_, 02_... 순서로 넣어주세요.")
     src = loose[0]
     name = src.stem
     folder = videos_root / name
     folder.mkdir(exist_ok=True)
     dest = folder / "raw.mp4"
     if dest.exists():
-        sys.exit(f"videos/{name}/raw.mp4가 이미 있어서 videos/{src.name}을 자동으로 옮길 "
+        sys.exit(f"video-edit/{name}/raw.mp4가 이미 있어서 video-edit/{src.name}을 자동으로 옮길 "
                  f"수 없음 - 직접 정리해주세요.")
     src.rename(dest)
-    print(f"videos/{src.name} -> videos/{name}/raw.mp4로 옮기고 프로젝트 폴더를 만들었습니다.")
+    print(f"video-edit/{src.name} -> video-edit/{name}/raw.mp4로 옮기고 프로젝트 폴더를 만들었습니다.")
     return folder
 
 
@@ -286,7 +286,7 @@ def main() -> None:
     ensure_project_python()  # 각 단계를 sys.executable로 띄우므로 - 안 맞으면 전사부터 엉뚱하게 실패
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder", nargs="?", default=None,
-                    help="videos/<이름>. 생략하면 videos/ 바로 아래 떨어진 mp4를 찾아 자동으로 폴더를 만든다")
+                    help="video-edit/<이름>. 생략하면 video-edit/ 바로 아래 떨어진 mp4를 찾아 자동으로 폴더를 만든다")
     ap.add_argument("--serve", action="store_true", help="skip processing, open the review UI")
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--port", type=int, default=8765)
@@ -297,10 +297,10 @@ def main() -> None:
 
     load_env()
     if args.folder is None:
-        videos_root = PROJECT_ROOT / "videos"
+        videos_root = PROJECT_ROOT / VIDEO_EDIT_DIR
         folder = auto_create_project(videos_root)
         if folder is None:
-            sys.exit(f"videos/ 바로 아래에 처리할 mp4가 없습니다 - videos/<이름>/raw.mp4로 넣거나, "
+            sys.exit(f"video-edit/ 바로 아래에 처리할 mp4가 없습니다 - video-edit/<이름>/raw.mp4로 넣거나, "
                      f"폴더/파일 이름을 인자로 주세요.")
     else:
         folder = video_dir(args.folder)

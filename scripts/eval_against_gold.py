@@ -27,11 +27,11 @@ this same gold pair rather than needing new data:
      model calls, pure bookkeeping over files that already exist.
 
 Requires a gold pair: <gold_raw_transcript.json>, <gold_finished_transcript.json>, whose word
-sequence must match videos/<NAME>/edit/transcript.json 1:1 (same source recording, same ASR
+sequence must match video-edit/<NAME>/edit/transcript.json 1:1 (same source recording, same ASR
 run) - verified at the top before comparing indices.
 
 Usage:
-    python scripts/eval_against_gold.py <videos/NAME> \
+    python scripts/eval_against_gold.py <video-edit/NAME> \
         --gold-raw <Reference/.../BS145_raw.json> --gold-finished <Reference/.../BS145.json> \
         [--classify-fn] [--seams edit/seams.json]
 """

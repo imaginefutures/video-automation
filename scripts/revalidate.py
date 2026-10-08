@@ -50,12 +50,12 @@ GOLD_VIDEOS: dict[str, dict] = {
         "gold_finished": "Reference/videos/edit/transcripts/BS145.json",
     },
     "BS167": {
-        "gold_raw": "videos/BS167/edit/transcript.json",
-        "gold_finished": "videos/BS167_final_gold/edit/transcript.json",
+        "gold_raw": "video-edit/BS167/edit/transcript.json",
+        "gold_finished": "video-edit/BS167_final_gold/edit/transcript.json",
     },
     "BS183": {
-        "gold_raw": "videos/BS183/edit/transcript.json",
-        "gold_finished": "videos/BS183_final_gold/edit/transcript.json",
+        "gold_raw": "video-edit/BS183/edit/transcript.json",
+        "gold_finished": "video-edit/BS183_final_gold/edit/transcript.json",
         # BS183은 완성본이 원본을 재배열(훅 재배치)해서 raw recall이 애초에 비교 대상이 아니다
         # (검증-결과-BS183.md). precision만 기준선과 비교한다.
         "recall_not_comparable": True,
@@ -94,7 +94,7 @@ def restore_edit(video_dir: Path, backup: Path) -> None:
 
 def revalidate_one(name: str, keep_backup: bool, accept_baseline: bool) -> dict:
     cfg = GOLD_VIDEOS[name]
-    video_dir = ROOT / "videos" / name
+    video_dir = ROOT / "video-edit" / name
     edit = video_dir / "edit"
     ng_classified = edit / "ng_classified.json"
     if not ng_classified.exists():

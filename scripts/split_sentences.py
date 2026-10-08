@@ -12,7 +12,7 @@ Writes <folder>/work/sentences.json:
   gap_after = 다음 문장 시작까지의 쉼(초). 마지막 문장은 영상 끝까지.
 
 Usage:
-    python scripts/split_sentences.py <splits/NAME>
+    python scripts/split_sentences.py <auto-split/NAME>
 """
 from __future__ import annotations
 import argparse

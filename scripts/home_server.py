@@ -1,4 +1,4 @@
-"""Project home (docs/백로그/R7-프로젝트-홈.md): `/`에 videos/ 밑 모든 영상의 상태를 한눈에
+"""Project home (docs/백로그/R7-프로젝트-홈.md): `/`에 video-edit/ 밑 모든 영상의 상태를 한눈에
 보여준다 - 처리 중 / 검토 중 N건 남음 / 확정(+확정일·검토 시간) / 미리보기 준비됨. 클릭하면
 그 영상의 기존 검토 화면(server.py + web/index.html)으로 이어서 들어간다.
 
@@ -41,21 +41,21 @@ WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
     api_keys_status, edit_dir, ensure_project_python, load_env, pid_alive, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
-    RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, BRAND_OUTRO,
+    RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, BRAND_OUTRO, VIDEO_EDIT_DIR, SPLIT_DIR,
 )
 
 BACKUP_RE = RESERVED_PROJECT_NAME_RE  # common.py와 공유 - sanitize_project_name() 참고
 
 
 def videos_root() -> Path:
-    """videos/ 루트. VIDEO_CUT_HOME_DIR로 바꿀 수 있다 - 실제 videos/(여러 세션이 공유하는
+    """video-edit/ 루트. VIDEO_CUT_HOME_DIR로 바꿀 수 있다 - 실제 video-edit/(여러 세션이 공유하는
     사용자 데이터)를 안 건드리고 합성 픽스처로 상태 분기(확정/미리보기 등)를 검증할 때 씀."""
     override = os.environ.get("VIDEO_CUT_HOME_DIR")
-    return Path(override).resolve() if override else PROJECT_ROOT / "videos"
+    return Path(override).resolve() if override else PROJECT_ROOT / VIDEO_EDIT_DIR
 
 
 def is_project_folder(p: Path) -> bool:
-    """`videos/<이름>/raw.mp4`가 있는 폴더만 - *_final_gold, *.backup-* 접미사는 실제
+    """`video-edit/<이름>/raw.mp4`가 있는 폴더만 - *_final_gold, *.backup-* 접미사는 실제
     진행 중인 프로젝트가 아니라 평가용/과거 스냅샷이라 제외한다."""
     if not p.is_dir() or p.name.startswith("."):
         return False
@@ -512,8 +512,8 @@ def _stream_to_file(rfile, dest: Path, length: int, chunk_size: int = 4 * 1024 *
             remaining -= len(chunk)
 
 
-# ----------------------------------------------------------------------------- 주제별 분할 (splits/)
-# docs/백로그/주제별-분할.md - 컷편집과 완전히 분리된 작업이라 폴더(splits/)·처리(split_run.py)·
+# ----------------------------------------------------------------------------- 주제별 분할 (auto-split/)
+# docs/백로그/주제별-분할.md - 컷편집과 완전히 분리된 작업이라 폴더(auto-split/)·처리(split_run.py)·
 # 화면 서버(split_server.py)가 전부 따로다. 홈은 탭 하나로 목록·업로드·열기만 얹는다. _active 키는
 # "split:<이름>" - 같은 이름의 컷편집 영상과 섞이지 않게.
 SPLIT_SOURCE = "source.mp4"
@@ -523,7 +523,7 @@ SRT_MAX_BYTES = 5 * 1024 * 1024
 
 def splits_root() -> Path:
     override = os.environ.get("VIDEO_CUT_SPLITS_DIR")
-    return Path(override).resolve() if override else PROJECT_ROOT / "splits"
+    return Path(override).resolve() if override else PROJECT_ROOT / SPLIT_DIR
 
 
 def is_split_folder(p: Path) -> bool:

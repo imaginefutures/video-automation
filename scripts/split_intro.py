@@ -11,7 +11,7 @@
 intros 배열에 남는다).
 
 Usage (확인용):
-    python scripts/split_intro.py <splits/NAME> <편 번호(1부터)>
+    python scripts/split_intro.py <auto-split/NAME> <편 번호(1부터)>
 """
 from __future__ import annotations
 import argparse

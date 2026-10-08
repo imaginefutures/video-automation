@@ -20,7 +20,7 @@ NG 케이스별 cut/keep 성향 자체는 이 스크립트가 아니라 `server.
 즉시(다음 REVIEW 항목부터) 배운다 - 이 스크립트를 따로 돌리지 않아도 이미 작동한다.
 
 Usage:
-    python scripts/learn_from_session.py <videos/NAME>
+    python scripts/learn_from_session.py <video-edit/NAME>
 """
 from __future__ import annotations
 import argparse

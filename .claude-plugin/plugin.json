@@ -1,7 +1,7 @@
 {
   "name": "video-cut",
   "displayName": "Video Cut",
-  "version": "1.16.1",
+  "version": "1.17.0",
   "description": "한국어 강의·토킹헤드 원본 영상의 컷편집 러프컷을 자동 생성하는 스킬",
   "author": {
     "name": "Imagine Futures",

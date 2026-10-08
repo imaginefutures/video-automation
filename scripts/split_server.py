@@ -8,7 +8,7 @@ split_run.py가 만든 work/sentences.json + work/segments.json을 읽어 web/sp
 같은 함수(propose_segments.segments_from_ends)를 쓰게 해서 둘이 어긋나지 않게 한다.
 
 Usage:
-    python scripts/split_server.py <splits/NAME> [--port 8790] [--no-open]
+    python scripts/split_server.py <auto-split/NAME> [--port 8790] [--no-open]
 """
 from __future__ import annotations
 import argparse

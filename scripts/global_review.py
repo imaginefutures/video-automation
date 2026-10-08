@@ -20,7 +20,7 @@
     반영하고 종료한다 - PD·시청자를 다시 부르지 않는다.
 
 Usage:
-    python scripts/global_review.py <videos/NAME> [--max-rounds 2]
+    python scripts/global_review.py <video-edit/NAME> [--max-rounds 2]
 """
 from __future__ import annotations
 import argparse

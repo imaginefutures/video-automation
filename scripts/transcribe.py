@@ -4,7 +4,7 @@ Writes <folder>/edit/transcript.json. Cached: skipped if that file already exist
 Uses edit/clean.mp4 when present (run clean_media.py first), else raw.mp4.
 
 Usage:
-    python scripts/transcribe.py <videos/NAME or folder> [--language kor] [--num-speakers N] [--force]
+    python scripts/transcribe.py <video-edit/NAME or folder> [--language kor] [--num-speakers N] [--force]
 """
 from __future__ import annotations
 import argparse

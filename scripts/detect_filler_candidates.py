@@ -18,7 +18,7 @@ edit/ng.json을 그 자리에서 읽고 덧붙인다(whole_context_review.py와 
 탐지·분류·라우팅이 끝난 뒤에 실행해야 같은 검토 큐에 합쳐진다.
 
 Usage:
-    python scripts/detect_filler_candidates.py <videos/NAME>
+    python scripts/detect_filler_candidates.py <video-edit/NAME>
 """
 from __future__ import annotations
 import argparse

@@ -10,7 +10,7 @@ Cached: <folder>/edit/audio_map.json. The array fields (rms_db) are large for a 
 video (~10ms hop -> ~150k frames) but still a few MB of JSON - acceptable for a local tool.
 
 Usage:
-    python scripts/audio_map.py <videos/NAME>
+    python scripts/audio_map.py <video-edit/NAME>
 """
 from __future__ import annotations
 import argparse

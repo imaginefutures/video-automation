@@ -22,7 +22,7 @@
 사람이 쌓은 것이고, 자동으로 손대지 않는다.
 
 Usage:
-    python scripts/migrate.py <videos/NAME 절대경로>   # 그 영상 폴더 + 전역 데이터 둘 다 확인
+    python scripts/migrate.py <video-edit/NAME 절대경로>   # 그 영상 폴더 + 전역 데이터 둘 다 확인
     python scripts/migrate.py --global-only            # 전역 데이터만
 """
 from __future__ import annotations

@@ -39,7 +39,7 @@ Writes <folder>/edit/pauses.json. Existing labels are reused for unchanged gaps,
 re-running does not re-pay for classification.
 
 Usage:
-    python scripts/plan_pauses.py <videos/NAME> [--no-llm]
+    python scripts/plan_pauses.py <video-edit/NAME> [--no-llm]
 """
 from __future__ import annotations
 import argparse

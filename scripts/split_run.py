@@ -2,8 +2,8 @@
 (docs/백로그/주제별-분할.md). 컷편집(run.py)과 완전히 분리된 작업이다.
 
 폴더 구조:
-    splits/<이름>/source.mp4   완성본 (필수)
-    splits/<이름>/source.srt   자막 파일 (선택 - 있으면 전사 대신 대본으로 쓴다)
+    auto-split/<이름>/source.mp4   완성본 (필수)
+    auto-split/<이름>/source.srt   자막 파일 (선택 - 있으면 전사 대신 대본으로 쓴다)
 
 진행 상태는 work/split_status.json에 남긴다 (홈 화면 카드가 단계·실패를 보여줌). 목표 길이는
 work/options.json에 저장돼 다시 시도할 때도 같은 값을 쓴다.
@@ -17,7 +17,7 @@ work/options.json에 저장돼 다시 시도할 때도 같은 값을 쓴다.
     6 경계 다듬기  split_refine.py      검은 화면·장면 전환·자막 바뀜에 맞춰 자르는 시각을 프레임 단위로
 
 Usage:
-    python scripts/split_run.py <splits/NAME> [--min-minutes 3] [--max-minutes 10] [--no-llm] [--redo]
+    python scripts/split_run.py <auto-split/NAME> [--min-minutes 3] [--max-minutes 10] [--no-llm] [--redo]
 """
 from __future__ import annotations
 import argparse
@@ -27,7 +27,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from common import PROJECT_ROOT, is_split_project, edit_dir, write_json, SPLIT_SOURCE_NAME
+from common import PROJECT_ROOT, SPLIT_DIR, is_split_project, edit_dir, migrate_work_dirs, write_json, SPLIT_SOURCE_NAME
 from split_sentences import SRT_NAME
 
 DEFAULT_MIN_MIN, DEFAULT_MAX_MIN = 3.0, 10.0
@@ -51,9 +51,10 @@ def load_options(work: Path, min_min: float | None, max_min: float | None) -> tu
 
 
 def resolve_folder(arg: str) -> Path:
+    migrate_work_dirs()
     p = Path(arg)
     if not p.is_dir():
-        p = PROJECT_ROOT / "splits" / arg
+        p = PROJECT_ROOT / SPLIT_DIR / arg
     if not is_split_project(p):
         sys.exit(f"{p}에 {SPLIT_SOURCE_NAME}가 없습니다")
     return p.resolve()

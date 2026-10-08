@@ -35,7 +35,7 @@ RESERVED_PROJECT_NAME_RE = re.compile(r"\.backup-")
 
 
 def sanitize_project_name(raw: str) -> str:
-    """홈 화면 "영상 생성" 폼의 제목 -> `videos/<name>` 폴더명. 경로 탈출·예약 패턴을 막는다
+    """홈 화면 "영상 생성" 폼의 제목 -> `video-edit/<name>` 폴더명. 경로 탈출·예약 패턴을 막는다
     (기존에 이런 검증 함수가 없었음 - video_dir() 등은 전부 사람이 직접 만든 폴더명을 그대로
     신뢰하는 전제라 새로 만듦)."""
     name = raw.strip()
@@ -66,6 +66,7 @@ def ensure_project_python() -> None:
     표준 라이브러리만 써서 멀쩡히 돌았다. 그런데 자식(run.py 단계들, server.py)을 전부
     sys.executable로 띄우므로 - "정리"는 통과하고 "전사"는 requests가 없어 종료 코드 1, 검토
     서버는 numpy가 없어 시작 직후 종료. 증상이 단계마다 엉뚱하게 흩어져 원인을 찾기 어려웠다."""
+    migrate_work_dirs()
     import importlib.util
     missing = [m for m in _REQUIRED_MODULES if importlib.util.find_spec(m) is None]
     if not missing:
@@ -179,12 +180,43 @@ def ensure_api_keys() -> None:
     print(f"\n{env_path}에 저장했습니다. 다음부터는 안 물어봅니다.\n")
 
 
+# 작업 폴더 이름 (10-08 videos/ -> video-edit/, splits/ -> auto-split/ - 사용자 "폴더가 직관적이지 않다". video-edit는
+# 컷편집뿐 아니라 앞으로 들어갈 비주얼 자막·영상/이미지 삽입까지 담는 영상 편집 전반이라 cut-edit 대신 이 이름).
+# 옛 이름 폴더는 migrate_work_dirs()가 처음 실행될 때 새 이름으로 옮긴다.
+VIDEO_EDIT_DIR = "video-edit"
+SPLIT_DIR = "auto-split"
+_LEGACY_DIRS = (("videos", VIDEO_EDIT_DIR), ("splits", SPLIT_DIR))
+
+
+def migrate_work_dirs(base: Path = PROJECT_ROOT) -> None:
+    """base 아래 옛 작업 폴더(videos/, splits/)를 새 이름으로 옮긴다. 새 이름이 이미 있으면 건드리지 않는다
+    (둘 다 있으면 사용자가 정리해야 하니 경고만). 옮긴 뒤 분할 프로젝트의 source.mp4가 옛 컷편집 폴더를
+    절대경로로 가리키는 링크면 새 경로로 다시 잇는다 - 상대 링크는 폴더째 옮겨도 그대로 맞는다."""
+    for old, new in _LEGACY_DIRS:
+        src, dst = base / old, base / new
+        if src.is_dir() and not src.is_symlink():
+            if dst.exists():
+                print(f"[migrate] {src}와 {dst}가 둘 다 있습니다 - {old}/ 안의 프로젝트를 {new}/로 직접 옮겨 주세요",
+                      file=sys.stderr)
+                continue
+            src.rename(dst)
+            print(f"[migrate] {old}/ -> {new}/", file=sys.stderr)
+    old_cut = str(base / "videos") + os.sep
+    for link in (base / SPLIT_DIR).glob(f"*/{SPLIT_SOURCE_NAME}"):
+        if link.is_symlink():
+            target = os.readlink(link)
+            if target.startswith(old_cut):
+                link.unlink()
+                link.symlink_to(str(base / VIDEO_EDIT_DIR) + os.sep + target[len(old_cut):])
+
+
 def video_dir(name_or_path: str | Path) -> Path:
-    """Resolve `videos/<name>` or an explicit folder path."""
+    """Resolve `video-edit/<name>` or an explicit folder path."""
+    migrate_work_dirs()
     p = Path(name_or_path)
     if p.is_dir():
         return p.resolve()
-    candidate = PROJECT_ROOT / "videos" / str(name_or_path)
+    candidate = PROJECT_ROOT / VIDEO_EDIT_DIR / str(name_or_path)
     if candidate.is_dir():
         return candidate.resolve()
     raise SystemExit(f"video folder not found: {name_or_path} (looked in {candidate})")
@@ -195,7 +227,7 @@ SPLIT_SOURCE_NAME = "source.mp4"
 
 def is_split_project(folder: Path) -> bool:
     """주제별 분할(docs/백로그/주제별-분할.md) 폴더인지 - 컷편집과 완전히 분리된 작업이라 폴더
-    구조도 다르다(splits/<이름>/source.mp4 + work/). 전사·음향 지도 코드는 그대로 공유하므로
+    구조도 다르다(auto-split/<이름>/source.mp4 + work/). 전사·음향 지도 코드는 그대로 공유하므로
     작업 폴더와 원본 위치만 여기서 갈라 준다."""
     return (folder / SPLIT_SOURCE_NAME).exists()
 

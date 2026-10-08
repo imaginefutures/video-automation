@@ -29,7 +29,7 @@ Writes <folder>/edit/seams.json (이음새별 최종 선택 + 판정 근거) and
 <folder>/edit/final_cuts.json (the refined cut spans build_edl.py actually applies).
 
 Usage:
-    python scripts/seam_refine.py <videos/NAME> [--max-rounds 3]
+    python scripts/seam_refine.py <video-edit/NAME> [--max-rounds 3]
 """
 from __future__ import annotations
 import argparse

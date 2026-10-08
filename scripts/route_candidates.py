@@ -133,7 +133,7 @@ def main() -> None:
     runs = json.loads(args.classified.read_text())
     words: list[dict] | None = None
     try:
-        folder = args.classified.resolve().parent.parent  # edit/ng_classified.json -> videos/<name>
+        folder = args.classified.resolve().parent.parent  # edit/ng_classified.json -> video-edit/<name>
         words = words_only(load_transcript(folder))
     except (FileNotFoundError, KeyError):
         print("  [warn] transcript.json을 못 찾음 - 접속사 경계 안전망 건너뜀")

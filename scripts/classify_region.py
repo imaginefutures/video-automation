@@ -24,7 +24,7 @@ RESTART 구간에 ref_wi_start/end(같은 내용을 다시 말한 "다른 쪽" �
 few-shot으로 남기고, 배치 자체는 되돌려 그 전(각 후보를 독립적으로 판정)으로 복귀했다.
 
 Usage:
-    python scripts/classify_region.py <videos/NAME> [--no-llm]
+    python scripts/classify_region.py <video-edit/NAME> [--no-llm]
 """
 from __future__ import annotations
 import argparse

@@ -19,7 +19,7 @@ BS145 gold 대조에서 확인한 문제: "샐리그만→셀리그만", "속달
 edit/ng_candidates.json의 deleted_runs에 병합한다 - classify_candidates.py가 같은 배치로 판정.
 
 Usage:
-    python scripts/detect_pronunciation_candidates.py <videos/NAME>
+    python scripts/detect_pronunciation_candidates.py <video-edit/NAME>
 """
 from __future__ import annotations
 import argparse

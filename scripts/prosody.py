@@ -11,7 +11,7 @@ Local computation only (librosa) - no API cost (PLAN.md 12.2/A cost note).
 Cached: <folder>/edit/prosody.json.
 
 Usage:
-    python scripts/prosody.py <videos/NAME>
+    python scripts/prosody.py <video-edit/NAME>
 """
 from __future__ import annotations
 import argparse

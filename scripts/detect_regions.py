@@ -20,7 +20,7 @@
 낭비하지 않게 한다(whole_context_review.py의 [이미 후보로 잡힘] 패턴과 동일).
 
 Usage:
-    python scripts/detect_regions.py <videos/NAME> [--no-llm]
+    python scripts/detect_regions.py <video-edit/NAME> [--no-llm]
 """
 from __future__ import annotations
 import argparse

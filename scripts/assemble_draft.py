@@ -15,7 +15,7 @@ handled separately by plan_pauses.py/build_edl.py (docs/기획/02-품질-루프.
 대상은 쉼이 아닌 모든 이음새).
 
 Usage:
-    python scripts/assemble_draft.py <videos/NAME>
+    python scripts/assemble_draft.py <video-edit/NAME>
 """
 from __future__ import annotations
 import argparse

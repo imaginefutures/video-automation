@@ -5,7 +5,7 @@
 segments.json의 각 편에 "check": {"verdict": "ok"|"warn", "issues": [{"sent", "kind", "note"}]}를 더한다.
 
 Usage:
-    python scripts/check_standalone.py <splits/NAME>
+    python scripts/check_standalone.py <auto-split/NAME>
 """
 from __future__ import annotations
 import argparse

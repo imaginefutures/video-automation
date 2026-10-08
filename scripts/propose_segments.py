@@ -9,7 +9,7 @@ LLM 출력이 규칙(번호 증가, 범위 안)을 어기면 1회 다시 묻고,
 Writes <folder>/work/segments.json (제안 원본 - 사용자 수정은 split_decisions.json에 따로).
 
 Usage:
-    python scripts/propose_segments.py <splits/NAME> [--min-minutes 3] [--max-minutes 10] [--no-llm]
+    python scripts/propose_segments.py <auto-split/NAME> [--min-minutes 3] [--max-minutes 10] [--no-llm]
 """
 from __future__ import annotations
 import argparse

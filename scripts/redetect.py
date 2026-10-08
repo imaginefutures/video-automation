@@ -18,7 +18,7 @@ pattern_suggestion/gold)을 새 배열에 재배치"하는 로직을 갖고 있�
 50% 미만 겹치는 항목은 사람이 다시 봐야 하는 REVIEW로 자연히 떨어진다(그 로직도 이미 있음).
 
 Usage:
-    python scripts/redetect.py <videos/NAME> [--no-llm]
+    python scripts/redetect.py <video-edit/NAME> [--no-llm]
 """
 from __future__ import annotations
 import argparse

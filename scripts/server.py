@@ -8,7 +8,7 @@ FCPXML into the folder and renders preview.mp4 in the background.
 Standard library only - nothing to install for the review step.
 
 Usage:
-    python scripts/server.py <videos/NAME> [--port 8765] [--no-open]
+    python scripts/server.py <video-edit/NAME> [--port 8765] [--no-open]
 """
 from __future__ import annotations
 import argparse

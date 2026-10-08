@@ -16,7 +16,7 @@ Writes <folder>/out/NN_<제목>.mp4, NN_<제목>.txt, 목록.txt 와 work/export
 out/은 내보낼 때마다 이 스크립트가 만든 파일만 지우고 새로 만든다 (제목이 바뀌면 옛 이름이 남지 않게).
 
 Usage:
-    python scripts/split_export.py <splits/NAME>
+    python scripts/split_export.py <auto-split/NAME>
 """
 from __future__ import annotations
 import argparse
