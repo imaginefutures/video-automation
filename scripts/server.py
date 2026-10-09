@@ -1416,10 +1416,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/insert/suggest/cancel":
                 self.session.inserts.cancel_suggest()
                 return self._json({"ok": True})
-            if self.path == "/api/insert/suggest":  # 다시 제안 - 손대지 않은 제안만 바꾼다
+            if self.path == "/api/insert/suggest":  # 추가 제안 - 있는 인서트는 그대로, 빈 구간에만 더한다
                 if (self.session.inserts.data.get("suggest") or {}).get("state") == "running":
                     raise ValueError("이미 제안하는 중입니다")
-                threading.Thread(target=self.session.inserts.suggest_all, kwargs={"replace": True}, daemon=True).start()
+                threading.Thread(target=self.session.inserts.suggest_all, daemon=True).start()
                 return self._json({"ok": True})
             if self.path == "/api/insert/fonts":
                 import fonts

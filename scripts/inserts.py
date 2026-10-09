@@ -318,7 +318,7 @@ class InsertStore:
         if sg and sg.get("state") == "running":  # 서버가 제안 도중 꺼졌으면
             sg.update(state="error", error="서버가 다시 시작돼 중단됐어요",
                       error_info={"stage": "자리 제안", "title": "서버가 다시 시작돼 자리 제안이 중단됐어요",
-                                  "hint": "다시 제안을 누르세요", "retryable": True, "raw": ""})
+                                  "hint": "자리 제안을 다시 누르세요", "retryable": True, "raw": ""})
         threading.Thread(target=fonts.ensure_all, daemon=True).start()  # 첫 인서트 전에 미리 받아 둔다
         for it in self.data["items"]:  # 서버가 생성 도중 꺼졌으면 다시 만들 수 있게
             if it["status"] in ("deciding", "generating"):
@@ -469,13 +469,15 @@ class InsertStore:
 
     # ---- 0) 대본 전체 제안 (중간안): 자리·형태·글자 초안. 텍스트는 바로 그리고, 이미지·영상·실물은 "만들기"를 눌러야 만든다
 
-    def suggest_all(self, replace: bool = False) -> dict:
+    def suggest_all(self) -> dict:
+        """대본 전체를 읽고 인서트 자리를 제안한다. 처음 한 번 + '추가 제안' - 있는 인서트는 하나도 건드리지 않고
+        빈 구간에 넣을 만한 곳만 더한다 (10-09 사용자: '다시 제안'(손 안 댄 제안 교체)은 필요 없고 추가 제안이 필요)."""
         import anthropic
         with self.lock:
-            self.data["suggest"] = {"state": "running", "started_at": _now()}
-            if replace:  # 손대지 않은 제안만 지우고 다시 - 사용자가 승인·수정·생성한 것은 남긴다
-                self.data["items"] = [it for it in self.data["items"]
-                                      if not (it.get("origin") == "suggest" and it["status"] in ("suggested", "ready") and not it.get("touched"))]
+            prev = self.data.get("suggest") or {}
+            adding = any(it for it in self.data["items"] if it["status"] != "rejected")
+            self.data["suggest"] = {"state": "running", "started_at": _now(), "adding": adding,
+                                    "total_before": prev.get("total", prev.get("count", 0))}
             self._save()
         def cancelled() -> bool:
             return bool((self.data.get("suggest") or {}).get("cancel"))
@@ -498,6 +500,9 @@ class InsertStore:
             total = sum(k["source_end"] - k["source_start"] for k in kept)
             user = (f"영상 길이 {total / 60:.0f}분, 문장 {len(sents)}개.\n\n이미 있는 인서트 (이 문장들은 피한다):\n"
                     + ("\n".join(ex_lines) or "(없음)") + "\n\n대본:\n" + "\n".join(lines))
+            if (self.data.get("suggest") or {}).get("adding"):
+                user += ("\n\n이번은 '추가 제안'이다. 위 인서트들은 이미 정해진 것으로 보고 건드리지 않는다. 그 사이 빈 구간 중 가이드 리듬(4장)상 "
+                         "비어 있으면 안 되는 곳만 더한다. '넣지 않는 곳'은 계속 비워 두고, 이미 충분하면 빈 배열을 돌려준다.")
             client = anthropic.Anthropic()
             # 긴 영상은 응답이 길어 스트리밍이 필수 (SDK가 10분 넘을 수 있는 요청을 거부)
             with client.messages.stream(
@@ -531,7 +536,9 @@ class InsertStore:
                     self.data["items"].append(it)
                 made += 1
             with self.lock:
-                self.data["suggest"] = {"state": "done", "finished_at": _now(), "count": made}
+                sg = self.data.get("suggest") or {}
+                self.data["suggest"] = {"state": "done", "finished_at": _now(), "count": made,
+                                        "added": made if sg.get("adding") else None, "total": (sg.get("total_before") or 0) + made}
                 self._save()
         except Cancelled:
             with self.lock:
@@ -1058,8 +1065,6 @@ Duration D = {dur:.2f} seconds.
 
     def update(self, iid: str, action: str, body: dict) -> dict:
         it = self._get(iid)
-        if action not in ("delete",):
-            it["touched"] = True  # 다시 제안할 때 지우지 않는다
         if action == "cancel":
             if it["status"] not in ("deciding", "generating"):
                 raise ValueError("만드는 중이 아닙니다")
@@ -1250,7 +1255,7 @@ def render_text(layout: str, lines: list[str], source: str = "", layer: str | No
 
 if __name__ == "__main__":
     # run.py(인서트 전용 프로젝트)가 전사 직후 부른다: python scripts/inserts.py <폴더> --suggest
-    # 실패해도 0으로 끝낸다 - 화면이 오류와 "다시 제안"을 보여 주고, 처리 자체는 막지 않는다
+    # 실패해도 0으로 끝낸다 - 화면이 오류와 "자리 제안" 버튼을 보여 주고, 처리 자체는 막지 않는다
     import argparse
     import sys
     from common import load_env, video_dir

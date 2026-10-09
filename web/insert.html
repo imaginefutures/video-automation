@@ -210,7 +210,7 @@
         <a id="homeLink" class="icon-btn" href="#" title="프로젝트 홈으로" aria-label="프로젝트 홈으로"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg></a>
         <h1 id="title">인서트 편집</h1>
       </div>
-      <div class="sub">컷편집이 끝난 대본 · <a href="#" id="backCut">컷편집으로 돌아가기</a></div>
+      <div class="sub"><a href="#" id="backCut">컷편집으로</a></div>
       <div id="counts"></div>
     </div>
     <div id="sideScroll">
@@ -219,7 +219,6 @@
     </div>
     <div id="sideFoot">
       <button id="btnExport" class="primary">FCP로 내보내기</button>
-      <div class="note">승인한 인서트만 <span class="mono">.fcpxml</span>에 들어갑니다. 컷과 함께 한 파일로 나가요.</div>
     </div>
   </aside>
 
@@ -234,7 +233,6 @@
           <span><i style="background:var(--f-asset)"></i>실물</span>
           <span><i class="pending"></i>확인 전</span>
           <span><i style="background:none;border:1px dashed var(--line-strong)"></i>제안</span>
-          <span style="color:var(--muted)">위 얇은 줄 = 섹션 바·목록</span>
         </span>
       </div>
       <div id="sugBar"></div>
@@ -320,7 +318,7 @@ async function load() {
   $('#title').textContent = `인서트 편집 · ${S.name}`;
   $('#homeLink').href = `http://127.0.0.1:${S.home_port || 8764}/`;
   $('#backCut').href = '/';
-  if (S.insert_only) $('#backCut').parentElement.textContent = '편집이 끝난 완성본 · 인서트만';
+  if (S.insert_only) $('#backCut').parentElement.style.display = 'none';
   if (!video.src) {
     video.src = '/media';
     // 첫 프레임이 검게 비지 않게 - 남은 첫 말 위치로
@@ -337,21 +335,23 @@ async function load() {
 function renderAll() { renderCounts(); renderList(); renderTimeline(); paintInserts(); renderDetail(); renderFontWarn(); renderSugBar(); }
 function renderSugBar() {
   const bar = $('#sugBar'); const sg = S.suggest || { state: 'none' };
-  const again = `<button class="btn" id="sugAgain">다시 제안</button>`;
+  const hasAny = S.items.some((i) => i.status !== 'rejected');
+  const again = `<button class="btn" id="sugAgain">${hasAny ? '추가 제안' : '자리 제안'}</button>`;
   bar.style.display = sg.state === 'none' ? 'none' : 'flex';
-  if (sg.state === 'running') bar.innerHTML = `<span class="spin"></span>${sg.cancel ? '중단하는 중… (응답이 오면 버려요)' : '대본 전체를 읽고 인서트 자리를 제안하는 중… (1~3분)'}
+  if (sg.state === 'running') bar.innerHTML = `<span class="spin"></span>${sg.cancel ? '중단하는 중…' : '자리 제안 중… (1~3분)'}
     ${sg.cancel ? '' : '<button class="btn" id="sugCancel">중단</button>'}`;
   else if (sg.state === 'cancelled') bar.innerHTML = `자리 제안을 중단했어요${again}`;
-  else if (sg.state === 'error') bar.innerHTML = `<div style="flex:1 1 100%">${errorBlock(sg.error_info || { title: `자리 제안 실패: ${sg.error}`, hint: '다시 제안을 눌러 보세요', raw: '' }, again)}</div>`;
+  else if (sg.state === 'error') bar.innerHTML = `<div style="flex:1 1 100%">${errorBlock(sg.error_info || { title: `자리 제안 실패: ${sg.error}`, hint: '아래 버튼으로 다시 해 보세요', raw: '' }, again)}</div>`;
   else if (sg.state === 'done') {
     const n = S.items.filter((i) => i.origin === 'suggest').length;
-    bar.innerHTML = `자동 제안 ${n}개 · 텍스트는 미리 만들어 뒀고, 이미지·영상은 <b>만들기</b>를 눌러야 만들어요 (점선)${again}`;
+    const added = sg.added != null ? `방금 ${sg.added ? `${sg.added}개 추가` : '더 넣을 자리 없음'} · ` : '';
+    bar.innerHTML = `${added}제안 ${n}개${again}`;
   }
   $('#sugCancel')?.addEventListener('click', async () => {
     try { await api('/api/insert/suggest/cancel'); S.suggest = { ...S.suggest, cancel: true }; renderSugBar(); toast('중단하는 중'); } catch (e) { toast(e.message); }
   });
   $('#sugAgain')?.addEventListener('click', async () => {
-    if (!confirm('손대지 않은 제안만 지우고 대본 전체를 다시 읽어 제안할까요? 승인·수정·생성한 것은 그대로 둡니다. (영상당 약 $0.3)')) return;
+    if (hasAny && !confirm('지금 있는 인서트는 그대로 두고, 대본 전체를 다시 읽어 빈 구간 중 넣을 만한 곳만 더 제안할까요? (영상당 약 $0.3)')) return;
     try { await api('/api/insert/suggest'); S.suggest = { state: 'running' }; renderSugBar(); schedulePoll(); } catch (e) { toast(e.message); }
   });
 }
@@ -444,7 +444,7 @@ function itemLabel(it) { const l = (it.decision?.lines || []).filter(Boolean).jo
 function renderList() {
   const list = $('#list');
   if (!S.items.length) {
-    list.innerHTML = `<div class="empty">대본에서 인서트를 넣을 부분을 드래그한 뒤 <b>＋ 인서트 만들기</b>를 누르세요.<br>형태(텍스트·이미지·영상)는 내용과 앞뒤 문맥을 보고 자동으로 정합니다.</div>`;
+    list.innerHTML = `<div class="empty">대본을 드래그해 인서트를 만드세요</div>`;
     return;
   }
   list.innerHTML = '';
@@ -484,7 +484,7 @@ function renderTimeline() {
   let gap = { len: 0, at: 0 }, last = 0;
   for (const i of live) { if (i.t_start - last > gap.len) gap = { len: i.t_start - last, at: last }; last = Math.max(last, i.t_end); }
   if (D - last > gap.len) gap = { len: D - last, at: last };
-  $('#tlGap').textContent = live.length ? `인서트 ${live.length}개 · 가장 긴 빈 구간 ${Math.round(gap.len)}초 (${fmt(gap.at)}~)` : '';
+  $('#tlGap').textContent = live.length ? `가장 긴 빈 구간 ${Math.round(gap.len)}초 (${fmt(gap.at)}~)` : '';
   movePlayhead();
 }
 function tlTimeAt(clientX) { const r = $('#tl').getBoundingClientRect(); return Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (S.duration_out || 0); }
@@ -635,9 +635,8 @@ function renderDecisionBar() {
   const pend = S.items.filter((i) => i.status === 'ready').length;
   const sug = S.items.filter((i) => i.status === 'suggested').length;
   if (!it) {
-    bar.innerHTML = `<div class="db-top"><span class="db-hint">인서트를 고르면 여기서 바로 승인·취소해요</span>
-        <span class="db-nav"><button id="dbPrev" title="이전 (↑)">▲</button><button id="dbNext" title="다음 (↓)">▼</button></span></div>
-      <div class="db-act">${pend ? `<button class="primary" id="dbFirst">확인 전 ${pend}개 확인 시작</button>` : `<span class="db-hint">${sug ? `제안 ${sug}개 - 목록에서 골라 만들기` : '대본을 드래그해 인서트를 만들어 보세요'}</span>`}</div>`;
+    bar.innerHTML = `<div class="db-top"><span class="db-nav"><button id="dbPrev" title="이전 (↑)">▲</button><button id="dbNext" title="다음 (↓)">▼</button></span></div>
+      ${pend ? `<div class="db-act"><button class="primary" id="dbFirst">확인 전 ${pend}개 확인 시작</button></div>` : ''}`;
     $('#dbFirst')?.addEventListener('click', () => { const n = nextPending(); if (n) select(n.id, true); });
   } else {
     const d = it.decision || {};
@@ -646,10 +645,10 @@ function renderDecisionBar() {
     const what = it.form === 'image' ? (d.image_kind === 'photo' ? '생성 사진' : '삽화') : it.form === 'video' ? '모션그래픽' : '';
     let actions = '';
     if (it.status === 'ready') actions = `<button class="primary" data-act="approve">승인<span class="k">A</span></button><button class="btn" data-act="reject">취소<span class="k">X</span></button>`;
-    else if (it.status === 'approved') actions = `<span class="db-done ok">✓ 승인됨 - 내보내기에 들어가요</span><button class="btn" data-act="reopen">승인 취소</button>`;
-    else if (it.status === 'rejected') actions = `<span class="db-done no">취소됨 - 내보내기에서 빠져요</span><button class="btn" data-act="reopen">다시 살리기</button>`;
+    else if (it.status === 'approved') actions = `<span class="db-done ok">✓ 승인됨</span><button class="btn" data-act="reopen">승인 취소</button>`;
+    else if (it.status === 'rejected') actions = `<span class="db-done no">취소됨</span><button class="btn" data-act="reopen">다시 살리기</button>`;
     else if (it.status === 'suggested' && it.form !== 'asset') actions = `<button class="primary" data-act="make">${what} 만들기${it.form === 'image' ? ' · 약 30초' : it.form === 'video' ? ' · 약 3~4분' : ''}</button><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
-    else if (it.status === 'suggested' || it.status === 'needs_asset') actions = `<span class="db-hint" style="flex:1">아래 <b>① 결과</b>에서 자료 파일을 올리면 배치돼요</span><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
+    else if (it.status === 'suggested' || it.status === 'needs_asset') actions = `<span class="db-hint" style="flex:1">자료 파일 필요 (① 결과)</span><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
     else if (BUSY.has(it.status)) actions = `<span class="busy" style="padding:4px 0;flex:1"><span class="spin"></span>${esc(it.progress) || (it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</span>
       <button class="btn" data-act="cancel" ${it.cancel ? 'disabled' : ''}>${it.cancel ? '중단하는 중' : '중단'}</button>`;
     else {  // 오류 - 원인과 해결 방법, 다시 시도 / 삭제
@@ -692,10 +691,7 @@ function renderDetail() {
   renderDecisionBar();
   const box = $('#detail'); const it = S.items.find((i) => i.id === selId);
   if (!it) {
-    box.innerHTML = card('?', '인서트 만드는 법', '', `<ol style="margin:4px 0 0;padding-left:18px;font-size:13.5px;line-height:1.75">
-      <li>제안된 인서트를 목록·타임라인에서 고르거나, 가운데 대본을 드래그해 <b>＋ 인서트 만들기</b></li>
-      <li>위 영상과 <b>① 결과</b>를 보고 결정 바에서 <b>승인(A)</b> 또는 <b>취소(X)</b> - 승인하면 다음 확인 전으로 넘어가요</li>
-      <li>이전·다음은 <b>↑ / ↓</b></li><li>다 되면 왼쪽 아래 <b>FCP로 내보내기</b></li></ol>`);
+    box.innerHTML = '';
     return;
   }
   const d = it.decision || {};
@@ -707,17 +703,17 @@ function renderDetail() {
   let r = '';
   if (it.files?.length && ['ready', 'approved', 'rejected'].includes(it.status)) {
     r += `<div class="pv">${it.files.map((f) => f.endsWith('.mp4') ? `<video src="${fileUrl(f)}" muted loop autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>` : `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
-      <div class="row" style="justify-content:space-between"><span class="note">격자 = 투명한 부분</span><button class="btn" id="dPlay">영상 위에서 재생</button></div>`;
+      <div class="row" style="justify-content:flex-end"><button class="btn" id="dPlay">영상 위에서 재생</button></div>`;
   }
   if (it.form === 'image' && it.candidates?.length && !busy && it.status !== 'suggested') {
     const ck = it.checks || [];
-    r += `<div class="sub"><div class="lbl">후보 고르기${ck.length ? ' <span class="note" style="font-weight:400">✓ = 다른 AI 검사 통과</span>' : ''}</div><div class="cands">${it.candidates.map((c, k) => {
+    r += `<div class="sub"><div class="lbl">후보</div><div class="cands">${it.candidates.map((c, k) => {
       const v = ck[k]; const badge = v ? `<span class="vd ${v.ok ? 'ok' : 'no'}">${v.ok ? '✓' : '✗'}</span>` : '';
       return `<button data-k="${k}" class="${k === it.chosen ? 'on' : ''}" aria-label="후보 ${k + 1}" title="${esc(v && !v.ok ? v.note : '')}">${badge}<img src="${fileUrl(c)}" alt=""></button>`;
     }).join('')}</div>${ck[it.chosen] && !ck[it.chosen].ok ? `<div class="warn">고른 후보: ${esc(ck[it.chosen].note)}</div>` : ''}</div>`;
   }
   if (it.form === 'video' && it.candidates?.length && !busy && it.status !== 'suggested') {
-    r += `<div class="sub"><div class="lbl">검사한 장면 <span class="note" style="font-weight:400">다른 AI가 본 프레임</span></div><div class="cands">${it.candidates.map((c) =>
+    r += `<div class="sub"><div class="lbl">검사한 장면</div><div class="cands">${it.candidates.map((c) =>
       `<span style="display:block;border-radius:var(--r-sm);overflow:hidden;aspect-ratio:16/9;background:#000"><img src="${fileUrl(c)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></span>`).join('')}</div></div>`;
   }
   if (it.status === 'suggested' && it.form !== 'asset') {
@@ -727,13 +723,13 @@ function renderDetail() {
   if (it.form === 'video' && d.scene && it.status !== 'suggested' && !it.files?.length) r += `<div class="sub"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
   if (it.form === 'asset' && !busy && it.status !== 'rejected') {
     r += `<div class="sub"><div class="lbl">필요한 실물 자료</div><div class="quote">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div>
-      <input type="file" id="dUpload" accept="image/*"><div class="note" style="margin-top:4px">올리면 ${d.layout === 'fullscreen' ? '전체 화면' : '화자 옆(오른쪽 1/3)'}에 배치해요</div></div>`;
+      <input type="file" id="dUpload" accept="image/*"></div>`;
   }
   if (errInfo(it) && !busy && !['ready', 'approved', 'rejected'].includes(it.status)) r += errorBlock(errInfo(it));
   if (it.font_fallback?.length) r += `<div class="warn">채널 글꼴(${it.font_fallback.map(esc).join(', ')}) 대신 대체 글꼴로 만들어졌어요 - 글꼴을 받은 뒤 ③에서 <b>글자 반영</b>을 누르면 다시 그려요</div>`;
-  if (busy) r += `<div class="busy"><span class="spin"></span>${esc(it.progress) || '만드는 중이에요'} - 끝나면 여기에 결과가 나와요. 위 결정 바에서 중단할 수 있어요</div>`;
-  if (!r) r = `<div class="note">아직 결과가 없어요.</div>`;
-  h += card(1, '결과', it.status === 'suggested' ? '아직 제안만 된 상태예요. 위 결정 바에서 만들거나 무시하세요' : '보고 괜찮으면 위 결정 바에서 승인', r);
+  if (busy) r += `<div class="busy"><span class="spin"></span>${esc(it.progress) || '만드는 중'}</div>`;
+  if (!r) r = `<div class="note">결과 없음</div>`;
+  h += card(1, '결과', '', r);
 
   // ② 판단 - 왜 이렇게
   let w = `<div class="sub"><div class="lbl">원래 대사</div><div class="quote" style="margin:0">${esc(it.text)}</div></div>`;
@@ -741,33 +737,33 @@ function renderDetail() {
   if (it.form === 'image' && d.point) w += `<div class="sub"><div class="lbl">그림이 보여 줄 것</div><div class="reason" style="margin:0">${esc(d.point)}</div></div>`;
   if (it.motion_refs?.length) {
     const title = (n) => (n.split('__')[1] || n).replace(/-/g, ' ');
-    w += `<div class="sub"><div class="lbl">참고한 레퍼런스 <span class="note" style="font-weight:400">라이브러리 ${it.motion_refs.length}개 - 구성·움직임만 빌림</span></div>
+    w += `<div class="sub"><div class="lbl">참고한 레퍼런스</div>
       ${it.motion_refs.map((r) => `<div style="margin-bottom:6px"><div style="font-size:13px;font-weight:600">${esc(title(r.name))}</div><div class="reason" style="margin:0">${esc(r.why)}</div></div>`).join('')}</div>`;
   }
   if ((d.warnings || []).length) w += `<div class="sub"><div class="lbl">주의</div>${d.warnings.map((x) => `<div class="warn">${esc(x)}</div>`).join('')}</div>`;
-  h += card(2, '판단', '이 자리에 이 형태를 고른 이유', w);
+  h += card(2, '판단', '', w);
 
   // ③ 고치기
   if (!busy) {
     let f = '';
     if (['text', 'image', 'asset'].includes(it.form) && d.lines && it.status !== 'suggested') {
       const isText = it.form === 'text';
-      f += `<div class="sub"><div class="lbl">${isText ? '글자 고치기' : '노란 글자 고치기'} <span class="note" style="font-weight:400">다시 생성하지 않고 바로 반영</span></div>
+      f += `<div class="sub"><div class="lbl">${isText ? '글자' : '노란 글자'}</div>
         <textarea id="dLines" placeholder="${isText ? '한 줄에 한 줄씩' : '없으면 비워 두기'}">${esc((d.lines || []).join('\n'))}</textarea>
         ${isText ? `<div class="row" style="margin-top:6px"><select id="dLayout" style="flex:1">${Object.entries(LAYOUT_KO).map(([k, v]) => `<option value="${k}"${k === d.layout ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
         <input type="text" id="dSource" placeholder="출처 (인용 카드일 때, 예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}
         <div class="row" style="margin-top:6px"><button class="btn" id="dApplyText">글자 반영</button></div></div>`;
     }
     if (it.form !== null && it.status !== 'suggested') {
-      f += `<div class="sub"><div class="lbl">요청 적고 다시 만들기 <span class="note" style="font-weight:400">AI가 새로 만들어요</span></div>
+      f += `<div class="sub"><div class="lbl">요청하고 다시 만들기</div>
         ${(it.notes || []).length ? `<div class="note" style="margin-bottom:4px">지금까지 요청: ${it.notes.map(esc).join(' · ')}</div>` : ''}
         <textarea id="dNote" placeholder="예: 숟가락이 아니라 그냥 나뭇가지여야 해요" style="min-height:44px"></textarea>
         <div class="row" style="margin-top:6px"><button class="btn" id="dNoteGo">요청 반영해 다시 만들기</button></div></div>`;
     }
-    f += `<div class="sub"><div class="lbl">형태 바꾸기 <span class="note" style="font-weight:400">누르면 그 형태로 새로 만들어요</span></div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
+    f += `<div class="sub"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
       `<button data-form="${k}" class="${k === it.form ? 'on' : ''}">${v}</button>`).join('')}</div>
-      ${d.alternatives?.length ? `<div class="note" style="margin-top:4px">AI가 본 대안: ${d.alternatives.map((a) => FORM_KO[a]).join(', ')}</div>` : ''}</div>`;
-    h += card(3, '고치기', '글자만 바꾸기 → 요청해서 다시 만들기 → 형태 바꾸기 순으로 손이 덜 가요', f);
+      </div>`;
+    h += card(3, '고치기', '', f);
 
     // ④ 기타
     h += card(4, '기타', '', `<div class="row">${it.status !== 'suggested' ? `<button class="btn" data-act="regenerate">같은 형태로 다시 만들기</button>` : ''}<button class="danger-link" data-act="delete">목록에서 삭제</button></div>`);
@@ -834,9 +830,8 @@ $('#btnExport').addEventListener('click', async () => {
       return;
     }
     showModal(`<h3 style="margin:0 0 8px">내보내기 완료</h3>
-      <p>승인한 인서트 <b>${r.approved}개</b>를 컷 편집본과 함께 넣었어요.</p><p><code>${esc(r.fcpxml)}</code></p>
-      <p class="note">Final Cut Pro에서 이 파일을 열면 인서트가 화자 위 연결 클립으로 제자리에 있어요. 역할(인서트.텍스트 / 인서트.이미지)로 한 번에 켜고 끌 수 있어요.<br>
-      FCP에 이미 가져온 뒤 다시 내보내면, FCP에서 한 작업은 새 프로젝트로 따로 생겨요.</p>
+      <p>인서트 <b>${r.approved}개</b> · <code>${esc(r.fcpxml)}</code></p>
+      <p class="note">이미 FCP로 가져온 뒤 다시 내보내면 FCP에는 새 프로젝트로 생겨요.</p>
       <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="mReveal">Finder에서 보기</button><button class="primary" onclick="hideModal()">닫기</button></div>`);
     $('#mReveal').addEventListener('click', () => api('/api/insert/reveal'));
   } catch (e) { toast(e.message); }
