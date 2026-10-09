@@ -152,6 +152,7 @@ def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: 
         dur = max(timeline_frame(ins["end"]) - t0, clock.frames(1.0))
         i = max(k for k, off in enumerate(seg_offset_frames) if off <= t0)
         child_off = clock.frames(kept_segments[i]["source_start"]) + (t0 - seg_offset_frames[i])
+        lane0 = int(ins.get("lane_base", 1))  # 구조 층(섹션 바)은 3부터 - 같은 때 뜨는 다른 인서트(1~2)와 겹치지 않게
         for k, layer in enumerate(ins["layers"]):
             f = Path(layer)
             ref = f"vins{n}_{k}"
@@ -160,7 +161,7 @@ def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: 
                 resources.append(f'<asset id="{ref}" name="{escape(f.stem)}" start="0s" duration="0s" hasVideo="1" format="vautostill" videoSources="1">'
                                  f'<media-rep kind="original-media" src="{escape(src)}"/></asset>')
                 by_seg.setdefault(i, []).append(
-                    f'<video ref="{ref}" lane="{k + 1}" offset="{clock.time_str_frames(child_off)}" duration="{clock.time_str_frames(dur)}" '
+                    f'<video ref="{ref}" lane="{lane0 + k}" offset="{clock.time_str_frames(child_off)}" duration="{clock.time_str_frames(dur)}" '
                     f'role="{escape(ins["role"])}" name="{escape(ins["name"])}"/>')
             elif f.suffix.lower() in (".mp4", ".mov"):
                 # motion inserts are rendered at the sequence frame rate (inserts.py FPS_*), video only
@@ -171,7 +172,7 @@ def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: 
                 resources.append(f'<asset id="{ref}" name="{escape(f.stem)}" start="0s" duration="{clock.time_str_frames(media_frames)}" hasVideo="1" '
                                  f'format="vautofmt1" videoSources="1"><media-rep kind="original-media" src="{escape(src)}"/></asset>')
                 by_seg.setdefault(i, []).append(
-                    f'<asset-clip ref="{ref}" lane="{k + 1}" offset="{clock.time_str_frames(child_off)}" '
+                    f'<asset-clip ref="{ref}" lane="{lane0 + k}" offset="{clock.time_str_frames(child_off)}" '
                     f'duration="{clock.time_str_frames(min(dur, media_frames))}" videoRole="{escape(ins["role"])}" name="{escape(ins["name"])}"/>')
             else:
                 print(f"[inserts] {f.name}: unsupported layer type - skipped")

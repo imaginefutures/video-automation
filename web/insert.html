@@ -82,7 +82,10 @@
   #tl { position: relative; height: 40px; background: var(--surface-2); border-radius: var(--r-sm); cursor: pointer; user-select: none; }
   #tl .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(0,0,0,0.07); }
   #tl .tick span { position: absolute; top: 100%; left: -10px; font: 10px/1.6 var(--mono); color: var(--muted); }
-  #tl .blk { position: absolute; top: 6px; bottom: 6px; min-width: 3px; border-radius: 3px; }
+  #tl .blk { position: absolute; top: 12px; bottom: 6px; min-width: 3px; border-radius: 3px; }
+  /* 구조 층(섹션 바·목록)은 위쪽 얇은 줄 - 다른 인서트와 같은 시간에 겹쳐 뜬다 */
+  #tl .blk.struct { top: 2px; bottom: auto; height: 7px; border-radius: 2px; }
+  #tl .blk.struct.sug { top: 2px; height: 7px; border-width: 1px; }
   #tl .blk.text { background: var(--f-text); } #tl .blk.image { background: var(--f-image); } #tl .blk.video { background: var(--f-video); } #tl .blk.asset { background: var(--f-asset); } #tl .blk.none { background: var(--line-strong); }
   /* 확인 전(만들어졌지만 승인 안 함)은 빗금, 만드는 중은 흐리게, 승인은 꽉 찬 색 */
   #tl .blk.pending { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.55) 0 3px, transparent 3px 6px); }
@@ -119,10 +122,34 @@
   #stage { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; flex: 0 0 auto; }
   #stage video, #stage .ov { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   #stage .ov { pointer-events: none; }
-  #stageBadge { position: absolute; left: 8px; top: 8px; display: none; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; padding: 1px 7px; border-radius: var(--r-full); }
+  #stageBadge { position: absolute; left: 8px; bottom: 8px; display: none; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; padding: 1px 7px; border-radius: var(--r-full); }
   #vbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
   #vbar .t { font-size: 12px; color: var(--muted); margin-left: auto; }
-  #detail { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px 16px 40px; }
+  #detail { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 14px 40px; background: var(--panel); }
+  /* 결정 바 - 영상 바로 아래 고정. 상태가 바뀌어도 같은 자리에서 버튼만 바뀐다 */
+  #decisionBar { flex: 0 0 auto; padding: 10px 14px 12px; border-bottom: 1px solid var(--line); background: var(--bg); }
+  #decisionBar .db-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 24px; }
+  #decisionBar .db-time { font-size: 12px; color: var(--muted); }
+  #decisionBar .db-nav { margin-left: auto; display: flex; gap: 4px; }
+  #decisionBar .db-nav button { width: 30px; height: 26px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); padding: 0; font-size: 12px; }
+  #decisionBar .db-nav button:hover:not(:disabled) { border-color: var(--line-strong); }
+  #decisionBar .db-act { display: flex; gap: 6px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  #decisionBar .db-act .primary { flex: 1 1 auto; padding: 10px 14px; }
+  #decisionBar .db-act .btn { padding: 9px 14px; }
+  #decisionBar .db-done { flex: 1 1 auto; font-weight: 700; font-size: 14px; }
+  #decisionBar .db-done.ok { color: var(--ink); }
+  #decisionBar .db-done.no { color: var(--muted); }
+  #decisionBar .db-hint { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .k { font: 600 10.5px/1 var(--mono); opacity: 0.65; margin-left: 6px; padding: 2px 4px; border-radius: 3px; background: rgba(255,255,255,0.18); }
+  .btn .k { background: rgba(0,0,0,0.06); }
+  /* 상세 - 할 일별 카드 */
+  .card-sec { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px; margin-top: 10px; }
+  .card-sec > h3 { margin: 0; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .card-sec > h3 .num { width: 18px; height: 18px; border-radius: 50%; background: var(--ink); color: #fff; font: 700 11px/18px var(--mono); text-align: center; flex: 0 0 auto; }
+  .card-sec > .desc { font-size: 12px; color: var(--muted); margin: 2px 0 8px 24px; }
+  .card-sec .sub { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .card-sec .sub:first-of-type { border-top: 0; padding-top: 0; margin-top: 4px; }
+  .card-sec .sub .lbl { font-size: 12px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
   #detail h2 { font-size: 15px; margin: 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .quote { margin: 10px 0; padding: 8px 12px; background: var(--panel); border-left: 3px solid var(--line-strong); border-radius: var(--r-sm); font-size: 14px; line-height: 1.6; }
   .reason { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
@@ -196,6 +223,8 @@
           <span><i style="background:var(--f-video)"></i>영상</span>
           <span><i style="background:var(--f-asset)"></i>실물</span>
           <span><i class="pending"></i>확인 전</span>
+          <span><i style="background:none;border:1px dashed var(--line-strong)"></i>제안</span>
+          <span style="color:var(--muted)">위 얇은 줄 = 섹션 바·목록</span>
         </span>
       </div>
       <div id="sugBar"></div>
@@ -217,6 +246,7 @@
       <button class="btn" id="btnPlay">▶ 재생</button>
       <span class="t mono" id="vTime">0:00</span>
     </div>
+    <div id="decisionBar"></div>
     <div id="detail"></div>
   </aside>
 </div>
@@ -288,8 +318,11 @@ async function load() {
   }
   buildKept();
   renderDoc();
+  const want = location.hash.slice(1);  // /insert#<인서트 id> - 그 인서트를 골라 연다
+  if (want && S.items.some((i) => i.id === want)) selId = want;
   renderAll();
   schedulePoll();
+  if (selId) setTimeout(() => select(selId, true), 0);
 }
 function renderAll() { renderCounts(); renderList(); renderTimeline(); paintInserts(); renderDetail(); renderFontWarn(); renderSugBar(); }
 function renderSugBar() {
@@ -332,7 +365,7 @@ async function refresh() {
   // 다른 인서트를 만드는 동안의 폴링이 입력 중인 글자를 지우지 않게 - 선택한 인서트 상태가 그대로면 상세 패널은 두고
   const typing = $('#detail').contains(document.activeElement) && document.activeElement.matches('textarea, input, select');
   if (typing && S.items.find((i) => i.id === selId)?.status === prevStatus) {
-    renderCounts(); renderList(); renderTimeline(); paintInserts();
+    renderCounts(); renderList(); renderTimeline(); paintInserts(); renderDecisionBar();
   } else renderAll();
   schedulePoll();
 }
@@ -366,7 +399,9 @@ function renderDoc() {
 function wordEl(wi) { return document.querySelector(`.w[data-wi="${wi}"]`); }
 function paintInserts() {
   document.querySelectorAll('.w.ins').forEach((el) => { el.className = 'w'; delete el.dataset.ins; });
-  for (const it of S.items) {
+  // 구조 층(섹션 바)을 먼저 칠하고 그 위에 다른 인서트를 칠한다 - 겹치면 더 구체적인 인서트가 보이게
+  const isStruct = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
+  for (const it of [...S.items].sort((a, b) => isStruct(b) - isStruct(a))) {
     if (it.status === 'rejected') continue;
     for (let wi = it.wi_start; wi <= it.wi_end; wi++) {
       const el = wordEl(wi); if (!el) continue;
@@ -420,7 +455,8 @@ function renderTimeline() {
     if (it.status === 'rejected' || it.t_start == null) continue;
     const b = document.createElement('div');
     const st = it.status === 'approved' ? '' : it.status === 'suggested' ? ' sug' : BUSY.has(it.status) ? ' busy' : ['error', 'unsupported', 'needs_asset'].includes(it.status) ? ' err' : ' pending';
-    b.className = `blk ${it.form || 'none'}${st}${it.id === selId ? ' sel' : ''}`;
+    const struct = it.decision?.layer === '구조' && ['top', 'list'].includes(it.decision?.layout);
+    b.className = `blk ${it.form || 'none'}${st}${struct ? ' struct' : ''}${it.id === selId ? ' sel' : ''}`;
     b.style.left = `${(it.t_start / D) * 100}%`;
     b.style.width = `${Math.max(0.25, ((it.t_end - it.t_start) / D) * 100)}%`;
     b.dataset.id = it.id;
@@ -468,19 +504,27 @@ function skipCuts() {
 }
 let lastOv = '', lastWord = null;
 function overlayAt(t) {
-  // 지금 시각을 덮는 인서트(승인·확인 전) - 선택한 인서트가 겹치면 그것을 우선
+  // 지금 시각을 덮는 인서트(승인·확인 전) - 선택한 인서트가 겹치면 그것을 우선. 구조 층(섹션 바)은 다른 것과 함께 보인다(overlayStruct)
+  const isStruct = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
   const cands = S.items.filter((i) => ['ready', 'approved'].includes(i.status) && i.files?.length && t >= i.src_start && t < Math.max(i.src_end, i.src_start + 1.5));
-  return cands.find((i) => i.id === selId) || cands[0] || null;
+  const main = cands.filter((i) => !isStruct(i));
+  return main.find((i) => i.id === selId) || main[0] || cands.find((i) => i.id === selId) || cands[0] || null;
+}
+function overlayStruct(t, main) {
+  const isStruct = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
+  return S.items.find((i) => i !== main && isStruct(i) && ['ready', 'approved'].includes(i.status) && i.files?.length && t >= i.src_start && t < i.src_end) || null;
 }
 function tick() {
   if (!S) return;
   if (!video.paused) skipCuts();
   movePlayhead();
   const it = overlayAt(video.currentTime);
-  const key = it ? it.id + it.files.join() : '';
+  const st = overlayStruct(video.currentTime, it);
+  const key = (it ? it.id + it.files.join() : '') + (st ? '|' + st.id + st.files.join() : '');
   if (key !== lastOv) {
     lastOv = key;
-    $('#ovLayers').innerHTML = it ? it.files.map((f) => f.endsWith('.mp4') ? `<video class="ov" src="${fileUrl(f)}" muted playsinline preload="auto"></video>` : `<img class="ov" src="${fileUrl(f)}" alt="">`).join('') : '';
+    const layer = (f) => f.endsWith('.mp4') ? `<video class="ov" src="${fileUrl(f)}" muted playsinline preload="auto"></video>` : `<img class="ov" src="${fileUrl(f)}" alt="">`;
+    $('#ovLayers').innerHTML = (it ? it.files.map(layer).join('') : '') + (st ? st.files.map(layer).join('') : '');
     $('#stageBadge').style.display = it ? 'block' : 'none';
     if (it) $('#stageBadge').textContent = `${FORM_KO[it.form]} · ${STATUS_KO[it.status]}`;
   }
@@ -550,86 +594,145 @@ $('#mkBtn').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- 상세 패널
 function select(id, scroll) {
-  selId = id; renderList(); renderTimeline(); paintInserts(); renderDetail();
+  selId = id;
+  try { history.replaceState(null, '', id ? `#${id}` : location.pathname); } catch (e) { /* 무시 */ } renderList(); renderTimeline(); paintInserts(); renderDetail();
   const it = S.items.find((i) => i.id === id);
   if (it) {
     if (scroll) wordEl(it.wi_start)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (video.paused) { video.currentTime = it.src_start + 0.05; tick(); }
   }
 }
+// 이전/다음 인서트 (↑/↓) - 컷편집 화면의 ↑/↓ 순회와 같은 방식
+function navItems() { return sortedItems().filter((i) => i.status !== 'rejected'); }
+function step(dir) {
+  const list = navItems(); if (!list.length) return;
+  const k = list.findIndex((i) => i.id === selId);
+  const next = k < 0 ? list[dir > 0 ? 0 : list.length - 1] : list[k + dir];
+  if (next) select(next.id, true);
+}
+function nextPending() {
+  const list = navItems(); const cur = S.items.find((i) => i.id === selId);
+  return list.find((i) => i.status === 'ready' && (!cur || (i.t_start ?? 0) > (cur.t_start ?? 0))) || list.find((i) => i.status === 'ready');
+}
+
+function renderDecisionBar() {
+  const bar = $('#decisionBar'); const it = S.items.find((i) => i.id === selId);
+  const pend = S.items.filter((i) => i.status === 'ready').length;
+  const sug = S.items.filter((i) => i.status === 'suggested').length;
+  if (!it) {
+    bar.innerHTML = `<div class="db-top"><span class="db-hint">인서트를 고르면 여기서 바로 승인·취소해요</span>
+        <span class="db-nav"><button id="dbPrev" title="이전 (↑)">▲</button><button id="dbNext" title="다음 (↓)">▼</button></span></div>
+      <div class="db-act">${pend ? `<button class="primary" id="dbFirst">확인 전 ${pend}개 확인 시작</button>` : `<span class="db-hint">${sug ? `제안 ${sug}개 - 목록에서 골라 만들기` : '대본을 드래그해 인서트를 만들어 보세요'}</span>`}</div>`;
+    $('#dbFirst')?.addEventListener('click', () => { const n = nextPending(); if (n) select(n.id, true); });
+  } else {
+    const d = it.decision || {};
+    const dur = Math.round((it.t_end ?? 0) - (it.t_start ?? 0));
+    const list = navItems(); const k = list.findIndex((i) => i.id === it.id);
+    const what = it.form === 'image' ? (d.image_kind === 'photo' ? '생성 사진' : '삽화') : it.form === 'video' ? '모션그래픽' : '';
+    let actions = '';
+    if (it.status === 'ready') actions = `<button class="primary" data-act="approve">승인<span class="k">A</span></button><button class="btn" data-act="reject">취소<span class="k">X</span></button>`;
+    else if (it.status === 'approved') actions = `<span class="db-done ok">✓ 승인됨 - 내보내기에 들어가요</span><button class="btn" data-act="reopen">승인 취소</button>`;
+    else if (it.status === 'rejected') actions = `<span class="db-done no">취소됨 - 내보내기에서 빠져요</span><button class="btn" data-act="reopen">다시 살리기</button>`;
+    else if (it.status === 'suggested' && it.form !== 'asset') actions = `<button class="primary" data-act="make">${what} 만들기${it.form === 'image' ? ' · 약 30초' : it.form === 'video' ? ' · 약 3~4분' : ''}</button><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
+    else if (it.status === 'suggested' || it.status === 'needs_asset') actions = `<span class="db-hint" style="flex:1">아래 <b>① 결과</b>에서 자료 파일을 올리면 배치돼요</span><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
+    else if (BUSY.has(it.status)) actions = `<span class="busy" style="padding:4px 0;flex:1"><span class="spin"></span>${it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : esc(it.progress) || (it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</span>`;
+    else actions = `<span class="db-done no" style="color:var(--danger)">${it.status === 'unsupported' ? '이 형태는 아직 만들 수 없어요' : '만들지 못했어요'}</span><button class="btn" data-act="regenerate">다시 만들기</button>`;
+    bar.innerHTML = `<div class="db-top">${formChip(it)}${statusChip(it)}<span class="db-time mono">${fmt(it.t_start)}–${fmt(it.t_end)} · ${dur}초${d.layer ? ` · ${esc(d.layer)}` : ''}</span>
+        <span class="db-nav"><span class="db-time mono" style="align-self:center;margin-right:4px">${k + 1}/${list.length}</span><button id="dbPrev" title="이전 (↑)" ${k <= 0 ? 'disabled' : ''}>▲</button><button id="dbNext" title="다음 (↓)" ${k >= list.length - 1 ? 'disabled' : ''}>▼</button></span></div>
+      <div class="db-act">${actions}</div>`;
+    bar.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => act(it, b.dataset.act)));
+  }
+  $('#dbPrev')?.addEventListener('click', () => step(-1));
+  $('#dbNext')?.addEventListener('click', () => step(1));
+}
+
+function card(num, title, desc, body) {
+  return `<section class="card-sec"><h3><span class="num">${num}</span>${title}</h3>${desc ? `<div class="desc">${desc}</div>` : ''}${body}</section>`;
+}
+
 function renderDetail() {
+  renderDecisionBar();
   const box = $('#detail'); const it = S.items.find((i) => i.id === selId);
   if (!it) {
-    box.innerHTML = `<div class="placeholder"><b>인서트 만드는 법</b><ol>
-      <li>가운데 대본에서 넣을 부분을 드래그</li><li><b>＋ 인서트 만들기</b> - 내용·앞뒤 문맥·역할을 보고 텍스트 / 이미지 / 영상 중 형태를 정해 만들어요</li>
-      <li>결과를 보고 <b>승인</b> 또는 <b>취소</b>. 이미지는 후보 중에서 고르기</li><li>다 되면 <b>FCP로 내보내기</b></li></ol>
-      위 타임라인 띠에서 어디에 인서트가 있는지 보이고, 클릭하면 그 시점으로 이동해요. 기준은 <span class="mono">docs/인서트-가이드.md</span>.</div>`;
+    box.innerHTML = card('?', '인서트 만드는 법', '', `<ol style="margin:4px 0 0;padding-left:18px;font-size:13.5px;line-height:1.75">
+      <li>제안된 인서트를 목록·타임라인에서 고르거나, 가운데 대본을 드래그해 <b>＋ 인서트 만들기</b></li>
+      <li>위 영상과 <b>① 결과</b>를 보고 결정 바에서 <b>승인(A)</b> 또는 <b>취소(X)</b> - 승인하면 다음 확인 전으로 넘어가요</li>
+      <li>이전·다음은 <b>↑ / ↓</b></li><li>다 되면 왼쪽 아래 <b>FCP로 내보내기</b></li></ol>`);
     return;
   }
   const d = it.decision || {};
-  const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
-  let h = `<h2>${formChip(it)}${statusChip(it)}<span class="mono" style="font-size:13px;color:var(--muted);font-weight:400">${fmt(it.t_start)}–${fmt(it.t_end)} (${Math.round(dur)}초)</span>
-    ${d.layer ? `<span style="font-size:12px;color:var(--muted);font-weight:400">· ${esc(d.layer)}</span>` : ''}</h2>
-    <div class="quote">${esc(it.text)}</div>`;
-  if (BUSY.has(it.status)) {
-    h += `<div class="busy"><span class="spin"></span>${it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : esc(it.progress) || (it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</div>`;
-  }
-  if (d.reason) h += `<div class="reason">${esc(d.reason)}</div>`;
-  if (it.form === 'image' && d.point) h += `<div class="reason"><b style="color:var(--ink)">그림이 보여 줄 것</b> · ${esc(d.point)}</div>`;
-  for (const w of d.warnings || []) h += `<div class="warn">${esc(w)}</div>`;
-  if (it.error) h += `<div class="errbox">${esc(it.error)}</div>`;
-  if (it.font_fallback?.length) h += `<div class="warn">채널 글꼴(${it.font_fallback.map(esc).join(', ')}) 대신 대체 글꼴로 만들어졌어요. 글꼴을 받은 뒤 아래 <b>글자 반영</b>을 누르면 다시 그려요.</div>`;
+  const busy = BUSY.has(it.status);
+  const what = it.form === 'image' ? (d.image_kind === 'photo' ? '생성 사진' : '삽화') : it.form === 'video' ? '모션그래픽' : '';
+  let h = '';
 
-  if (it.files?.length && ['ready', 'approved'].includes(it.status)) {
-    h += `<div class="pv">${it.files.map((f) => f.endsWith('.mp4') ? `<video src="${fileUrl(f)}" muted loop autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>` : `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
-      <div class="row" style="justify-content:space-between"><span class="note">격자 = 투명. 실제 화면은 위 영상에서 확인</span><button class="btn" id="dPlay">이 구간 재생</button></div>`;
+  // ① 결과 - 보고 판단하는 것
+  let r = '';
+  if (it.files?.length && ['ready', 'approved', 'rejected'].includes(it.status)) {
+    r += `<div class="pv">${it.files.map((f) => f.endsWith('.mp4') ? `<video src="${fileUrl(f)}" muted loop autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>` : `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
+      <div class="row" style="justify-content:space-between"><span class="note">격자 = 투명한 부분</span><button class="btn" id="dPlay">영상 위에서 재생</button></div>`;
   }
-  if (it.form === 'image' && it.candidates?.length && !BUSY.has(it.status)) {
+  if (it.form === 'image' && it.candidates?.length && !busy && it.status !== 'suggested') {
     const ck = it.checks || [];
-    h += `<div class="sec"><div class="lbl">이미지 후보 - 하나를 고르세요${ck.length ? ' · ✓ = 판정 모델 통과' : ''}</div><div class="cands">${it.candidates.map((c, k) => {
+    r += `<div class="sub"><div class="lbl">후보 고르기${ck.length ? ' <span class="note" style="font-weight:400">✓ = 다른 AI 검사 통과</span>' : ''}</div><div class="cands">${it.candidates.map((c, k) => {
       const v = ck[k]; const badge = v ? `<span class="vd ${v.ok ? 'ok' : 'no'}">${v.ok ? '✓' : '✗'}</span>` : '';
       return `<button data-k="${k}" class="${k === it.chosen ? 'on' : ''}" aria-label="후보 ${k + 1}" title="${esc(v && !v.ok ? v.note : '')}">${badge}<img src="${fileUrl(c)}" alt=""></button>`;
-    }).join('')}</div>${ck[it.chosen] && !ck[it.chosen].ok ? `<div class="warn">이 후보: ${esc(ck[it.chosen].note)}</div>` : ''}</div>`;
+    }).join('')}</div>${ck[it.chosen] && !ck[it.chosen].ok ? `<div class="warn">고른 후보: ${esc(ck[it.chosen].note)}</div>` : ''}</div>`;
   }
-  if (it.form === 'video' && it.candidates?.length && !BUSY.has(it.status)) {
-    h += `<div class="sec"><div class="lbl">검사한 장면 (판정 모델이 본 프레임)</div><div class="cands">${it.candidates.map((c) =>
+  if (it.form === 'video' && it.candidates?.length && !busy && it.status !== 'suggested') {
+    r += `<div class="sub"><div class="lbl">검사한 장면 <span class="note" style="font-weight:400">다른 AI가 본 프레임</span></div><div class="cands">${it.candidates.map((c) =>
       `<span style="display:block;border-radius:var(--r-sm);overflow:hidden;aspect-ratio:16/9;background:#000"><img src="${fileUrl(c)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></span>`).join('')}</div></div>`;
   }
-  if (it.status === 'suggested') {
-    const what = it.form === 'image' ? (d.image_kind === 'photo' ? '생성 사진' : '삽화') : it.form === 'video' ? '모션그래픽' : '';
-    if (d.lines?.length) h += `<div class="sec"><div class="lbl">${it.form === 'text' ? '화면 글자' : '얹을 노란 글자'}</div><div class="quote">${d.lines.map(esc).join('<br>')}</div></div>`;
-    if (it.form !== 'asset' && d.scene) h += `<div class="sec"><div class="lbl">${what} 구상</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
-    if (it.form !== 'asset') h += `<div class="actions"><button class="primary" data-act="make">${what} 만들기 ${it.form === 'image' ? '(후보 3장 · 약 30초 · 약 $0.2)' : it.form === 'video' ? '(약 3~4분 · 약 $0.5)' : ''}</button></div>`;
+  if (it.status === 'suggested' && it.form !== 'asset') {
+    if (d.lines?.length) r += `<div class="sub"><div class="lbl">${it.form === 'text' ? '화면 글자' : '얹을 노란 글자'}</div><div class="quote">${d.lines.map(esc).join('<br>')}</div></div>`;
+    if (d.scene) r += `<div class="sub"><div class="lbl">${what} 구상</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
   }
-  if (it.form === 'video' && d.scene && it.status !== 'suggested') h += `<div class="sec"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
-  if (it.form === 'asset' && !BUSY.has(it.status) && it.status !== 'rejected') {
-    h += `<div class="sec"><div class="lbl">필요한 실물 자료</div><div class="quote">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div>
+  if (it.form === 'video' && d.scene && it.status !== 'suggested' && !it.files?.length) r += `<div class="sub"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
+  if (it.form === 'asset' && !busy && it.status !== 'rejected') {
+    r += `<div class="sub"><div class="lbl">필요한 실물 자료</div><div class="quote">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div>
       <input type="file" id="dUpload" accept="image/*"><div class="note" style="margin-top:4px">올리면 ${d.layout === 'fullscreen' ? '전체 화면' : '화자 옆(오른쪽 1/3)'}에 배치해요</div></div>`;
   }
-  if (['text', 'image', 'asset'].includes(it.form) && d.lines && !BUSY.has(it.status) && it.status !== 'suggested') {
-    const isText = it.form === 'text';
-    h += `<div class="sec"><div class="lbl">${isText ? '화면 글자 (한 줄에 한 줄씩)' : '사진 위 노란 글자 (없으면 비워 두기)'}</div>
-      <textarea id="dLines">${esc((d.lines || []).join('\n'))}</textarea>
-      ${isText ? `<div class="row" style="margin-top:6px"><select id="dLayout" style="flex:1">${Object.entries(LAYOUT_KO).map(([k, v]) => `<option value="${k}"${k === d.layout ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
-      <input type="text" id="dSource" placeholder="출처 (인용 카드일 때, 예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}
-      <div class="row" style="margin-top:6px"><button class="btn" id="dApplyText">글자 반영</button><span class="note">다시 생성하지 않고 바로 고쳐요</span></div></div>`;
+  if (it.error && !busy) r += `<div class="errbox">${esc(it.error)}</div>`;
+  if (it.font_fallback?.length) r += `<div class="warn">채널 글꼴(${it.font_fallback.map(esc).join(', ')}) 대신 대체 글꼴로 만들어졌어요 - 글꼴을 받은 뒤 ③에서 <b>글자 반영</b>을 누르면 다시 그려요</div>`;
+  if (busy) r += `<div class="busy"><span class="spin"></span>만드는 중이에요 - 끝나면 여기에 결과가 나와요</div>`;
+  if (!r) r = `<div class="note">아직 결과가 없어요.</div>`;
+  h += card(1, '결과', it.status === 'suggested' ? '아직 제안만 된 상태예요. 위 결정 바에서 만들거나 무시하세요' : '보고 괜찮으면 위 결정 바에서 승인', r);
+
+  // ② 판단 - 왜 이렇게
+  let w = `<div class="sub"><div class="lbl">원래 대사</div><div class="quote" style="margin:0">${esc(it.text)}</div></div>`;
+  if (d.reason) w += `<div class="sub"><div class="lbl">왜 이 형태인지</div><div class="reason" style="margin:0">${esc(d.reason)}</div></div>`;
+  if (it.form === 'image' && d.point) w += `<div class="sub"><div class="lbl">그림이 보여 줄 것</div><div class="reason" style="margin:0">${esc(d.point)}</div></div>`;
+  if (it.motion_refs?.length) {
+    const title = (n) => (n.split('__')[1] || n).replace(/-/g, ' ');
+    w += `<div class="sub"><div class="lbl">참고한 레퍼런스 <span class="note" style="font-weight:400">라이브러리 ${it.motion_refs.length}개 - 구성·움직임만 빌림</span></div>
+      ${it.motion_refs.map((r) => `<div style="margin-bottom:6px"><div style="font-size:13px;font-weight:600">${esc(title(r.name))}</div><div class="reason" style="margin:0">${esc(r.why)}</div></div>`).join('')}</div>`;
   }
-  if (!BUSY.has(it.status) && it.form !== null && it.status !== 'suggested') {
-    h += `<div class="sec"><div class="lbl">요청 넣고 다시 만들기</div>
-      ${(it.notes || []).length ? `<div class="note" style="margin-bottom:4px">지금까지 요청: ${it.notes.map(esc).join(' · ')}</div>` : ''}
-      <textarea id="dNote" placeholder="예: 숟가락이 아니라 그냥 나뭇가지여야 해요" style="min-height:44px"></textarea>
-      <div class="row" style="margin-top:6px"><button class="btn" id="dNoteGo">요청 반영해 다시 만들기</button></div></div>`;
-  }
-  if (!BUSY.has(it.status)) {
-    h += `<div class="sec"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
+  if ((d.warnings || []).length) w += `<div class="sub"><div class="lbl">주의</div>${d.warnings.map((x) => `<div class="warn">${esc(x)}</div>`).join('')}</div>`;
+  h += card(2, '판단', '이 자리에 이 형태를 고른 이유', w);
+
+  // ③ 고치기
+  if (!busy) {
+    let f = '';
+    if (['text', 'image', 'asset'].includes(it.form) && d.lines && it.status !== 'suggested') {
+      const isText = it.form === 'text';
+      f += `<div class="sub"><div class="lbl">${isText ? '글자 고치기' : '노란 글자 고치기'} <span class="note" style="font-weight:400">다시 생성하지 않고 바로 반영</span></div>
+        <textarea id="dLines" placeholder="${isText ? '한 줄에 한 줄씩' : '없으면 비워 두기'}">${esc((d.lines || []).join('\n'))}</textarea>
+        ${isText ? `<div class="row" style="margin-top:6px"><select id="dLayout" style="flex:1">${Object.entries(LAYOUT_KO).map(([k, v]) => `<option value="${k}"${k === d.layout ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+        <input type="text" id="dSource" placeholder="출처 (인용 카드일 때, 예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}
+        <div class="row" style="margin-top:6px"><button class="btn" id="dApplyText">글자 반영</button></div></div>`;
+    }
+    if (it.form !== null && it.status !== 'suggested') {
+      f += `<div class="sub"><div class="lbl">요청 적고 다시 만들기 <span class="note" style="font-weight:400">AI가 새로 만들어요</span></div>
+        ${(it.notes || []).length ? `<div class="note" style="margin-bottom:4px">지금까지 요청: ${it.notes.map(esc).join(' · ')}</div>` : ''}
+        <textarea id="dNote" placeholder="예: 숟가락이 아니라 그냥 나뭇가지여야 해요" style="min-height:44px"></textarea>
+        <div class="row" style="margin-top:6px"><button class="btn" id="dNoteGo">요청 반영해 다시 만들기</button></div></div>`;
+    }
+    f += `<div class="sub"><div class="lbl">형태 바꾸기 <span class="note" style="font-weight:400">누르면 그 형태로 새로 만들어요</span></div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
       `<button data-form="${k}" class="${k === it.form ? 'on' : ''}">${v}</button>`).join('')}</div>
-      ${d.alternatives?.length ? `<span class="note" style="margin-left:6px">대안: ${d.alternatives.map((a) => FORM_KO[a]).join(', ')}</span>` : ''}</div>`;
-    h += it.status === 'suggested' ? `<div class="actions"><button class="btn" data-act="reject">무시</button><button class="danger-link" data-act="delete">삭제</button></div>` : `<div class="actions">
-      ${it.status === 'approved' ? `<button class="btn" data-act="reopen">승인 취소</button>`
-        : `<button class="primary" data-act="approve" ${it.status === 'ready' ? '' : 'disabled'}>승인</button>`}
-      ${it.status === 'rejected' ? `<button class="btn" data-act="reopen">다시 살리기</button>` : `<button class="btn" data-act="reject" ${['ready', 'approved'].includes(it.status) ? '' : 'disabled'}>취소</button>`}
-      <button class="btn" data-act="regenerate">다시 만들기</button>
-      <button class="danger-link" data-act="delete">삭제</button></div>`;
+      ${d.alternatives?.length ? `<div class="note" style="margin-top:4px">AI가 본 대안: ${d.alternatives.map((a) => FORM_KO[a]).join(', ')}</div>` : ''}</div>`;
+    h += card(3, '고치기', '글자만 바꾸기 → 요청해서 다시 만들기 → 형태 바꾸기 순으로 손이 덜 가요', f);
+
+    // ④ 기타
+    h += card(4, '기타', '', `<div class="row">${it.status !== 'suggested' ? `<button class="btn" data-act="regenerate">같은 형태로 다시 만들기</button>` : ''}<button class="danger-link" data-act="delete">목록에서 삭제</button></div>`);
   }
   box.innerHTML = h;
 
@@ -664,10 +767,10 @@ async function act(it, action, extra = {}) {
   try {
     await api('/api/insert/update', { id: it.id, action, ...extra });
     if (action === 'delete') selId = null;
-    if (action === 'approve') {  // 승인하면 다음 확인 전 인서트로
+    if (action === 'approve' || (action === 'reject' && it.status !== 'approved')) {  // 결정하면 다음 확인 전 인서트로
       const next = sortedItems().find((i) => i.status === 'ready' && i.id !== it.id && (i.t_start ?? 0) >= (it.t_start ?? 0))
         || sortedItems().find((i) => i.status === 'ready' && i.id !== it.id);
-      if (next) selId = next.id;
+      if (next) { selId = next.id; setTimeout(() => select(next.id, true), 0); }
     }
     await refresh();
     lastOv = '';
@@ -697,6 +800,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === ' ') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
   if (e.key === 'Escape') { hideModal(); $('#mkBtn').style.display = 'none'; }
   const cur = S?.items.find((i) => i.id === selId);
+  if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
   if (cur && (e.key === 'a' || e.key === 'A') && cur.status === 'ready') act(cur, 'approve');   // 승인하고 다음 확인 전으로
   if (cur && (e.key === 'x' || e.key === 'X') && ['ready', 'approved', 'suggested'].includes(cur.status)) act(cur, 'reject');
 });

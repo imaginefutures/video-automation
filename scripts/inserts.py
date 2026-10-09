@@ -91,6 +91,16 @@ class InsertDecision(BaseModel):
     warnings: list[str] = Field(description="한국어 주의사항: 넣지 않는 구간, 촘촘함, 사실 확인 필요 등. 없으면 빈 배열")
 
 
+class RefPick(BaseModel):
+    name: str = Field(description="카탈로그의 케이스 id (백틱 안의 이름 그대로, 예: education__animated-cycloid-lesson__2106052083040256293)")
+    why: str = Field(description="이 장면에 왜 맞는지, 한국어 한 문장")
+    borrow: str = Field(description="무엇을 빌릴지 영어로 구체적으로: 구성·움직임·전환·리듬·프롬프트 구조 중. 색·언어는 빌리지 않는다")
+
+
+class RefPicks(BaseModel):
+    picks: list[RefPick] = Field(description="가장 맞는 순서로 1~3개")
+
+
 class Suggestion(InsertDecision):
     s_from: int = Field(description="시작 문장 번호 (대본의 [번호])")
     s_to: int = Field(description="끝 문장 번호 (같거나 큼)")
@@ -106,10 +116,12 @@ SUGGEST_SYSTEM_HEAD = """너는 베싸TV(근거 기반 육아 강의 채널)의 
 - 리듬은 가이드 4장: 화자 구간에서 7~13초마다 새 인서트가 기준. 가이드 3장 "넣지 않는 곳"(개인 일화, 공감·고백, 강사가 대사를 연기, 마무리·다음 편 예고)은 비워 둔다
 - 구조 층(섹션 바·챕터 카드)을 먼저 잡아 영상의 질문-답 흐름이 바만 읽어도 보이게 하고, 그 사이를 요점·근거·장면·목소리로 채운다
 - 형태 비율: 텍스트가 대부분. 이미지는 장면을 보여 줘야 할 때, 영상은 움직임이 아니면 설명이 안 될 때만(영상당 0~3개), 실물은 책·논문·학자처럼 만들면 안 되는 것
-- 이미 있는 인서트와 겹치는 문장은 제안하지 않는다
+- 이미 있는 인서트와 겹치는 문장은 제안하지 않는다. 단 구조 층(섹션 바·좌상단 목록)은 화면 위쪽에 계속 떠 있는 층이라
+  다른 인서트와 겹쳐도 된다 - 섹션 바가 긴 구간을 덮고 있어도 그 안의 요점·근거·장면·목소리 인서트는 따로 제안한다
 - 글자는 받아쓰기가 아니라 편집자가 다시 쓴 슬로건. 숫자·인명·연구 결과는 대본에 있는 것만
 - image의 scene은 영어로 주제·구도만, 흉내 내는 대상(무엇을 무엇처럼)은 이름으로 쓰지 않는다
 - 화면 글자에 이모지를 쓰지 않는다 (채널 글꼴에 없음). 웃음·감정은 'ㅎㅎ', '..', '!'처럼 글자로
+- 섹션 바(구조·top)는 한 줄, 25자 이내 - 화면 맨 위 한 줄에 그리고 상단 요약은 그 아래 줄에 그린다
 """
 
 
@@ -166,6 +178,60 @@ Hard contract:
 - Never an empty or frozen frame: something moves gently at all times, but motion must serve the explanation.
 
 Return only the HTML, inside one ```html code block."""
+
+
+_catalog_cache: dict[str, str] = {}
+
+
+def _case_names() -> set[str]:
+    f = REF_DIR / "cases.txt"
+    return {l.strip() for l in f.read_text().splitlines() if l.strip()} if f.exists() else set()
+
+
+def _fetch_refs(names: list[str]) -> dict:
+    """라이브러리 fetch.py로 고른 케이스만 원본에서 받는다 (영상·프롬프트는 원작자 것이라 저장소에 넣지 않음)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ref_fetch", REF_DIR / "fetch.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.fetch_cases(names)
+
+
+def catalog_digest() -> str:
+    """_META.md를 고르기 단계용으로 줄인다: 1~4장(용도별 추천·스타일 계열·프롬프트 패턴·주의)은 그대로,
+    5장 전체 카탈로그 142건은 케이스마다 id·요약·어울리는 경우·잘하는 표현·스타일(앞부분)·태그·주의만.
+    cases.txt에 있는 케이스 전체 - 로컬에 없는 것은 고른 뒤 그것만 받는다. 카탈로그가 없으면 빈 문자열."""
+    meta = REF_DIR / "_META.md"
+    if not meta.exists():
+        return ""
+    key = f"{meta.stat().st_mtime}"
+    if key in _catalog_cache:
+        return _catalog_cache[key]
+    text = meta.read_text()
+    head, _, cat = text.partition("## 5. 전체 카탈로그")
+    out = [head.split("## 1. 용도별 추천", 1)[-1].strip(), "\n## 5. Catalog (compact)"]
+    keep = ("요약", "어울리는 경우", "잘하는 표현", "스타일", "태그", "주의")
+    for block in cat.split("\n#### ")[1:]:
+        lines = block.splitlines()
+        m = re.search(r"`([^`]+)`(.*)", "\n".join(lines[:3]))
+        if not m or m.group(1) not in _case_names():  # 받을 수 있는 케이스 전체 (로컬에 없어도 고르면 그때 받는다)
+            continue
+        fields = []
+        for ln in lines:
+            fm = re.match(r"- \*\*(.+?)\*\*: (.*)", ln.strip())
+            if fm and fm.group(1) in keep:
+                v = fm.group(2)
+                fields.append(f"{fm.group(1)}: {v[:160] if fm.group(1) == '스타일' else v}")
+        out.append(f"- `{m.group(1)}`{m.group(2).strip()[:60]} | " + " | ".join(fields))
+    digest = "\n".join(out)
+    _catalog_cache.clear()
+    _catalog_cache[key] = digest
+    return digest
+
+
+def _is_structure(dec: dict | None) -> bool:
+    """섹션 바·좌상단 목록 - 화면 위쪽에 오래 떠 있는 층이라 다른 인서트와 겹쳐도 된다."""
+    return bool(dec) and dec.get("layer") == "구조" and dec.get("layout") in ("top", "list")
 
 
 def _fallback_labels(layout: str) -> list[str]:
@@ -335,11 +401,12 @@ class InsertStore:
                      f"{int(self.to_timeline(kept, by_wi[x['wi_start']]['start']) % 60):02d}) {x['text']}" for k, x in enumerate(sents)]
             with self.lock:
                 existing = [it for it in self.data["items"] if it["status"] != "rejected"]
-            taken = set()
+            taken: set[int] = set()        # 구조 층이 아닌 인서트가 차지한 문장
+            taken_struct: set[int] = set() # 구조 층(섹션 바·목록)이 차지한 문장 - 다른 층과는 겹쳐도 된다
             ex_lines = []
             for it in existing:
                 ks = [k for k, x in enumerate(sents) if x["wi_end"] >= it["wi_start"] and x["wi_start"] <= it["wi_end"]]
-                taken.update(ks)
+                (taken_struct if _is_structure(it.get("decision")) else taken).update(ks)
                 if ks:
                     ex_lines.append(f"- 문장 {ks[0]}~{ks[-1]}: {it.get('form')} \"{' / '.join((it.get('decision') or {}).get('lines', []))[:50]}\"")
             total = sum(k["source_end"] - k["source_start"] for k in kept)
@@ -358,10 +425,11 @@ class InsertStore:
             made = 0
             for sg in sorted(resp.parsed_output.suggestions, key=lambda x: x.s_from):
                 a, b = max(0, sg.s_from), min(len(sents) - 1, max(sg.s_from, sg.s_to))
-                if a >= len(sents) or any(k in taken for k in range(a, b + 1)):
-                    continue
-                taken.update(range(a, b + 1))
                 dec = sg.model_dump(exclude={"s_from", "s_to"})
+                pool = taken_struct if _is_structure(dec) else taken
+                if a >= len(sents) or any(k in pool for k in range(a, b + 1)):
+                    continue
+                pool.update(range(a, b + 1))
                 wi_s, wi_e = sents[a]["wi_start"], sents[b]["wi_end"]
                 text = " ".join(x["text"] for x in sents[a:b + 1])
                 it = {"id": uuid.uuid4().hex[:8], "wi_start": wi_s, "wi_end": wi_e, "text": text, "origin": "suggest",
@@ -369,7 +437,7 @@ class InsertStore:
                       "files": [], "candidates": [], "chosen": None, "error": None}
                 if dec["form"] == "text":  # 텍스트는 비용이 거의 없어 미리 그려 둔다
                     name = f"{it['id']}_text_{int(time.time())}.png"
-                    render_text(dec["layout"], dec["lines"], dec.get("source", "")).save(self.dir / name)
+                    render_text(dec["layout"], dec["lines"], dec.get("source", ""), dec.get("layer")).save(self.dir / name)
                     it.update(files=[name], status="ready", font_fallback=_fallback_labels(dec["layout"]))
                 with self.lock:
                     self.data["items"].append(it)
@@ -510,7 +578,7 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
         dec, form = it["decision"], it["form"]
         if form == "text":
             name = f"{it['id']}_text_{int(time.time())}.png"
-            render_text(dec["layout"], dec["lines"], dec.get("source", "")).save(self.dir / name)
+            render_text(dec["layout"], dec["lines"], dec.get("source", ""), dec.get("layer")).save(self.dir / name)
             self._set(it, files=[name], status="ready", font_fallback=_fallback_labels(dec["layout"]))
         elif form == "image":
             self._generate_images(it)
@@ -648,32 +716,82 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
         if r.returncode != 0:
             raise RuntimeError(f"렌더러 설치 실패: {r.stderr[-300:]}")
 
-    def _ref_material(self, kind: str) -> tuple[str, list[bytes]]:
-        """레퍼런스 프롬프트 원문 + 영상에서 뽑은 프레임 6장(JPEG). 라이브러리가 없으면 빈 값 - 없어도 만든다."""
+    @staticmethod
+    def _ref_available(name: str) -> bool:
+        return (REF_DIR / f"{name}.md").exists() and (REF_DIR / f"{name}.mp4").exists()
+
+    @staticmethod
+    def _ref_frames(name: str) -> list[bytes]:
+        """레퍼런스 영상에서 고르게 뽑은 대표 프레임 6장 (~/.video-cut/ref-frames/ 캐시)."""
         import subprocess
-        for name in MOTION_REFS.get(kind) or MOTION_REFS["concept"]:
-            md, mp4 = REF_DIR / f"{name}.md", REF_DIR / f"{name}.mp4"
-            if not (md.exists() and mp4.exists()):
-                continue
-            text = md.read_text()
-            prompt = text.split("## Prompt", 1)[-1][:2500]
-            cache = REF_FRAME_CACHE / name
-            if not cache.exists() or len(list(cache.glob("*.jpg"))) < 6:
-                cache.mkdir(parents=True, exist_ok=True)
-                dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(mp4)],
-                                           capture_output=True, text=True).stdout.strip() or 10)
-                for k in range(6):
-                    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{dur * (k + 0.5) / 6:.2f}", "-i", str(mp4), "-frames:v", "1",
-                                    "-vf", "scale=640:-2", "-q:v", "4", str(cache / f"{k}.jpg")], check=False)
-            frames = [f.read_bytes() for f in sorted(cache.glob("*.jpg"))][:6]
-            return f"Reference '{name}' (borrow composition and motion ideas only, NOT its colors or language):\n{prompt}", frames
-        return "", []
+        mp4 = REF_DIR / f"{name}.mp4"
+        cache = REF_FRAME_CACHE / name
+        if not cache.exists() or len(list(cache.glob("*.jpg"))) < 6:
+            cache.mkdir(parents=True, exist_ok=True)
+            dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(mp4)],
+                                       capture_output=True, text=True).stdout.strip() or 10)
+            for k in range(6):
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{dur * (k + 0.5) / 6:.2f}", "-i", str(mp4), "-frames:v", "1",
+                                "-vf", "scale=640:-2", "-q:v", "4", str(cache / f"{k}.jpg")], check=False)
+        return [f.read_bytes() for f in sorted(cache.glob("*.jpg"))][:6]
+
+    def pick_motion_refs(self, it: dict) -> list[dict]:
+        """레퍼런스 라이브러리 카탈로그 전체(_META.md)에서 이 장면에 맞는 1~3개를 고른다 (10-09 사용자 요청:
+        카탈로그를 다 활용). 라이브러리가 없거나 고르기에 실패하면 용도별 고정 목록(MOTION_REFS)으로."""
+        import anthropic
+        dec = it["decision"]
+        catalog = catalog_digest()
+        picks: list[dict] = []
+        if catalog:
+            try:
+                before, after = self._context(it, 4, 2)
+                user = (f"Insert to make (Korean lecture, full-screen motion graphic, {dec.get('motion_kind')}):\n"
+                        f"Passage: \"{it['text']}\"\nBefore: {' '.join(before)[-500:]}\nAfter: {' '.join(after)[:300]}\n"
+                        f"Editor's plan: {dec.get('scene', '')}\nCaption lines: {dec.get('lines', [])}\n\n"
+                        "Pick 1-3 references from the catalog whose composition, motion and explanatory structure fit THIS insert best. "
+                        "Our look is fixed (warm cream, deep violet, Korean text, calm editorial 2D) - so judge by structure and motion, "
+                        "not colors. Avoid cases the catalog warns about for this use (comparison split screens, screen recordings, "
+                        "external asset or external model dependence) unless only their prompt structure is useful.")
+                resp = anthropic.Anthropic().messages.parse(
+                    model=DECIDE_MODEL, max_tokens=3000,
+                    system=[{"type": "text", "text": "You pick motion-graphic references from a curated library.\n\n" + catalog,
+                             "cache_control": {"type": "ephemeral"}}],
+                    messages=[{"role": "user", "content": user}], output_format=RefPicks,
+                    **thinking_kwargs(DECIDE_MODEL, effort="low"))
+                log_llm_usage(self.folder, "insert_motion_refs", DECIDE_MODEL, resp.usage)
+                picks = [p.model_dump() for p in resp.parsed_output.picks if p.name in _case_names()][:3]
+                missing = [p["name"] for p in picks if not self._ref_available(p["name"])]
+                if missing:  # 이 컴퓨터에 없는 레퍼런스는 고른 것만 그때 받는다 (한 번 받으면 다시 안 받음)
+                    self._progress(it, f"고른 레퍼런스 {len(missing)}개를 받는 중…")
+                    for name, why in _fetch_refs(missing).items():
+                        if why:
+                            print(f"[inserts] 레퍼런스 {name} 받기 실패: {why}")
+                    picks = [p for p in picks if self._ref_available(p["name"])]
+            except Exception as e:
+                print(f"[inserts] 레퍼런스 고르기 실패 - 고정 목록 사용: {e}")
+        if not picks:
+            for name in MOTION_REFS.get(dec.get("motion_kind") or "concept") or MOTION_REFS["concept"]:
+                if self._ref_available(name):
+                    picks = [{"name": name, "why": "용도별 기본 레퍼런스", "borrow": "composition and motion ideas"}]
+                    break
+        return picks
+
+    def _ref_material(self, picks: list[dict]) -> tuple[str, list[bytes]]:
+        """고른 레퍼런스들의 프롬프트 원문 + 대표 프레임 (1개면 6장, 여럿이면 4장씩)."""
+        texts, frames = [], []
+        for p in picks:
+            md = (REF_DIR / f"{p['name']}.md").read_text()
+            prompt = md.split("## Prompt", 1)[-1][:(2500 if len(picks) == 1 else 1500)]
+            texts.append(f"### Reference '{p['name']}'\nWhy it fits: {p['why']}\nBorrow: {p['borrow']} (NOT its colors or language)\n{prompt}")
+            fr = self._ref_frames(p["name"])
+            frames += fr if len(picks) == 1 else [fr[k] for k in (0, 2, 3, 5) if k < len(fr)]
+        return "\n\n".join(texts), frames
 
     def _write_motion_html(self, it: dict, dur: float, fix: tuple[str, str, list[bytes]] | None = None) -> str:
         import anthropic
         dec = it["decision"]
         before, after = self._context(it, 6, 3)
-        ref_text, ref_frames = self._ref_material(dec.get("motion_kind") or "concept")
+        ref_text, ref_frames = self._ref_material(it.get("motion_refs") or [])
         notes = "\n".join(f"- {n}" for n in it.get("notes") or [])
         content: list[dict] = [{"type": "text", "text": f"""Lecture passage (Korean): "{it['text']}"
 Before: {' '.join(before)[-900:]}
@@ -786,7 +904,9 @@ Duration D = {dur:.2f} seconds.
         stamp = int(time.time())
         html_path = self.dir / f"{it['id']}_motion_{stamp}.html"
         times = [dur * f for f in (0.12, 0.4, 0.7, 0.95)]
-        self._progress(it, "레퍼런스를 보고 모션을 설계하는 중… (1~3분)")
+        self._progress(it, "레퍼런스 라이브러리에서 이 장면에 맞는 것을 고르는 중…")
+        self._set(it, motion_refs=self.pick_motion_refs(it))
+        self._progress(it, f"레퍼런스 {len(it['motion_refs'])}개를 보고 모션을 설계하는 중… (1~3분)")
         html = self._write_motion_html(it, dur)
         html_path.write_text(html)
         self._progress(it, "프레임 검사 중…")
@@ -875,7 +995,7 @@ Duration D = {dur:.2f} seconds.
             self._set(it, decision=dec)
             if it["form"] == "text":
                 name = f"{it['id']}_text_{int(time.time())}.png"
-                render_text(dec["layout"], lines, dec.get("source", "")).save(self.dir / name)
+                render_text(dec["layout"], lines, dec.get("source", ""), dec.get("layer")).save(self.dir / name)
                 self._set(it, files=[name], status="ready" if it["status"] != "approved" else "approved",
                           font_fallback=_fallback_labels(dec["layout"]))
             elif it["form"] == "image" and it["files"]:
@@ -920,7 +1040,8 @@ Duration D = {dur:.2f} seconds.
             items = [it for it in self.data["items"] if it["status"] == "approved" and it["files"]]
         for it in sorted(items, key=lambda x: by_wi[x["wi_start"]]["start"]):
             label = f"{it['form']} {' '.join((it.get('decision') or {}).get('lines', []))[:30] or it['text'][:30]}"
-            out.append({"id": it["id"], "start": by_wi[it["wi_start"]]["start"], "end": by_wi[it["wi_end"]]["end"],
+            out.append({"id": it["id"], "lane_base": 3 if _is_structure(it.get("decision")) else 1,  # 구조 층은 위 레인 - 다른 인서트와 겹쳐도 됨
+                        "start": by_wi[it["wi_start"]]["start"], "end": by_wi[it["wi_end"]]["end"],
                         "name": label, "role": f"인서트.{ {'text': '텍스트', 'image': '이미지', 'video': '영상', 'asset': '실물'}[it['form']] }",
                         "layers": [str((self.dir / f).resolve()) for f in it["files"]]})
         if not out:
@@ -954,7 +1075,7 @@ def _fit(draw, lines: list[str], size: int, max_w: int, key: str = "gangwon"):
 _EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D\u2B00-\u2BFF]")
 
 
-def render_text(layout: str, lines: list[str], source: str = ""):
+def render_text(layout: str, lines: list[str], source: str = "", layer: str | None = None):
     """투명 1920x1080 PNG. 화자 화면 위에 FCP 연결 클립으로 얹힌다."""
     from PIL import Image, ImageDraw
     # 채널 글꼴에는 이모지가 없어 빈 네모로 찍힌다 (10-09 제안 시험에서 🙏 → □)
@@ -969,9 +1090,13 @@ def render_text(layout: str, lines: list[str], source: str = ""):
             w = d.textlength(l, font=f)
             d.text(((W - w) / 2, y0 + i * size * 1.3), l, font=f, fill=color, stroke_width=stroke, stroke_fill=OUTLINE)
 
-    if layout == "top":          # 상단 한 줄 요약 / 섹션 바: 흰 초굵은 고딕 + 두꺼운 검정 외곽선, 화자 머리 위
+    if layout == "top" and layer == "구조":  # 섹션 바: 맨 위 한 줄 - 다른 인서트와 같이 떠 있는 층이라 두 줄이면 상단 요약과 포개진다
+        lines = [" ".join(lines)]
+        f, size = _fit(d, lines, 72, W - 160)
+        center(f, size, 34, WHITE, max(6, size // 11))
+    elif layout == "top":        # 상단 한 줄 요약: 섹션 바 아래 줄 (같이 떠도 안 겹치게), 흰 초굵은 고딕 + 두꺼운 검정 외곽선
         f, size = _fit(d, lines, 84, W - 200)
-        center(f, size, 46, WHITE, max(6, size // 11))
+        center(f, size, 150, WHITE, max(6, size // 11))
     elif layout == "comment":    # 노란 코멘트: 흰 글씨보다 작게, 화자 머리 오른쪽 위
         f, size = _fit(d, lines, 60, int(W * 0.42))
         x = int(W * 0.56)
