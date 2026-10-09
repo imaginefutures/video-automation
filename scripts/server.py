@@ -1401,10 +1401,21 @@ class Handler(BaseHTTPRequestHandler):
                                           "cut_spans": [], "markers": []})
                 if not edl_path.exists():
                     raise ValueError("컷편집을 먼저 확정하세요")
-                with self.session.lock:
-                    out = self.session.export_fcpxml(edl_path)
+                try:
+                    with self.session.lock:
+                        out = self.session.export_fcpxml(edl_path)
+                except Exception as e:  # 내보내기 실패도 원인과 해결 방법을 같이 보여 준다
+                    from inserts import explain_error
+                    info = explain_error(e, "FCP 내보내기")
+                    if isinstance(e, subprocess.CalledProcessError):
+                        info.update(title="FCPXML 파일을 만들지 못했어요",
+                                    hint="다시 시도하세요. 반복되면 '자세히'의 내용(서버 로그 edit/server.log)을 알려 주세요")
+                    return self._json({"ok": False, "error": info["title"], "error_info": info}, 400)
                 n = sum(1 for it in self.session.inserts.data["items"] if it["status"] == "approved")
                 return self._json({"ok": True, "fcpxml": str(out), "approved": n})
+            if self.path == "/api/insert/suggest/cancel":
+                self.session.inserts.cancel_suggest()
+                return self._json({"ok": True})
             if self.path == "/api/insert/suggest":  # 다시 제안 - 손대지 않은 제안만 바꾼다
                 if (self.session.inserts.data.get("suggest") or {}).get("state") == "running":
                     raise ValueError("이미 제안하는 중입니다")

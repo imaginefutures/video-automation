@@ -155,6 +155,16 @@
   .reason { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
   .warn { font-size: 13px; color: var(--proposal-line); background: var(--proposal-bg); border-radius: var(--r-sm); padding: 6px 10px; margin: 6px 0; line-height: 1.55; }
   .errbox { font-size: 13px; color: var(--danger); background: var(--danger-soft); border-radius: var(--r-sm); padding: 8px 10px; margin: 8px 0; line-height: 1.55; }
+  .errcard { font-size: 13px; line-height: 1.55; border: 1px solid #f3b4b8; background: #fff5f5; border-radius: var(--r-md); padding: 9px 11px; margin-top: 8px; }
+  .errcard .et { color: var(--danger); font-weight: 700; }
+  .errcard .es { color: var(--muted); font-size: 12px; }
+  .errcard .eh { color: var(--ink); margin-top: 2px; }
+  .errcard details { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .errcard details summary { cursor: pointer; }
+  .errcard pre { white-space: pre-wrap; word-break: break-all; font: 11.5px/1.45 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 8px; margin: 6px 0 0; max-height: 160px; overflow: auto; }
+  .errcard .row { margin-top: 8px; }
+  .notice { font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: var(--r-sm); padding: 6px 10px; margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+  .notice button { margin-left: auto; }
   .busy { font-size: 14px; color: var(--accent-strong); padding: 14px 0; display: flex; gap: 8px; align-items: center; }
   .spin { width: 14px; height: 14px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite; }
   @keyframes sp { to { transform: rotate(360deg); } }
@@ -329,12 +339,17 @@ function renderSugBar() {
   const bar = $('#sugBar'); const sg = S.suggest || { state: 'none' };
   const again = `<button class="btn" id="sugAgain">다시 제안</button>`;
   bar.style.display = sg.state === 'none' ? 'none' : 'flex';
-  if (sg.state === 'running') bar.innerHTML = `<span class="spin"></span>대본 전체를 읽고 인서트 자리를 제안하는 중… (1~3분)`;
-  else if (sg.state === 'error') bar.innerHTML = `<span style="color:var(--danger)">자리 제안 실패: ${esc(sg.error)}</span>${again}`;
+  if (sg.state === 'running') bar.innerHTML = `<span class="spin"></span>${sg.cancel ? '중단하는 중… (응답이 오면 버려요)' : '대본 전체를 읽고 인서트 자리를 제안하는 중… (1~3분)'}
+    ${sg.cancel ? '' : '<button class="btn" id="sugCancel">중단</button>'}`;
+  else if (sg.state === 'cancelled') bar.innerHTML = `자리 제안을 중단했어요${again}`;
+  else if (sg.state === 'error') bar.innerHTML = `<div style="flex:1 1 100%">${errorBlock(sg.error_info || { title: `자리 제안 실패: ${sg.error}`, hint: '다시 제안을 눌러 보세요', raw: '' }, again)}</div>`;
   else if (sg.state === 'done') {
     const n = S.items.filter((i) => i.origin === 'suggest').length;
     bar.innerHTML = `자동 제안 ${n}개 · 텍스트는 미리 만들어 뒀고, 이미지·영상은 <b>만들기</b>를 눌러야 만들어요 (점선)${again}`;
   }
+  $('#sugCancel')?.addEventListener('click', async () => {
+    try { await api('/api/insert/suggest/cancel'); S.suggest = { ...S.suggest, cancel: true }; renderSugBar(); toast('중단하는 중'); } catch (e) { toast(e.message); }
+  });
   $('#sugAgain')?.addEventListener('click', async () => {
     if (!confirm('손대지 않은 제안만 지우고 대본 전체를 다시 읽어 제안할까요? 승인·수정·생성한 것은 그대로 둡니다. (영상당 약 $0.3)')) return;
     try { await api('/api/insert/suggest'); S.suggest = { state: 'running' }; renderSugBar(); schedulePoll(); } catch (e) { toast(e.message); }
@@ -635,16 +650,39 @@ function renderDecisionBar() {
     else if (it.status === 'rejected') actions = `<span class="db-done no">취소됨 - 내보내기에서 빠져요</span><button class="btn" data-act="reopen">다시 살리기</button>`;
     else if (it.status === 'suggested' && it.form !== 'asset') actions = `<button class="primary" data-act="make">${what} 만들기${it.form === 'image' ? ' · 약 30초' : it.form === 'video' ? ' · 약 3~4분' : ''}</button><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
     else if (it.status === 'suggested' || it.status === 'needs_asset') actions = `<span class="db-hint" style="flex:1">아래 <b>① 결과</b>에서 자료 파일을 올리면 배치돼요</span><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
-    else if (BUSY.has(it.status)) actions = `<span class="busy" style="padding:4px 0;flex:1"><span class="spin"></span>${it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : esc(it.progress) || (it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</span>`;
-    else actions = `<span class="db-done no" style="color:var(--danger)">${it.status === 'unsupported' ? '이 형태는 아직 만들 수 없어요' : '만들지 못했어요'}</span><button class="btn" data-act="regenerate">다시 만들기</button>`;
+    else if (BUSY.has(it.status)) actions = `<span class="busy" style="padding:4px 0;flex:1"><span class="spin"></span>${esc(it.progress) || (it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</span>
+      <button class="btn" data-act="cancel" ${it.cancel ? 'disabled' : ''}>${it.cancel ? '중단하는 중' : '중단'}</button>`;
+    else {  // 오류 - 원인과 해결 방법, 다시 시도 / 삭제
+      const info = errInfo(it) || { title: '만들지 못했어요', hint: '다시 시도해 보세요', retryable: true };
+      actions = `<div style="flex:1 1 100%">${errorBlock(info, `<button class="primary" data-act="retry" style="flex:1">${info.retryable === false ? '설정을 고친 뒤 다시 시도' : '다시 시도'}</button><button class="btn" data-act="delete">삭제</button>`)}</div>`;
+    }
+    // 다시 만들기가 실패했지만 이전 결과는 남아 있을 때 / 중단 알림
+    let strip = '';
+    if (it.error_info && it.error_info.kept_previous && ['ready', 'approved', 'rejected'].includes(it.status)) {
+      strip = errorBlock({ ...it.error_info, title: `다시 만들기 실패 - ${it.error_info.title}`, hint: `${it.error_info.hint} (이전 결과는 그대로 있어요)` },
+        `<button class="btn" data-act="retry">다시 시도</button><button class="btn" data-act="dismiss_error">닫기</button>`);
+    } else if (it.notice) strip = `<div class="notice">${esc(it.notice)}<button class="btn" data-act="dismiss_error" style="padding:2px 8px">닫기</button></div>`;
     bar.innerHTML = `<div class="db-top">${formChip(it)}${statusChip(it)}<span class="db-time mono">${fmt(it.t_start)}–${fmt(it.t_end)} · ${dur}초${d.layer ? ` · ${esc(d.layer)}` : ''}</span>
         <span class="db-nav"><span class="db-time mono" style="align-self:center;margin-right:4px">${k + 1}/${list.length}</span><button id="dbPrev" title="이전 (↑)" ${k <= 0 ? 'disabled' : ''}>▲</button><button id="dbNext" title="다음 (↓)" ${k >= list.length - 1 ? 'disabled' : ''}>▼</button></span></div>
-      <div class="db-act">${actions}</div>`;
-    bar.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => act(it, b.dataset.act)));
+      <div class="db-act">${actions}</div>${strip}`;
+    bar.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.act === 'delete' && !confirm('이 인서트를 목록에서 지울까요?')) return;
+      act(it, b.dataset.act);
+    }));
   }
   $('#dbPrev')?.addEventListener('click', () => step(-1));
   $('#dbNext')?.addEventListener('click', () => step(1));
 }
+
+// 오류 카드: 무엇이(어느 단계에서) 잘못됐고 어떻게 하면 되는지 + 원문은 '자세히' 안에
+function errorBlock(info, buttons = '') {
+  if (!info) return '';
+  return `<div class="errcard"><div><span class="et">${esc(info.title)}</span>${info.stage ? `<span class="es"> · ${esc(info.stage)} 단계</span>` : ''}</div>
+    ${info.hint ? `<div class="eh">${esc(info.hint)}</div>` : ''}
+    ${info.raw ? `<details><summary>자세히</summary><pre>${esc(info.raw)}</pre></details>` : ''}
+    ${buttons ? `<div class="row">${buttons}</div>` : ''}</div>`;
+}
+const errInfo = (it) => it.error_info || (it.error ? { title: it.error, hint: '다시 시도해 보세요', retryable: true, raw: '' } : null);
 
 function card(num, title, desc, body) {
   return `<section class="card-sec"><h3><span class="num">${num}</span>${title}</h3>${desc ? `<div class="desc">${desc}</div>` : ''}${body}</section>`;
@@ -691,9 +729,9 @@ function renderDetail() {
     r += `<div class="sub"><div class="lbl">필요한 실물 자료</div><div class="quote">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div>
       <input type="file" id="dUpload" accept="image/*"><div class="note" style="margin-top:4px">올리면 ${d.layout === 'fullscreen' ? '전체 화면' : '화자 옆(오른쪽 1/3)'}에 배치해요</div></div>`;
   }
-  if (it.error && !busy) r += `<div class="errbox">${esc(it.error)}</div>`;
+  if (errInfo(it) && !busy && !['ready', 'approved', 'rejected'].includes(it.status)) r += errorBlock(errInfo(it));
   if (it.font_fallback?.length) r += `<div class="warn">채널 글꼴(${it.font_fallback.map(esc).join(', ')}) 대신 대체 글꼴로 만들어졌어요 - 글꼴을 받은 뒤 ③에서 <b>글자 반영</b>을 누르면 다시 그려요</div>`;
-  if (busy) r += `<div class="busy"><span class="spin"></span>만드는 중이에요 - 끝나면 여기에 결과가 나와요</div>`;
+  if (busy) r += `<div class="busy"><span class="spin"></span>${esc(it.progress) || '만드는 중이에요'} - 끝나면 여기에 결과가 나와요. 위 결정 바에서 중단할 수 있어요</div>`;
   if (!r) r = `<div class="note">아직 결과가 없어요.</div>`;
   h += card(1, '결과', it.status === 'suggested' ? '아직 제안만 된 상태예요. 위 결정 바에서 만들거나 무시하세요' : '보고 괜찮으면 위 결정 바에서 승인', r);
 
@@ -777,6 +815,8 @@ async function act(it, action, extra = {}) {
     if (['approve', 'reject', 'reopen'].includes(action)) toast({ approve: '승인했어요', reject: '취소했어요 - 내보내기에서 빠져요', reopen: '확인 전으로 되돌렸어요' }[action]);
     if (['regenerate', 'form'].includes(action)) toast('다시 만드는 중…');
     if (action === 'make') toast('만드는 중…');
+    if (action === 'retry') toast('다시 시도하는 중…');
+    if (action === 'cancel') toast('중단하는 중 - 지금 단계가 끝나면 멈춰요');
   } catch (e) { toast(e.message); }
 }
 
@@ -785,7 +825,14 @@ $('#btnExport').addEventListener('click', async () => {
   const pending = S.items.filter((i) => i.status === 'ready').length;
   if (pending && !confirm(`확인 전 인서트 ${pending}개는 빠지고, 승인한 것만 들어갑니다. 내보낼까요?`)) return;
   try {
-    const r = await api('/api/insert/export');
+    const res = await fetch('/api/insert/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const r = await res.json();
+    if (!r.ok) {
+      showModal(`<h3 style="margin:0 0 8px">내보내지 못했어요</h3>${errorBlock(r.error_info || { title: r.error, hint: '다시 시도하세요', raw: '' })}
+        <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" onclick="hideModal()">닫기</button><button class="primary" id="mRetry">다시 시도</button></div>`);
+      $('#mRetry').addEventListener('click', () => { hideModal(); $('#btnExport').click(); });
+      return;
+    }
     showModal(`<h3 style="margin:0 0 8px">내보내기 완료</h3>
       <p>승인한 인서트 <b>${r.approved}개</b>를 컷 편집본과 함께 넣었어요.</p><p><code>${esc(r.fcpxml)}</code></p>
       <p class="note">Final Cut Pro에서 이 파일을 열면 인서트가 화자 위 연결 클립으로 제자리에 있어요. 역할(인서트.텍스트 / 인서트.이미지)로 한 번에 켜고 끌 수 있어요.<br>

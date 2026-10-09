@@ -255,6 +255,50 @@ def _inject_fonts(html: str) -> str:
     return html.replace("<head>", "<head>" + style, 1) if "<head>" in html else style + html
 
 
+class Cancelled(Exception):
+    """사용자가 만드는 도중 중단을 눌렀다 - 다음 단계로 넘어가는 지점에서 멈춘다."""
+
+
+def explain_error(e: Exception, stage: str | None) -> dict:
+    """오류를 사람이 읽을 수 있게: 무엇이 잘못됐는지(title), 어떻게 하면 되는지(hint), 다시 시도할 만한지.
+    원문(raw)은 화면의 '자세히'에만 보인다."""
+    raw = f"{type(e).__name__}: {e}"
+    low = raw.lower()
+    status = getattr(e, "status_code", None)
+    def out(title, hint, retryable=True):
+        return {"stage": stage or "", "title": title, "hint": hint, "retryable": retryable, "raw": raw[:1500]}
+    if "prompt is too long" in low or "too many tokens" in low:
+        return out("AI에 보낸 내용이 한도를 넘었어요", "프로그램 쪽 문제일 가능성이 커요. 다시 시도해 보고, 같은 오류가 반복되면 알려 주세요")
+    if status == 401 or "authentication" in low or "invalid x-api-key" in low or "api key not valid" in low:
+        return out("API 키가 맞지 않아요", "홈 화면 환경설정에서 키를 다시 등록한 뒤 다시 시도하세요", retryable=False)
+    if status == 402 or "credit" in low or "billing" in low or "선불 크레딧" in raw:
+        return out("API 크레딧이 부족해요", "해당 서비스(Anthropic 또는 Gemini) 결제 화면에서 충전한 뒤 다시 시도하세요", retryable=False)
+    if status == 429 or "rate limit" in low or "rate_limit" in low or "resource_exhausted" in low:
+        return out("요청이 한꺼번에 몰려 잠시 막혔어요", "1~2분 뒤 다시 시도하세요")
+    if status in (500, 502, 503, 529) or "overloaded" in low or "internal server error" in low:
+        return out("AI 서버가 혼잡하거나 일시적으로 오류가 났어요", "잠시 뒤 다시 시도하세요")
+    if "timeout" in low or "timed out" in low or "connection" in low or "network" in low or "temporarily unavailable" in low:
+        return out("네트워크 연결이 끊겼어요", "인터넷 연결을 확인하고 다시 시도하세요")
+    if "안전 필터" in raw or "safety" in low or "blocked" in low:
+        return out("이미지 AI의 안전 필터에 걸렸어요", "③ 고치기에서 '요청 적고 다시 만들기'로 장면을 조금 바꿔 보세요")
+    if "gemini_api_key" in low:
+        return out("이미지 AI 키(Gemini)가 없어요", "홈 화면 환경설정에서 Gemini API 키를 등록하세요", retryable=False)
+    if "모션 html" in low or "seek" in low:
+        return out("AI가 만든 애니메이션 코드가 제대로 실행되지 않았어요", "다시 시도하면 새로 만들어요. 반복되면 '요청 적고 다시 만들기'로 더 단순하게 요청해 보세요")
+    if "렌더러" in raw or "playwright" in low or "chromium" in low:
+        return out("영상 렌더러를 준비하지 못했어요", "인터넷 연결을 확인하고 다시 시도하세요. 처음 한 번은 약 150MB를 받아요")
+    if "인코딩" in raw or "ffmpeg" in low:
+        return out("영상 파일로 묶는 중에 실패했어요", "다시 시도하세요. 반복되면 ffmpeg 설치 상태(홈 환경설정)를 확인하세요")
+    if "응답을 읽지 못했습니다" in raw or "이미지가 응답에 없습니다" in raw:
+        return out("AI 응답이 비어 있거나 형식이 맞지 않았어요", "다시 시도하세요")
+    return out("예상하지 못한 오류가 났어요", "다시 시도해 보고, 반복되면 '자세히'의 내용을 알려 주세요")
+
+
+STAGE_KO = {"decide": "형태 결정", "image_prompt": "이미지 구상", "image": "이미지 생성", "judge": "검사",
+            "refs": "레퍼런스 고르기", "motion": "모션 설계", "shots": "프레임 검사", "render": "렌더링",
+            "renderer": "렌더러 준비", "text": "글자 그리기", "suggest": "자리 제안"}
+
+
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
@@ -272,11 +316,18 @@ class InsertStore:
         self.data = json.loads(self.path.read_text()) if self.path.exists() else {"items": []}
         sg = self.data.get("suggest")
         if sg and sg.get("state") == "running":  # 서버가 제안 도중 꺼졌으면
-            sg.update(state="error", error="서버가 다시 시작돼 중단됐습니다 - 다시 제안을 누르세요")
+            sg.update(state="error", error="서버가 다시 시작돼 중단됐어요",
+                      error_info={"stage": "자리 제안", "title": "서버가 다시 시작돼 자리 제안이 중단됐어요",
+                                  "hint": "다시 제안을 누르세요", "retryable": True, "raw": ""})
         threading.Thread(target=fonts.ensure_all, daemon=True).start()  # 첫 인서트 전에 미리 받아 둔다
         for it in self.data["items"]:  # 서버가 생성 도중 꺼졌으면 다시 만들 수 있게
             if it["status"] in ("deciding", "generating"):
-                it["status"], it["error"] = "error", "서버가 다시 시작돼 중단됐습니다 - 다시 만들기를 누르세요"
+                it["status"], it["error"] = "error", "서버가 다시 시작돼 중단됐어요"
+                it["error_info"] = {"stage": "", "title": "서버가 다시 시작돼 만들던 작업이 중단됐어요",
+                                    "hint": "다시 시도하세요", "retryable": True, "raw": ""}
+                it["cancel"] = False
+            elif it["status"] == "error" and it.get("error") and not it.get("error_info"):  # 예전 형식 오류에도 설명을 붙인다
+                it["error_info"] = explain_error(RuntimeError(it["error"]), None)
 
     # ---- 시간 계산: 원본 시각 -> 편집본(타임라인) 시각
 
@@ -369,19 +420,52 @@ class InsertStore:
         threading.Thread(target=self._run, args=(it["id"], None), daemon=True).start()
         return it
 
-    def _run(self, iid: str, force_form: str | None, note: str | None = None) -> None:
+    _KEEP = ("status", "files", "candidates", "chosen", "checks", "decision", "form", "motion_refs", "font_fallback")
+
+    def _guarded(self, iid: str, work) -> None:
+        """만들기 작업 하나를 감싼다: 단계 추적, 중단, 오류 설명. 다시 만들기가 실패하거나 중단되면
+        이전 결과로 되돌린다 - 돈을 들여 만든 결과를 실패 하나로 잃지 않게."""
         it = self._get(iid)
+        prev = json.loads(json.dumps({k: it.get(k) for k in self._KEEP}))
+        had_result = bool(prev.get("files")) and prev.get("status") in ("ready", "approved", "rejected")
+        self._set(it, cancel=False, error=None, error_info=None, notice=None, stage=None, progress=None)
         try:
-            self._set(it, status="deciding", error=None, progress=None)
+            work(it)
+        except Cancelled:
+            back = prev if had_result else {**prev, "status": "suggested" if it.get("origin") == "suggest" and prev.get("decision") else "error"}
+            self._set(it, **back, cancel=False, progress=None, stage=None,
+                      notice="중단했어요" + (" - 이전 결과로 되돌렸어요" if had_result else ""),
+                      error=None if had_result or back["status"] == "suggested" else "중단했어요",
+                      error_info=None if had_result or back["status"] == "suggested" else
+                      {"stage": "", "title": "중단했어요", "hint": "다시 시도하거나 삭제하세요", "retryable": True, "raw": ""})
+        except Exception as e:  # 화면에 설명과 함께 보여 준다 - 조용히 실패하지 않게
+            info = explain_error(e, STAGE_KO.get(it.get("stage") or "", it.get("stage")))
+            print(f"[inserts] {iid} 실패 ({info['stage']}): {info['raw'][:300]}")
+            if had_result:  # 이전 결과는 두고 실패만 알린다
+                self._set(it, **prev, error=info["title"], error_info={**info, "kept_previous": True}, progress=None, stage=None, cancel=False)
+            else:
+                self._set(it, status="error", error=info["title"], error_info=info, progress=None, stage=None, cancel=False)
+
+    def _stage(self, it: dict, key: str, msg: str | None = None) -> None:
+        """단계 표시 + 중단 확인 (다음 단계로 넘어가는 지점마다 부른다)."""
+        if it.get("cancel"):
+            raise Cancelled()
+        self._set(it, stage=key, **({"progress": msg} if msg else {}))
+
+    def _run(self, iid: str, force_form: str | None, note: str | None = None) -> None:
+        def work(it):
+            self._set(it, status="deciding")
             if note:
                 self._set(it, notes=(it.get("notes") or []) + [note])
+            self._stage(it, "decide")
             dec = self.decide(it, force_form)
             if dec["form"] == "image":
+                self._stage(it, "image_prompt", "장면을 이해하고 그림을 구상하는 중…")
                 dec.update(self.write_image_prompt(it, dec))
+            self._stage(it, "decide")
             self._set(it, decision=dec, form=dec["form"], status="generating", candidates=[], chosen=None, files=[])
             self.generate(it)
-        except Exception as e:  # 화면에 그대로 보여 준다 - 조용히 실패하지 않게
-            self._set(it, status="error", error=str(e)[:400], progress=None)
+        self._guarded(iid, work)
 
     # ---- 0) 대본 전체 제안 (중간안): 자리·형태·글자 초안. 텍스트는 바로 그리고, 이미지·영상·실물은 "만들기"를 눌러야 만든다
 
@@ -393,6 +477,8 @@ class InsertStore:
                 self.data["items"] = [it for it in self.data["items"]
                                       if not (it.get("origin") == "suggest" and it["status"] in ("suggested", "ready") and not it.get("touched"))]
             self._save()
+        def cancelled() -> bool:
+            return bool((self.data.get("suggest") or {}).get("cancel"))
         try:
             kept = self._kept()
             sents = self._sentences(self.kept_words(kept))
@@ -420,6 +506,8 @@ class InsertStore:
                     **thinking_kwargs(DECIDE_MODEL, effort="medium")) as stream:
                 resp = stream.get_final_message()
             log_llm_usage(self.folder, "insert_suggest", DECIDE_MODEL, resp.usage)
+            if cancelled():  # 응답을 받는 동안 중단을 눌렀다 - 결과를 버린다
+                raise Cancelled()
             if resp.parsed_output is None:
                 raise RuntimeError(f"제안 응답을 읽지 못했습니다 (stop_reason={resp.stop_reason})")
             made = 0
@@ -445,24 +533,35 @@ class InsertStore:
             with self.lock:
                 self.data["suggest"] = {"state": "done", "finished_at": _now(), "count": made}
                 self._save()
-        except Exception as e:
+        except Cancelled:
             with self.lock:
-                self.data["suggest"] = {"state": "error", "error": str(e)[:300]}
+                self.data["suggest"] = {"state": "cancelled", "finished_at": _now()}
+                self._save()
+        except Exception as e:
+            info = explain_error(e, "자리 제안")
+            with self.lock:
+                self.data["suggest"] = {"state": "error", "error": info["title"], "error_info": info}
                 self._save()
         return self.data["suggest"]
 
+    def cancel_suggest(self) -> None:
+        with self.lock:
+            sg = self.data.get("suggest") or {}
+            if sg.get("state") == "running":
+                sg["cancel"] = True
+                self._save()
+
     def _make(self, iid: str) -> None:
-        """제안된 이미지·영상·실물을 실제로 만든다 (형태 결정은 제안 단계에서 끝남)."""
-        it = self._get(iid)
-        try:
+        """이미 정한 형태대로 만든다 - 제안된 것 만들기, 그리고 오류 뒤 '다시 시도'(형태 결정은 다시 안 함)."""
+        def work(it):
             dec = dict(it["decision"])
-            self._set(it, status="generating", error=None, progress=None)
+            self._set(it, status="generating")
             if dec["form"] == "image" and not dec.get("point"):
+                self._stage(it, "image_prompt", "장면을 이해하고 그림을 구상하는 중…")
                 dec.update(self.write_image_prompt(it, dec))
                 self._set(it, decision=dec)
             self.generate(it)
-        except Exception as e:
-            self._set(it, status="error", error=str(e)[:400], progress=None)
+        self._guarded(iid, work)
 
     # ---- 1) 형태 결정
 
@@ -577,6 +676,7 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
     def generate(self, it: dict) -> None:
         dec, form = it["decision"], it["form"]
         if form == "text":
+            self._stage(it, "text")
             name = f"{it['id']}_text_{int(time.time())}.png"
             render_text(dec["layout"], dec["lines"], dec.get("source", ""), dec.get("layer")).save(self.dir / name)
             self._set(it, files=[name], status="ready", font_fallback=_fallback_labels(dec["layout"]))
@@ -628,13 +728,16 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
                 self._log_image_cost(len(names))
             return names, errors
 
+        self._stage(it, "image", "이미지 후보 3장을 만드는 중… (약 30초)")
         names, errors = batch(0)
         if not names:
             raise RuntimeError(errors[0] if errors else "이미지를 만들지 못했습니다")
         # 후보부터 저장 - 돈을 낸 이미지가 뒤 단계 실패로 사라지지 않게 (10-09: Pillow 누락으로 3장 유실될 뻔함)
         self._set(it, candidates=names, checks=[], chosen=0, files=[names[0]])
+        self._stage(it, "judge", "다른 AI가 후보를 검사하는 중…")
         checks = self._judge(it, names, must)
         if must and checks and not any(c["ok"] for c in checks):
+            self._stage(it, "image", "조건을 맞춘 후보가 없어 한 번 더 만드는 중…")
             # 전부 조건을 못 맞추면 한 번만 더 - 판정 이유를 프롬프트에 넣어서 (자동 복구는 한 번까지, 원칙 3)
             fails = "; ".join(c["note"] for c in checks if c.get("note"))[:400]
             prompt += f"\n\nPrevious attempts were wrong: {fails}. Fix exactly this."
@@ -697,6 +800,8 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
     # ---- 영상(모션그래픽): Opus가 seek(t) HTML을 쓰고 Playwright로 프레임 렌더
 
     def _progress(self, it: dict, msg: str) -> None:
+        if it.get("cancel"):
+            raise Cancelled()
         self._set(it, progress=msg)
 
     def _ensure_renderer(self, it: dict) -> None:
@@ -807,6 +912,7 @@ Duration D = {dur:.2f} seconds.
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}})
         if fix:
             old_html, problems, shots = fix
+            old_html = re.sub(r"url\(data:[^)]{200,}\)", "url(data:...)", old_html)[:60000]  # 혹시 내장 데이터가 섞여도 크기 제한
             content.append({"type": "text", "text": f"Your previous version had these problems - fix exactly these and keep the rest:\n{problems}\n\nPrevious HTML:\n```html\n{old_html}\n```\nIts rendered frames:"})
             for b in shots:
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}})
@@ -821,7 +927,7 @@ Duration D = {dur:.2f} seconds.
         html = (m.group(1) if m else text).strip()
         if "seek" not in html:
             raise RuntimeError("모션 HTML에 seek(t)가 없습니다 - 다시 만들어 보세요")
-        return _inject_fonts(html)
+        return html  # 글꼴은 렌더할 파일에만 넣는다(_inject_fonts) - 수정 요청 때 이 HTML을 다시 보내므로 (10-09: 글꼴째 보내 400만 토큰 초과)
 
     def _shots(self, html_path: Path, times: list[float]) -> list[bytes]:
         from playwright.sync_api import sync_playwright
@@ -896,6 +1002,7 @@ Duration D = {dur:.2f} seconds.
             raise RuntimeError("영상 인코딩 실패")
 
     def _generate_motion(self, it: dict) -> None:
+        self._stage(it, "renderer", "렌더러 확인 중…")
         self._ensure_renderer(it)
         by_wi = {w["wi"]: w for w in self.s.words}
         kept = self._kept()
@@ -904,19 +1011,19 @@ Duration D = {dur:.2f} seconds.
         stamp = int(time.time())
         html_path = self.dir / f"{it['id']}_motion_{stamp}.html"
         times = [dur * f for f in (0.12, 0.4, 0.7, 0.95)]
-        self._progress(it, "레퍼런스 라이브러리에서 이 장면에 맞는 것을 고르는 중…")
+        self._stage(it, "refs", "레퍼런스 라이브러리에서 이 장면에 맞는 것을 고르는 중…")
         self._set(it, motion_refs=self.pick_motion_refs(it))
-        self._progress(it, f"레퍼런스 {len(it['motion_refs'])}개를 보고 모션을 설계하는 중… (1~3분)")
+        self._stage(it, "motion", f"레퍼런스 {len(it['motion_refs'])}개를 보고 모션을 설계하는 중… (1~3분)")
         html = self._write_motion_html(it, dur)
-        html_path.write_text(html)
-        self._progress(it, "프레임 검사 중…")
+        html_path.write_text(_inject_fonts(html))
+        self._stage(it, "shots", "프레임 검사 중…")
         shots = self._shots(html_path, times)
         ok, problems = self._judge_motion(it, shots, times)
         if not ok:  # 한 번만 고친다 (원칙 3)
-            self._progress(it, "검사에서 나온 문제를 고치는 중…")
+            self._stage(it, "motion", "검사에서 나온 문제를 고치는 중…")
             html = self._write_motion_html(it, dur, fix=(html, problems, shots))
             html_path = self.dir / f"{it['id']}_motion_{stamp}b.html"
-            html_path.write_text(html)
+            html_path.write_text(_inject_fonts(html))
             shots = self._shots(html_path, times)
             ok, problems = self._judge_motion(it, shots, times)
         keyframes = []
@@ -926,6 +1033,7 @@ Duration D = {dur:.2f} seconds.
             keyframes.append(name)
         self._set(it, candidates=keyframes, chosen=None)
         out = self.dir / f"{it['id']}_motion_{stamp}.mp4"
+        self._stage(it, "render", "렌더링 시작…")
         self._render_mp4(it, html_path, dur, out)
         self._set(it, files=[out.name], status="ready", progress=None,
                   error=None if ok else f"판정 모델: {problems[:300]} - 요청을 적어 다시 만들 수 있어요")
@@ -952,6 +1060,20 @@ Duration D = {dur:.2f} seconds.
         it = self._get(iid)
         if action not in ("delete",):
             it["touched"] = True  # 다시 제안할 때 지우지 않는다
+        if action == "cancel":
+            if it["status"] not in ("deciding", "generating"):
+                raise ValueError("만드는 중이 아닙니다")
+            self._set(it, cancel=True, progress="중단하는 중… (지금 단계가 끝나면 멈춰요)")
+            return it
+        if action == "dismiss_error":
+            self._set(it, error=None, error_info=None, notice=None)
+            return it
+        if action == "retry":  # 형태가 정해져 있으면 그대로 만들기만 다시, 아니면 처음부터
+            if it["status"] in ("deciding", "generating"):
+                raise ValueError("이미 만드는 중입니다")
+            target = (self._make, (iid,)) if it.get("decision") and it.get("form") else (self._run, (iid, None))
+            threading.Thread(target=target[0], args=target[1], daemon=True).start()
+            return it
         if action == "make":
             if it["status"] not in ("suggested", "error"):
                 raise ValueError("이미 만들었거나 만드는 중입니다")
