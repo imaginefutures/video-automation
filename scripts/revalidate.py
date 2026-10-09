@@ -46,8 +46,8 @@ BASELINE_PATH = ROOT / "docs" / "현재-설계" / "gold_baseline.json"
 # 그 자체가 자동 실패 사유는 아니다(이 스크립트는 안전 지표만 하드 게이트로 본다).
 GOLD_VIDEOS: dict[str, dict] = {
     "BS145": {
-        "gold_raw": "Reference/videos/edit/transcripts/BS145_raw.json",
-        "gold_finished": "Reference/videos/edit/transcripts/BS145.json",
+        "gold_raw": "references/videos/edit/transcripts/BS145_raw.json",
+        "gold_finished": "references/videos/edit/transcripts/BS145.json",
     },
     "BS167": {
         "gold_raw": "video-edit/BS167/edit/transcript.json",

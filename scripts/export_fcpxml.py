@@ -161,7 +161,20 @@ def main() -> None:
     # frame-counts, never re-derived from raw seconds - otherwise independent rounding at
     # each step can drift the offset off the true cumulative sum by a frame, which Final
     # Cut would read as a gap or overlap between clips.
-    seg_dur_frames = [max(1, clock.frames(seg["source_end"] - seg["source_start"])) for seg in kept_segments]
+    # A sliver segment at the very end (e.g. 8ms after the last cut) rounds to a start frame
+    # AT the media's last frame boundary; padding it to 1 frame then points past the media and
+    # Final Cut rejects the clip ("invalid edit with no respective media"). Clamp every segment
+    # to the media and drop the ones left with no whole frame.
+    src_total_frames = clock.frames(edl["source_duration"])
+    seg_dur_frames = []
+    usable = []
+    for seg in kept_segments:
+        room = src_total_frames - clock.frames(seg["source_start"])
+        d = min(max(1, clock.frames(seg["source_end"] - seg["source_start"])), room)
+        if d >= 1:
+            usable.append(seg)
+            seg_dur_frames.append(d)
+    kept_segments = usable
     seg_offset_frames = []
     acc = 0
     for d in seg_dur_frames:
@@ -180,7 +193,6 @@ def main() -> None:
         src_ref = rel.as_posix()  # schemeless relative URI, resolved against the .fcpxml's own location
     asset_clips = []
     n_transitions = 0
-    src_total_frames = clock.frames(edl["source_duration"])
     for i, seg in enumerate(kept_segments):
         markers_xml = "" if args.no_markers else "\n          ".join(markers_by_segment.get(i, []))
         # A short cross dissolve at every join softens the jump cut and crossfades the audio.

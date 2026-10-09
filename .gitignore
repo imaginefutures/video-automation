@@ -7,7 +7,7 @@ __pycache__/
 # 개인 작업 산출물 (원본/미리보기 영상, 실제 강의 트랜스크립트 등) — 스킬 코드에는 불필요
 videos/
 video-edit/
-Reference/
+references/
 .claude/scheduled_tasks.lock
 splits/
 auto-split/

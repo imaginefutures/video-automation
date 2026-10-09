@@ -32,7 +32,7 @@ run) - verified at the top before comparing indices.
 
 Usage:
     python scripts/eval_against_gold.py <video-edit/NAME> \
-        --gold-raw <Reference/.../BS145_raw.json> --gold-finished <Reference/.../BS145.json> \
+        --gold-raw <references/.../BS145_raw.json> --gold-finished <references/.../BS145.json> \
         [--classify-fn] [--seams edit/seams.json]
 """
 from __future__ import annotations
