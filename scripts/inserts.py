@@ -417,7 +417,8 @@ class InsertStore:
         with self.lock:
             self.data["items"].append(it)
             self._save()
-        threading.Thread(target=self._run, args=(it["id"], None), daemon=True).start()
+        # 드래그로 만들 때는 형태만 정한다 - 텍스트는 바로 그리고, 이미지·영상은 비용·시간을 보여 준 뒤 '만들기'로 (10-09 사용자: 바로 영상이 만들어짐)
+        threading.Thread(target=self._run, args=(it["id"], None, None, True), daemon=True).start()
         return it
 
     _KEEP = ("status", "files", "candidates", "chosen", "checks", "decision", "form", "motion_refs", "font_fallback")
@@ -452,13 +453,16 @@ class InsertStore:
             raise Cancelled()
         self._set(it, stage=key, **({"progress": msg} if msg else {}))
 
-    def _run(self, iid: str, force_form: str | None, note: str | None = None) -> None:
+    def _run(self, iid: str, force_form: str | None, note: str | None = None, defer_costly: bool = False) -> None:
         def work(it):
             self._set(it, status="deciding")
             if note:
                 self._set(it, notes=(it.get("notes") or []) + [note])
             self._stage(it, "decide")
             dec = self.decide(it, force_form)
+            if defer_costly and dec["form"] in ("image", "video"):  # 돈·시간이 드는 형태는 사용자가 '만들기'를 눌러야
+                self._set(it, decision=dec, form=dec["form"], status="suggested", files=[], candidates=[], chosen=None)
+                return
             if dec["form"] == "image":
                 self._stage(it, "image_prompt", "장면을 이해하고 그림을 구상하는 중…")
                 dec.update(self.write_image_prompt(it, dec))
@@ -986,27 +990,26 @@ Duration D = {dur:.2f} seconds.
             fn, fd = (int(x) for x in str(self.s.probe["frame_rate"]).split("/"))
         except (KeyError, ValueError, TypeError):
             fn, fd = FPS_NUM, FPS_DEN
-        n = max(1, round(dur * fn / fd))
-        ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "image2pipe", "-framerate", f"{fn}/{fd}", "-c:v", "mjpeg",
-                               "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-preset", "medium",
-                               "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)
+        # 렌더는 별도 프로세스로 - 검토 서버 안에서 돌리면 프레임 수백 장을 주고받는 동안 영상 스트리밍이 밀려
+        # 미리보기의 화면이 소리보다 늦어진다 (10-09 사용자: 재생 중 갑자기 싱크가 안 맞음)
+        import sys
+        proc = subprocess.Popen([sys.executable, str(Path(__file__)), "--render-motion", str(html_path), str(out), f"{dur}", f"{fn}/{fd}"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
-            with sync_playwright() as p:
-                b = p.chromium.launch()
-                page = b.new_page(viewport={"width": W, "height": H})
-                page.goto(html_path.as_uri())
-                page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
-                for k in range(n):
-                    page.evaluate(f"window.seek({k * fd / fn})")
-                    ff.stdin.write(page.screenshot(type="jpeg", quality=95))
-                    if k % 30 == 0:
+            for line in proc.stdout:
+                if line.startswith("frame "):
+                    k, n = line.split()[1].split("/")
+                    try:
                         self._progress(it, f"렌더링 {k}/{n} 프레임…")
-                b.close()
+                    except Cancelled:
+                        proc.kill()
+                        raise
+            proc.wait()
         finally:
-            ff.stdin.close()
-            ff.wait()
-        if ff.returncode != 0 or not out.exists():
-            raise RuntimeError("영상 인코딩 실패")
+            if proc.poll() is None:
+                proc.kill()
+        if proc.returncode != 0 or not out.exists():
+            raise RuntimeError(f"영상 인코딩 실패: {proc.stderr.read()[-300:]}")
 
     def _generate_motion(self, it: dict) -> None:
         self._stage(it, "renderer", "렌더러 확인 중…")
@@ -1253,7 +1256,37 @@ def render_text(layout: str, lines: list[str], source: str = "", layer: str | No
     return im
 
 
+def _render_motion_cli(html: str, out: str, dur: float, rate: str) -> int:
+    """별도 프로세스에서 seek(t) HTML을 프레임마다 찍어 mp4로. 진행은 'frame k/n' 줄로 알린다."""
+    import subprocess
+    from playwright.sync_api import sync_playwright
+    fn, fd = (int(x) for x in rate.split("/"))
+    n = max(1, round(dur * fn / fd))
+    ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "image2pipe", "-framerate", f"{fn}/{fd}", "-c:v", "mjpeg",
+                           "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-preset", "medium",
+                           "-movflags", "+faststart", out], stdin=subprocess.PIPE)
+    try:
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            page = b.new_page(viewport={"width": W, "height": H})
+            page.goto(Path(html).resolve().as_uri())
+            page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
+            for k in range(n):
+                page.evaluate(f"window.seek({k * fd / fn})")
+                ff.stdin.write(page.screenshot(type="jpeg", quality=95))
+                if k % 30 == 0:
+                    print(f"frame {k}/{n}", flush=True)
+            b.close()
+    finally:
+        ff.stdin.close()
+        ff.wait()
+    return ff.returncode
+
+
 if __name__ == "__main__":
+    import sys as _sys
+    if len(_sys.argv) > 1 and _sys.argv[1] == "--render-motion":
+        _sys.exit(_render_motion_cli(_sys.argv[2], _sys.argv[3], float(_sys.argv[4]), _sys.argv[5]))
     # run.py(인서트 전용 프로젝트)가 전사 직후 부른다: python scripts/inserts.py <폴더> --suggest
     # 실패해도 0으로 끝낸다 - 화면이 오류와 "자리 제안" 버튼을 보여 주고, 처리 자체는 막지 않는다
     import argparse
@@ -1262,7 +1295,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
     ap.add_argument("--suggest", action="store_true")
-    a = ap.parse_args()
+    a, rest = ap.parse_known_args()
     load_env()
     from server import Session
     st = Session(video_dir(a.folder)).inserts
