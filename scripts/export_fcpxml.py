@@ -134,8 +134,9 @@ def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: 
 
     A connected clip lives INSIDE the spine clip that contains its timeline start, and its offset
     is in that parent's SOURCE time: child.offset = parent.start + (T - parent.offset). Each
-    layer (e.g. image + yellow caption) gets its own lane above the speaker. Only stills for now
-    (PNG/JPG - format without a frame rate, asset duration 0s, verified in V0)."""
+    layer (e.g. image + yellow caption) gets its own lane above the speaker. Stills (PNG/JPG) use a
+    format without a frame rate and asset duration 0s (verified in V0); motion clips (MP4) are
+    rendered at the sequence rate and placed as asset-clips."""
     def timeline_frame(t: float) -> int:
         for i, seg in enumerate(kept_segments):
             if t < seg["source_start"]:
@@ -153,16 +154,27 @@ def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: 
         child_off = clock.frames(kept_segments[i]["source_start"]) + (t0 - seg_offset_frames[i])
         for k, layer in enumerate(ins["layers"]):
             f = Path(layer)
-            if f.suffix.lower() not in (".png", ".jpg", ".jpeg"):
-                print(f"[inserts] {f.name}: still images only for now - skipped")
-                continue
             ref = f"vins{n}_{k}"
             src = f.resolve().as_uri() if absolute else Path(relpath(f.absolute(), start=out_path.absolute().parent)).as_posix()
-            resources.append(f'<asset id="{ref}" name="{escape(f.stem)}" start="0s" duration="0s" hasVideo="1" format="vautostill" videoSources="1">'
-                             f'<media-rep kind="original-media" src="{escape(src)}"/></asset>')
-            by_seg.setdefault(i, []).append(
-                f'<video ref="{ref}" lane="{k + 1}" offset="{clock.time_str_frames(child_off)}" duration="{clock.time_str_frames(dur)}" '
-                f'role="{escape(ins["role"])}" name="{escape(ins["name"])}"/>')
+            if f.suffix.lower() in (".png", ".jpg", ".jpeg"):
+                resources.append(f'<asset id="{ref}" name="{escape(f.stem)}" start="0s" duration="0s" hasVideo="1" format="vautostill" videoSources="1">'
+                                 f'<media-rep kind="original-media" src="{escape(src)}"/></asset>')
+                by_seg.setdefault(i, []).append(
+                    f'<video ref="{ref}" lane="{k + 1}" offset="{clock.time_str_frames(child_off)}" duration="{clock.time_str_frames(dur)}" '
+                    f'role="{escape(ins["role"])}" name="{escape(ins["name"])}"/>')
+            elif f.suffix.lower() in (".mp4", ".mov"):
+                # motion inserts are rendered at the sequence frame rate (inserts.py FPS_*), video only
+                import subprocess
+                secs = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(f)],
+                                            capture_output=True, text=True).stdout.strip() or 0)
+                media_frames = max(1, clock.frames(secs))
+                resources.append(f'<asset id="{ref}" name="{escape(f.stem)}" start="0s" duration="{clock.time_str_frames(media_frames)}" hasVideo="1" '
+                                 f'format="vautofmt1" videoSources="1"><media-rep kind="original-media" src="{escape(src)}"/></asset>')
+                by_seg.setdefault(i, []).append(
+                    f'<asset-clip ref="{ref}" lane="{k + 1}" offset="{clock.time_str_frames(child_off)}" '
+                    f'duration="{clock.time_str_frames(min(dur, media_frames))}" videoRole="{escape(ins["role"])}" name="{escape(ins["name"])}"/>')
+            else:
+                print(f"[inserts] {f.name}: unsupported layer type - skipped")
     return (resources if len(resources) > 1 else []), by_seg
 
 

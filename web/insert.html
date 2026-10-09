@@ -442,9 +442,17 @@ function tick() {
   const key = it ? it.id + it.files.join() : '';
   if (key !== lastOv) {
     lastOv = key;
-    $('#ovLayers').innerHTML = it ? it.files.map((f) => `<img class="ov" src="${fileUrl(f)}" alt="">`).join('') : '';
+    $('#ovLayers').innerHTML = it ? it.files.map((f) => f.endsWith('.mp4') ? `<video class="ov" src="${fileUrl(f)}" muted playsinline preload="auto"></video>` : `<img class="ov" src="${fileUrl(f)}" alt="">`).join('') : '';
     $('#stageBadge').style.display = it ? 'block' : 'none';
     if (it) $('#stageBadge').textContent = `${FORM_KO[it.form]} · ${STATUS_KO[it.status]}`;
+  }
+  // 영상 인서트는 본편 시각에 맞춰 같이 움직인다
+  const ov = $('#ovLayers video');
+  if (ov && it) {
+    const want = Math.max(0, toOut(video.currentTime) - it.t_start);
+    if (Math.abs(ov.currentTime - want) > 0.25) ov.currentTime = want;
+    if (!video.paused && ov.paused) ov.play().catch(() => {});
+    if (video.paused && !ov.paused) ov.pause();
   }
   // 지금 말하는 단어 표시
   const w = S.words.find((x) => video.currentTime >= x.s && video.currentTime < x.e);
@@ -526,7 +534,7 @@ function renderDetail() {
     ${d.layer ? `<span style="font-size:12px;color:var(--muted);font-weight:400">· ${esc(d.layer)}</span>` : ''}</h2>
     <div class="quote">${esc(it.text)}</div>`;
   if (BUSY.has(it.status)) {
-    h += `<div class="busy"><span class="spin"></span>${it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : it.form === 'image' ? `이미지 후보를 만드는 중… (약 30초)` : '만드는 중…'}</div>`;
+    h += `<div class="busy"><span class="spin"></span>${it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : esc(it.progress) || (it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</div>`;
   }
   if (d.reason) h += `<div class="reason">${esc(d.reason)}</div>`;
   if (it.form === 'image' && d.point) h += `<div class="reason"><b style="color:var(--ink)">그림이 보여 줄 것</b> · ${esc(d.point)}</div>`;
@@ -534,7 +542,7 @@ function renderDetail() {
   if (it.error) h += `<div class="errbox">${esc(it.error)}</div>`;
 
   if (it.files?.length && ['ready', 'approved'].includes(it.status)) {
-    h += `<div class="pv">${it.files.map((f) => `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
+    h += `<div class="pv">${it.files.map((f) => f.endsWith('.mp4') ? `<video src="${fileUrl(f)}" muted loop autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>` : `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
       <div class="row" style="justify-content:space-between"><span class="note">격자 = 투명. 실제 화면은 위 영상에서 확인</span><button class="btn" id="dPlay">이 구간 재생</button></div>`;
   }
   if (it.form === 'image' && it.candidates?.length && !BUSY.has(it.status)) {
@@ -543,6 +551,10 @@ function renderDetail() {
       const v = ck[k]; const badge = v ? `<span class="vd ${v.ok ? 'ok' : 'no'}">${v.ok ? '✓' : '✗'}</span>` : '';
       return `<button data-k="${k}" class="${k === it.chosen ? 'on' : ''}" aria-label="후보 ${k + 1}" title="${esc(v && !v.ok ? v.note : '')}">${badge}<img src="${fileUrl(c)}" alt=""></button>`;
     }).join('')}</div>${ck[it.chosen] && !ck[it.chosen].ok ? `<div class="warn">이 후보: ${esc(ck[it.chosen].note)}</div>` : ''}</div>`;
+  }
+  if (it.form === 'video' && it.candidates?.length && !BUSY.has(it.status)) {
+    h += `<div class="sec"><div class="lbl">검사한 장면 (판정 모델이 본 프레임)</div><div class="cands">${it.candidates.map((c) =>
+      `<span style="display:block;border-radius:var(--r-sm);overflow:hidden;aspect-ratio:16/9;background:#000"><img src="${fileUrl(c)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></span>`).join('')}</div></div>`;
   }
   if (it.form === 'video' && d.scene) h += `<div class="sec"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
   if (it.form === 'asset' && !BUSY.has(it.status)) {

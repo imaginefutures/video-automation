@@ -35,7 +35,18 @@ IMAGE_MODEL = "gemini-nano-banana-2.1"   # 10-09 BS183 A/B: 화풍 일관성 좋
 IMAGE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{IMAGE_MODEL}:generateContent"
 N_IMAGE_CANDIDATES = 3
 GUIDE_PATH = Path(__file__).resolve().parent.parent / "docs" / "인서트-가이드.md"
-FILE_RE = re.compile(r"^[A-Za-z0-9_\-]+\.(png|jpg|jpeg)$")
+FILE_RE = re.compile(r"^[A-Za-z0-9_\-]+\.(png|jpg|jpeg|mp4)$")
+REF_DIR = Path(__file__).resolve().parent.parent / "video-references" / "opus-5.5"
+REF_FRAME_CACHE = Path.home() / ".video-cut" / "ref-frames"
+# 가이드 8-2: 인서트 내용 -> 레퍼런스 (구성·움직임만 빌리고 색은 채널 스타일)
+MOTION_REFS = {
+    "concept": ["education__animated-cycloid-lesson__2106052083040256293",
+                "production__talking-head-video-converted-to-line-art-b-roll__2102827887732932956"],
+    "steps": ["motion__cocktail-recipe-explainer-motion-graphic__2102853258582880547"],
+    "compare": ["education__history-of-ai-documentary-short-film__2102844654169575547"],
+    "system": ["education__zoomable-app-architecture-canvas__2105309987983745060"],
+}
+FPS_NUM, FPS_DEN = 30000, 1001
 
 W, H = 1920, 1080
 FONT_GOTHIC = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
@@ -74,6 +85,8 @@ class InsertDecision(BaseModel):
     scene: str = Field(description="image: 영어 장면 묘사(주제·구도만, 화풍·글자 지시 금지, 60단어 이내). "
                                    "video: 한국어로 장면별 움직임 구성. asset: 한국어로 사용자에게 받을 실물. text: 빈 문자열")
     reason: str = Field(description="이 형태를 고른 이유, 한국어 한두 문장. 가이드의 어느 규칙인지")
+    motion_kind: Literal["concept", "steps", "compare", "system", "none"] = Field(
+        description="video일 때만: concept(개념이 그림으로 변함) / steps(단계·과정) / compare(시대·두 대상 비교) / system(구조·관계). 아니면 none")
     alternatives: list[Literal["text", "image", "video", "asset"]] = Field(description="그다음으로 괜찮은 형태")
     warnings: list[str] = Field(description="한국어 주의사항: 넣지 않는 구간, 촘촘함, 사실 확인 필요 등. 없으면 빈 배열")
 
@@ -106,6 +119,30 @@ Work in this order:
 4. must_show: the facts a checker will verify; avoid: what the model is likely to get wrong (the imitated object, extra people,
    clichés, anything from the "Never" list).
 Never put text, letters, numbers, signs or logos in the picture. Do not describe art style or colors - a fixed style block is appended."""
+
+
+MOTION_SYSTEM = """You write ONE self-contained HTML file that renders a short motion-graphic insert for a Korean parenting
+lecture video (베싸TV: calm, warm, evidence-based). We render it frame by frame with Playwright: for each frame we call
+window.seek(t) (t in seconds) and screenshot a 1920x1080 viewport. The clip is cut into the lecture full-screen.
+
+Hard contract:
+- Define window.seek = function (t) {...} that fully draws the frame for time t. It must be a PURE function of t:
+  no requestAnimationFrame, setTimeout/setInterval, CSS transitions/animations, Date, performance.now, Math.random
+  (use a small seeded hash if you need variation). Calling seek in any order must give the same picture.
+- Duration D seconds is given. seek(0) is already a composed frame. The key message is readable by ~0.6s and stays
+  readable for most of the clip. Nothing important starts after D-0.5s.
+- 1920x1080, margin 0, overflow hidden. DOM + inline SVG or a single <canvas>. No external resources at all
+  (no web fonts, CDNs, images, network). Font: font-family "Apple SD Gothic Neo", sans-serif (weights 400/700/800).
+- Channel style: background warm cream #FAF9F5; main accent deep violet #4A1B6C; soft violets #EFE9F3 and #CBBAD8;
+  gold #FFC800 only as one or two tiny accents; ink #141413. Flat, editorial, uncluttered, one idea at a time.
+  Easing is closed-form and gentle (easeOutCubic, critically damped springs) - no bouncy overshoot, no glows.
+- Keep the bottom 15% of the frame empty (burned-in subtitles live there).
+- Korean text: use word-break: keep-all; main text >= 56px, labels >= 36px; never overflow, overlap or get cut off.
+  Use the given Korean caption lines verbatim when provided. Do not invent numbers, names or facts.
+- Draw people simply (flat silhouettes / simple shapes), never realistic faces.
+- Never an empty or frozen frame: something moves gently at all times, but motion must serve the explanation.
+
+Return only the HTML, inside one ```html code block."""
 
 
 def _now() -> str:
@@ -210,7 +247,7 @@ class InsertStore:
     def _run(self, iid: str, force_form: str | None, note: str | None = None) -> None:
         it = self._get(iid)
         try:
-            self._set(it, status="deciding", error=None)
+            self._set(it, status="deciding", error=None, progress=None)
             if note:
                 self._set(it, notes=(it.get("notes") or []) + [note])
             dec = self.decide(it, force_form)
@@ -219,7 +256,7 @@ class InsertStore:
             self._set(it, decision=dec, form=dec["form"], status="generating", candidates=[], chosen=None, files=[])
             self.generate(it)
         except Exception as e:  # 화면에 그대로 보여 준다 - 조용히 실패하지 않게
-            self._set(it, status="error", error=str(e)[:400])
+            self._set(it, status="error", error=str(e)[:400], progress=None)
 
     # ---- 1) 형태 결정
 
@@ -339,8 +376,7 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
         elif form == "image":
             self._generate_images(it)
         elif form == "video":
-            self._set(it, status="unsupported",
-                      error="영상(모션그래픽) 생성은 다음 단계에서 붙입니다. 아래 구성안을 참고하거나 텍스트·이미지로 바꿔 만들 수 있어요")
+            self._generate_motion(it)
         else:  # asset
             self._set(it, status="needs_asset", error=None)
 
@@ -451,6 +487,185 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
             print(f"[inserts] judge failed: {e}")
             return []
 
+    # ---- 영상(모션그래픽): Opus가 seek(t) HTML을 쓰고 Playwright로 프레임 렌더
+
+    def _progress(self, it: dict, msg: str) -> None:
+        self._set(it, progress=msg)
+
+    def _ensure_renderer(self, it: dict) -> None:
+        import subprocess
+        import sys
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                p.chromium.launch().close()
+            return
+        except ImportError:
+            raise RuntimeError("렌더러(playwright)가 설치되지 않았습니다 - 플러그인을 업데이트하세요")
+        except Exception:
+            pass
+        self._progress(it, "렌더러 설치 중 (처음 한 번, 약 150MB)…")
+        r = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"렌더러 설치 실패: {r.stderr[-300:]}")
+
+    def _ref_material(self, kind: str) -> tuple[str, list[bytes]]:
+        """레퍼런스 프롬프트 원문 + 영상에서 뽑은 프레임 6장(JPEG). 라이브러리가 없으면 빈 값 - 없어도 만든다."""
+        import subprocess
+        for name in MOTION_REFS.get(kind) or MOTION_REFS["concept"]:
+            md, mp4 = REF_DIR / f"{name}.md", REF_DIR / f"{name}.mp4"
+            if not (md.exists() and mp4.exists()):
+                continue
+            text = md.read_text()
+            prompt = text.split("## Prompt", 1)[-1][:2500]
+            cache = REF_FRAME_CACHE / name
+            if not cache.exists() or len(list(cache.glob("*.jpg"))) < 6:
+                cache.mkdir(parents=True, exist_ok=True)
+                dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(mp4)],
+                                           capture_output=True, text=True).stdout.strip() or 10)
+                for k in range(6):
+                    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{dur * (k + 0.5) / 6:.2f}", "-i", str(mp4), "-frames:v", "1",
+                                    "-vf", "scale=640:-2", "-q:v", "4", str(cache / f"{k}.jpg")], check=False)
+            frames = [f.read_bytes() for f in sorted(cache.glob("*.jpg"))][:6]
+            return f"Reference '{name}' (borrow composition and motion ideas only, NOT its colors or language):\n{prompt}", frames
+        return "", []
+
+    def _write_motion_html(self, it: dict, dur: float, fix: tuple[str, str, list[bytes]] | None = None) -> str:
+        import anthropic
+        dec = it["decision"]
+        before, after = self._context(it, 6, 3)
+        ref_text, ref_frames = self._ref_material(dec.get("motion_kind") or "concept")
+        notes = "\n".join(f"- {n}" for n in it.get("notes") or [])
+        content: list[dict] = [{"type": "text", "text": f"""Lecture passage (Korean): "{it['text']}"
+Before: {' '.join(before)[-900:]}
+After: {' '.join(after)[:500]}
+
+What this clip must make clear (editor's plan, Korean): {dec.get('scene', '')}
+Korean caption lines to show (verbatim, may be empty): {dec.get('lines', [])}
+Duration D = {dur:.2f} seconds.
+{('User requests (must follow):' + chr(10) + notes) if notes else ''}
+
+{ref_text}"""}]
+        for b in ref_frames:
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}})
+        if fix:
+            old_html, problems, shots = fix
+            content.append({"type": "text", "text": f"Your previous version had these problems - fix exactly these and keep the rest:\n{problems}\n\nPrevious HTML:\n```html\n{old_html}\n```\nIts rendered frames:"})
+            for b in shots:
+                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}})
+        client = anthropic.Anthropic()
+        with client.messages.stream(model=DECIDE_MODEL, max_tokens=32000, system=MOTION_SYSTEM,
+                                    messages=[{"role": "user", "content": content}],
+                                    **thinking_kwargs(DECIDE_MODEL, effort="medium")) as stream:
+            msg = stream.get_final_message()
+        log_llm_usage(self.folder, "insert_motion_html", DECIDE_MODEL, msg.usage)
+        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        m = re.search(r"```html\s*(.*?)```", text, re.S)
+        html = (m.group(1) if m else text).strip()
+        if "seek" not in html:
+            raise RuntimeError("모션 HTML에 seek(t)가 없습니다 - 다시 만들어 보세요")
+        return html
+
+    def _shots(self, html_path: Path, times: list[float]) -> list[bytes]:
+        from playwright.sync_api import sync_playwright
+        out = []
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            page = b.new_page(viewport={"width": W, "height": H})
+            errors: list[str] = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(html_path.as_uri())
+            page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
+            for t in times:
+                page.evaluate(f"window.seek({t})")
+                out.append(page.screenshot(type="jpeg", quality=85))
+            b.close()
+        if errors:
+            raise RuntimeError(f"모션 HTML 실행 오류: {errors[0][:200]}")
+        return out
+
+    def _judge_motion(self, it: dict, shots: list[bytes], times: list[float]) -> tuple[bool, str]:
+        import anthropic
+
+        class MotionVerdict(BaseModel):
+            ok: bool
+            problems: str = Field(description="고칠 점을 영어로 구체적으로 (프레임 번호와 위치). 문제가 없으면 빈 문자열")
+
+        dec = it["decision"]
+        content: list[dict] = [{"type": "text", "text": (
+            "These are frames of a motion-graphic insert for a Korean parenting lecture, at the given times. Judge strictly:\n"
+            "1) any Korean text overflowing, overlapping, cut off at the edge, or too small to read (<36px)?\n"
+            "2) anything drawn in the bottom 15% of the frame (reserved for subtitles)?\n"
+            "3) empty/blank or broken-looking frames, garbled shapes, realistic faces?\n"
+            f"4) does it clearly show this point: {dec.get('scene', '')}\n"
+            f"5) are these caption lines shown correctly (if any): {dec.get('lines', [])}\n"
+            "ok=true only if all pass.")}]
+        for t, b in zip(times, shots):
+            content += [{"type": "text", "text": f"t={t:.1f}s"},
+                        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}}]
+        resp = anthropic.Anthropic().messages.parse(model=JUDGE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": content}],
+                                                    output_format=MotionVerdict, **thinking_kwargs(JUDGE_MODEL))
+        log_llm_usage(self.folder, "insert_motion_judge", JUDGE_MODEL, resp.usage)
+        return resp.parsed_output.ok, resp.parsed_output.problems
+
+    def _render_mp4(self, it: dict, html_path: Path, dur: float, out: Path) -> None:
+        import subprocess
+        from playwright.sync_api import sync_playwright
+        n = max(1, round(dur * FPS_NUM / FPS_DEN))
+        ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "image2pipe", "-framerate", f"{FPS_NUM}/{FPS_DEN}", "-c:v", "mjpeg",
+                               "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-preset", "medium",
+                               "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch()
+                page = b.new_page(viewport={"width": W, "height": H})
+                page.goto(html_path.as_uri())
+                page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
+                for k in range(n):
+                    page.evaluate(f"window.seek({k * FPS_DEN / FPS_NUM})")
+                    ff.stdin.write(page.screenshot(type="jpeg", quality=95))
+                    if k % 30 == 0:
+                        self._progress(it, f"렌더링 {k}/{n} 프레임…")
+                b.close()
+        finally:
+            ff.stdin.close()
+            ff.wait()
+        if ff.returncode != 0 or not out.exists():
+            raise RuntimeError("영상 인코딩 실패")
+
+    def _generate_motion(self, it: dict) -> None:
+        self._ensure_renderer(it)
+        by_wi = {w["wi"]: w for w in self.s.words}
+        kept = self._kept()
+        span = self.to_timeline(kept, by_wi[it["wi_end"]]["end"]) - self.to_timeline(kept, by_wi[it["wi_start"]]["start"])
+        dur = min(20.0, max(3.0, span))
+        stamp = int(time.time())
+        html_path = self.dir / f"{it['id']}_motion_{stamp}.html"
+        times = [dur * f for f in (0.12, 0.4, 0.7, 0.95)]
+        self._progress(it, "레퍼런스를 보고 모션을 설계하는 중… (1~3분)")
+        html = self._write_motion_html(it, dur)
+        html_path.write_text(html)
+        self._progress(it, "프레임 검사 중…")
+        shots = self._shots(html_path, times)
+        ok, problems = self._judge_motion(it, shots, times)
+        if not ok:  # 한 번만 고친다 (원칙 3)
+            self._progress(it, "검사에서 나온 문제를 고치는 중…")
+            html = self._write_motion_html(it, dur, fix=(html, problems, shots))
+            html_path = self.dir / f"{it['id']}_motion_{stamp}b.html"
+            html_path.write_text(html)
+            shots = self._shots(html_path, times)
+            ok, problems = self._judge_motion(it, shots, times)
+        keyframes = []
+        for k, b in enumerate(shots):
+            name = f"{it['id']}_key{k}_{stamp}.jpg"
+            (self.dir / name).write_bytes(b)
+            keyframes.append(name)
+        self._set(it, candidates=keyframes, chosen=None)
+        out = self.dir / f"{it['id']}_motion_{stamp}.mp4"
+        self._render_mp4(it, html_path, dur, out)
+        self._set(it, files=[out.name], status="ready", progress=None,
+                  error=None if ok else f"판정 모델: {problems[:300]} - 요청을 적어 다시 만들 수 있어요")
+
     def _render_overlay(self, it: dict) -> str | None:
         lines = [l for l in it["decision"]["lines"] if l.strip()]
         if not lines:
@@ -490,6 +705,8 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
                 raise ValueError("알 수 없는 형태입니다")
             threading.Thread(target=self._run, args=(iid, form), daemon=True).start()
         elif action == "choose":
+            if it["form"] != "image":
+                raise ValueError("이미지 인서트만 후보를 고를 수 있습니다")
             k = int(body["index"])
             if not (0 <= k < len(it["candidates"])):
                 raise ValueError("없는 후보입니다")

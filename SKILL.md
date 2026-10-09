@@ -53,7 +53,7 @@ description: 한국어 강의·토킹헤드 원본 영상의 컷편집 러프컷
    잘린 말이 빠진 완성 대본에서 넣을 구간을 드래그 → "＋ 인서트 만들기" → 내용·앞뒤 문맥·역할을 보고 텍스트/이미지/영상/실물 중
    형태를 정해 만든다(규칙: `docs/인서트-가이드.md`). 이미지는 후보 3장 중 고르기, 결과마다 승인/취소/다시 만들기(요청 적기 가능)/형태 바꾸기.
    맨 위 타임라인 띠에 인서트 위치가 형태별 색으로 보인다. "FCP로 내보내기" → 승인한 인서트가 같은 `<이름>.fcpxml`에 연결 클립으로 들어간다.
-   영상(모션그래픽) 형태는 아직 구성안까지만(렌더러 미설치). 이미지는 `GEMINI_API_KEY` 필요
+   영상(모션그래픽)은 Opus 5.5가 레퍼런스(`video-references/opus-5.5/`, 있으면)를 보고 `seek(t)` HTML을 써서 Playwright로 렌더(약 3~4분, 약 $0.5). 처음 쓸 때 Chromium(약 150MB)을 자동 설치. 이미지는 `GEMINI_API_KEY` 필요
 
 **"설정해줘"/"키 설정해줘"라고 요청받으면, 또는 새 프로젝트 폴더에서 처음 스킬을 부르면 (환경설정)**:
 먼저 `which uv`·`which ffmpeg`로 시스템 의존성부터 확인한다(아래 "환경 의존성" 참고), 그다음
@@ -93,7 +93,7 @@ uv run --directory <스킬 절대경로> python scripts/setup.py <프로젝트 �
 | 전체 루프 | `edit/global_review.json` | 결과 전체를 PD(원본+컷+이유 다 봄, Opus)와 시청자(결과만 봄, Fable 5.1)가 각각 읽음. missed_cut은 새 후보로 추가, over_cut/시청자 지적은 `ng.json`까지 역전파(검토 화면에 뜸). 정확히 1회 통독(09-30 단순화 - 여러 라운드를 반복 실행하면 판단이 누적되는 문제를 겪어 "끝나면 한 번 더"로 고정) |
 | 무음 | `edit/pauses.json` | 쉼 문맥 분류(Claude, Haiku) → 목표치 트림 |
 | 확정 | `<이름>.fcpxml`, `preview.mp4`, `edit/decisions.json`, `edit/edl.json` | 서버가 직접 생성. 컷 경계는 조용한 지점으로 스냅(`audio_map.choose_boundary`), 확정 직전 자기검토(재전사로 잔여음/절단 의심 여부 확인, `seam_refine.g2_check`)를 거쳐 확정 화면에 표시 |
-| 인서트 | `edit/inserts.json`, `edit/inserts/*.png·jpg`, `edit/inserts_manifest.json` | `scripts/inserts.py`. 형태 결정(Opus 5.5, 가이드 전문 입력) → 텍스트는 Pillow 투명 PNG, 이미지는 프롬프트 작성 단계(Opus) → Nano Banana 2.1 후보 3장 → 판정(Claude Sonnet 5, 만드는 모델 ≠ 판정 모델). 위치는 원본 단어 번호(`wi`)로 저장. 확정과 인서트 내보내기는 `Session.export_fcpxml()` 하나를 쓴다 |
+| 인서트 | `edit/inserts.json`, `edit/inserts/*.png·jpg`, `edit/inserts_manifest.json` | `scripts/inserts.py`. 형태 결정(Opus 5.5, 가이드 전문 입력) → 텍스트는 Pillow 투명 PNG, 영상은 Opus 5.5 `seek(t)` HTML → 판정(Sonnet 5, 대표 프레임 4장, 실패 시 1회 수정) → Playwright 프레임 렌더 → H.264 mp4, 이미지는 프롬프트 작성 단계(Opus) → Nano Banana 2.1 후보 3장 → 판정(Claude Sonnet 5, 만드는 모델 ≠ 판정 모델). 위치는 원본 단어 번호(`wi`)로 저장. 확정과 인서트 내보내기는 `Session.export_fcpxml()` 하나를 쓴다 |
 
 ## 필요한 것
 
