@@ -37,6 +37,7 @@ from transcript_search import search as search_transcript
 import audio_map as am
 import migrate
 import redetect
+from inserts import InsertStore
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -121,6 +122,7 @@ class Session:
         self.global_review_ran = (self.edit / "global_review.json").exists()
         self._ng_to_cut_ids, self._cut_info_lost = self._load_seam_info()
         self._review_meta_cache: list[dict | None] = [self._review_meta(i, it) for i, it in enumerate(self.ng)]
+        self.inserts = InsertStore(self)  # 컷 확정 뒤 인서트 편집 (/insert, docs/인서트-가이드.md)
 
     # ---- live pattern-generalization suggestions (PLAN.md 사용자 프로세스 LLM 적용 #2)
 
@@ -1162,13 +1164,7 @@ class Session:
         edl_path = self.edit / "edl.json"
         write_json(edl_path, edl)
 
-        fcpxml_path = self.folder / f"{self.name}.fcpxml"
-        num, den = self.probe["frame_rate"].split("/")
-        subprocess.run([sys.executable, str(Path(__file__).parent / "export_fcpxml.py"), str(edl_path),
-                        "--source", str(self.media), "--width", str(self.probe["width"]),
-                        "--height", str(self.probe["height"]), "--frame-duration", f"{den}/{num}",
-                        "--name", self.name, "--no-markers", "--transition-frames", "3",
-                        "--out", str(fcpxml_path)], check=True)
+        fcpxml_path = self.export_fcpxml(edl_path)
 
         self.decisions["confirmed_at"] = datetime.now().isoformat(timespec="seconds")
         self.save()
@@ -1184,6 +1180,19 @@ class Session:
         return {"fcpxml": str(fcpxml_path), "kept_segments": len(kept), "removed_sec": round(removed, 1),
                 "result_sec": round(self.duration - removed, 1), "boundary_warnings": boundary_warnings,
                 "receipt": rc, "previous": previous}
+
+    def export_fcpxml(self, edl_path: Path) -> Path:
+        """컷 + 승인된 인서트를 <이름>.fcpxml 하나로. 확정과 인서트 내보내기가 같은 경로를 쓴다 -
+        둘이 따로 쓰면 나중에 컷을 다시 확정할 때 인서트가 조용히 빠진다."""
+        fcpxml_path = self.folder / f"{self.name}.fcpxml"
+        num, den = self.probe["frame_rate"].split("/")
+        manifest = self.inserts.manifest()
+        subprocess.run([sys.executable, str(Path(__file__).parent / "export_fcpxml.py"), str(edl_path),
+                        "--source", str(self.media), "--width", str(self.probe["width"]),
+                        "--height", str(self.probe["height"]), "--frame-duration", f"{den}/{num}",
+                        "--name", self.name, "--no-markers", "--transition-frames", "3",
+                        "--out", str(fcpxml_path)] + (["--inserts", str(manifest)] if manifest else []), check=True)
+        return fcpxml_path
 
     def start_render(self, edl_path: Path) -> None:
         out = self.folder / "preview.mp4"
@@ -1262,6 +1271,8 @@ class Handler(BaseHTTPRequestHandler):
         # starts, see run.py/serve()).
         if path in ("/", "/index.html"):
             return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+        if path == "/insert":
+            return self._file(WEB_DIR / "insert.html", "text/html; charset=utf-8")
         if path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
@@ -1280,6 +1291,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "ready": False, "error": "아직 처리 중입니다"}, 503)
         if path == "/api/session":
             return self._json(self.session.payload())
+        if path == "/api/insert/state":
+            return self._json({**self.session.inserts.payload(), "home_port": home_port(),
+                               "confirmed_at": self.session.decisions.get("confirmed_at")})
+        if path == "/api/insert/file":
+            from urllib.parse import urlsplit, parse_qs
+            name = (parse_qs(urlsplit(self.path).query).get("f") or [""])[0]
+            try:
+                f = self.session.inserts.file(name)
+            except ValueError:
+                return self.send_error(404)
+            return self._file(f, mimetypes.guess_type(str(f))[0] or "image/png")
         if path == "/media":
             return self._media()
         if path == "/api/waveform":
@@ -1295,6 +1317,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
+        if self.path.startswith("/api/insert/upload") and self.session is not None:
+            from urllib.parse import urlsplit, parse_qs, unquote
+            q = parse_qs(urlsplit(self.path).query)
+            try:
+                it = self.session.inserts.upload_asset((q.get("id") or [""])[0], unquote((q.get("name") or [""])[0]),
+                                                       self.rfile.read(length))
+                return self._json({"ok": True, "item": it})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
         body = json.loads(self.rfile.read(length) or b"{}")
         if self.path in ("/api/pipeline/pause", "/api/pipeline/resume", "/api/pipeline/stop") and self.session is None:
             try:
@@ -1349,6 +1380,23 @@ class Handler(BaseHTTPRequestHandler):
                                    "can_undo": self.session.can_undo(), "can_redo": self.session.can_redo(),
                                    "review_estimate": self.session._review_estimate(),
                                    "suggestions": self.session.suggestions})
+            if self.path == "/api/insert/create":
+                it = self.session.inserts.create(int(body["wi_start"]), int(body["wi_end"]))
+                return self._json({"ok": True, "item": it})
+            if self.path == "/api/insert/update":
+                res = self.session.inserts.update(str(body["id"]), str(body["action"]), body)
+                return self._json({"ok": True, "item": res})
+            if self.path == "/api/insert/export":
+                edl_path = self.session.edit / "edl.json"
+                if not edl_path.exists():
+                    raise ValueError("컷편집을 먼저 확정하세요")
+                with self.session.lock:
+                    out = self.session.export_fcpxml(edl_path)
+                n = sum(1 for it in self.session.inserts.data["items"] if it["status"] == "approved")
+                return self._json({"ok": True, "fcpxml": str(out), "approved": n})
+            if self.path == "/api/insert/reveal":
+                subprocess.run(["open", "-R", str(self.session.folder / f"{self.session.name}.fcpxml")], check=False)
+                return self._json({"ok": True})
             if self.path == "/api/log":
                 action = body.pop("action", "ui")
                 self.session.log(action, **body)

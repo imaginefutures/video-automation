@@ -2429,7 +2429,8 @@ $('#btnConfirm').addEventListener('click', async () => {
       ${receiptBlock}
       ${warnBlock}
       <p style="color:var(--muted);font-size:13px">Final Cut Pro에서: 라이브러리 열기 → 이 파일을 브라우저 패널로 드래그. 폴더 구조(edit/clean.mp4)를 유지하세요.</p>
-      <button onclick="hideModal()">닫기</button>`);
+      <p style="font-size:13px">다음 단계: 완성 대본에 텍스트·이미지 인서트를 넣어 같은 파일로 다시 내보낼 수 있어요.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="hideModal()">닫기</button><a href="/insert" style="text-decoration:none;padding:6px 14px;border-radius:var(--r-md);background:var(--accent);color:var(--accent-ink);font-weight:600">인서트 편집으로 →</a></div>`);
     if (st.state === 'rendering') setTimeout(poll, 3000);
   };
   poll();

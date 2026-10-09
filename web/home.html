@@ -311,7 +311,7 @@ function renderCard(p) {
     card.addEventListener('click', () => {
       if (p.status === 'error') return showErrorDetail(p, card);
       if (p.status === 'processing' && !p.managed && p.resumable) return resumeProcessing(p.name, card);
-      return openReview(p.name, card);
+      return openReview(p.name, card, p.status === 'confirmed' ? 'insert' : '');
     });
   }
   return card;
@@ -396,7 +396,7 @@ async function startProcessing(name, card) {
   }
 }
 
-async function openReview(name, card) {
+async function openReview(name, card, page = '') {  // page='insert': 컷 확정된 영상은 인서트 편집 화면으로
   card.classList.add('loading');
   toast('검토 화면을 여는 중...');
   try {
@@ -406,7 +406,7 @@ async function openReview(name, card) {
     });
     const data = await res.json();
     if (!data.ok) { showLaunchError(data, '열지 못했습니다'); card.classList.remove('loading'); return; }
-    window.location.href = data.url;
+    window.location.href = data.url + page;
   } catch (e) {
     toast('서버에 연결할 수 없습니다');
     card.classList.remove('loading');

@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>인서트 편집</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    /* "편집자의 교정지" 토큰 - web/index.html, web/split.html과 같은 값 (see DESIGN.md) */
+    --bg: #ffffff; --panel: #fafafa; --surface-2: #f5f5f5; --ink: #171717; --muted: #666666; --line: #ebebeb; --line-strong: #a1a1a1;
+    --proposal-bg: #ffefcf; --proposal-line: #ab570a;
+    --accent: #0070f3; --accent-soft: #d3e5ff; --accent-ink: #ffffff; --accent-strong: #0058c0;
+    --danger: #ee0000; --danger-soft: #f7d4d6;
+    --chip: rgba(0,0,0,0.045); --chip-hover: rgba(0,0,0,0.08);
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 9999px;
+    --sidebar-w: 260px; --right-w: clamp(320px, 30vw, 480px);
+    /* 인서트 형태 색 - 타임라인 띠와 대본 밑줄이 같은 색을 쓴다 */
+    --f-text: #0070f3; --f-text-soft: #d3e5ff;
+    --f-image: #ab570a; --f-image-soft: #ffefcf;
+    --f-video: #7c3aed; --f-video-soft: #ede4ff;
+    --f-asset: #4d4d4d; --f-asset-soft: #e8e8e8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font: 15px/1.5 -apple-system, "Geist", "Inter", "Pretendard", "Apple SD Gothic Neo", sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; color: inherit; }
+  button:disabled { cursor: default; opacity: 0.45; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  #app { display: flex; height: 100vh; }
+
+  /* ---------------------------------------------------------------- sidebar */
+  #sidebar { width: var(--sidebar-w); flex: 0 0 auto; height: 100vh; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  #sideHead { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); }
+  .title-row { display: flex; align-items: center; gap: 8px; }
+  #sidebar h1 { font-size: 14px; font-weight: 700; margin: 0; letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .icon-btn { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-full); background: var(--chip); padding: 0; text-decoration: none; color: inherit; flex: 0 0 auto; }
+  .icon-btn:hover { background: var(--chip-hover); }
+  .sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .sub a { color: inherit; }
+  #counts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .count { font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-full); padding: 1px 8px; color: var(--muted); }
+  .count b { color: var(--ink); font-weight: 700; }
+  #sideScroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px; }
+  .label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); padding: 2px 6px 6px; }
+  .empty { font-size: 13px; color: var(--muted); padding: 10px 8px; line-height: 1.6; }
+  .ins-item { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; width: 100%; text-align: left; border: 0; background: transparent; border-radius: var(--r-md); padding: 7px 8px; align-items: center; }
+  .ins-item:hover { background: var(--chip); }
+  .ins-item.active { background: var(--accent-soft); }
+  .ins-item.rejected { opacity: 0.5; }
+  .ins-item .tm { font-size: 12px; color: var(--muted); grid-row: 1; }
+  .ins-item .tx { font-size: 13px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; grid-column: 1 / 3; }
+  .ins-item .meta { display: flex; gap: 4px; align-items: center; justify-self: end; grid-row: 1; grid-column: 2; }
+  .fchip { font-size: 11px; font-weight: 700; border-radius: var(--r-full); padding: 0 7px; line-height: 18px; white-space: nowrap; }
+  .fchip.text { background: var(--f-text-soft); color: var(--f-text); }
+  .fchip.image { background: var(--f-image-soft); color: var(--f-image); }
+  .fchip.video { background: var(--f-video-soft); color: var(--f-video); }
+  .fchip.asset { background: var(--f-asset-soft); color: var(--f-asset); }
+  .fchip.none { background: var(--chip); color: var(--muted); }
+  .schip { font-size: 11px; border-radius: var(--r-full); padding: 0 7px; line-height: 18px; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); background: var(--bg); }
+  .schip.approved { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .schip.ready { color: var(--proposal-line); border-color: var(--proposal-line); }
+  .schip.error { color: var(--danger); border-color: var(--danger); }
+  .schip.busy { color: var(--accent-strong); border-color: var(--accent-soft); background: var(--accent-soft); }
+  #sideFoot { padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+  .primary { background: var(--ink); color: #fff; border: 0; border-radius: var(--r-md); padding: 9px 14px; font-weight: 600; font-size: 14px; }
+  .primary:hover:not(:disabled) { background: #000; }
+  .btn { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 6px 12px; font-size: 13px; }
+  .btn:hover:not(:disabled) { border-color: var(--line-strong); }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+  /* ---------------------------------------------------------------- main: 타임라인 띠 + 대본 */
+  #main { flex: 1 1 auto; height: 100vh; overflow-y: auto; position: relative; min-width: 0; }
+  #tlWrap { position: sticky; top: 0; z-index: 5; background: rgba(255,255,255,0.96); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); padding: 12px 28px 10px; }
+  #tlHead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+  #tlHead .ttl { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; }
+  .legend { display: flex; gap: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .legend .pending { background: repeating-linear-gradient(135deg, var(--line-strong) 0 2px, transparent 2px 4px); border: 1px solid var(--line-strong); }
+  #tl { position: relative; height: 40px; background: var(--surface-2); border-radius: var(--r-sm); cursor: pointer; user-select: none; }
+  #tl .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(0,0,0,0.07); }
+  #tl .tick span { position: absolute; top: 100%; left: -10px; font: 10px/1.6 var(--mono); color: var(--muted); }
+  #tl .blk { position: absolute; top: 6px; bottom: 6px; min-width: 3px; border-radius: 3px; }
+  #tl .blk.text { background: var(--f-text); } #tl .blk.image { background: var(--f-image); } #tl .blk.video { background: var(--f-video); } #tl .blk.asset { background: var(--f-asset); } #tl .blk.none { background: var(--line-strong); }
+  /* 확인 전(만들어졌지만 승인 안 함)은 빗금, 만드는 중은 흐리게, 승인은 꽉 찬 색 */
+  #tl .blk.pending { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.55) 0 3px, transparent 3px 6px); }
+  #tl .blk.busy { opacity: 0.4; animation: pulse 1.2s ease-in-out infinite; }
+  #tl .blk.err { background: var(--danger) !important; }
+  #tl .blk.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+  @keyframes pulse { 50% { opacity: 0.15; } }
+  #tl #playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--danger); pointer-events: none; }
+  #tlTip { position: fixed; z-index: 20; display: none; background: var(--ink); color: #fff; font-size: 12px; padding: 4px 8px; border-radius: var(--r-sm); pointer-events: none; max-width: 320px; }
+  #tlFoot { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 18px; }
+
+  #doc { max-width: 860px; padding: 20px 28px 50vh; }
+  .sent { display: grid; grid-template-columns: 50px 1fr; gap: 10px; padding: 1px 6px; margin: 0 -6px; border-radius: var(--r-sm); font-size: 17px; line-height: 1.95; }
+  .sent .ts { font-size: 12px; color: var(--muted); padding-top: 7px; cursor: pointer; }
+  .sent .ts:hover { color: var(--accent); }
+  .sent.playing .ts { color: var(--danger); font-weight: 700; }
+  .w { border-radius: 2px; }
+  .w.now { background: #fff3b0; }
+  /* 인서트가 붙은 말 - 형태 색 밑줄. 확인 전은 점선, 승인은 실선 */
+  .w.ins { cursor: pointer; text-decoration-line: underline; text-decoration-thickness: 3px; text-underline-offset: 6px; text-decoration-style: dotted; }
+  .w.ins.ok { text-decoration-style: solid; }
+  .w.ins.text { text-decoration-color: var(--f-text); } .w.ins.image { text-decoration-color: var(--f-image); } .w.ins.video { text-decoration-color: var(--f-video); } .w.ins.asset { text-decoration-color: var(--f-asset); } .w.ins.none { text-decoration-color: var(--line-strong); }
+  .w.ins.sel { background: var(--accent-soft); }
+  #mkBtn { position: absolute; z-index: 10; display: none; background: var(--ink); color: #fff; border: 0; border-radius: var(--r-full); padding: 6px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
+  #mkBtn:hover { background: #000; }
+
+  /* ---------------------------------------------------------------- right: 영상 + 상세 */
+  #right { width: var(--right-w); flex: 0 0 auto; height: 100vh; border-left: 1px solid var(--line); display: flex; flex-direction: column; background: var(--bg); }
+  #stage { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; flex: 0 0 auto; }
+  #stage video, #stage .ov { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #stage .ov { pointer-events: none; }
+  #stageBadge { position: absolute; left: 8px; top: 8px; display: none; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; padding: 1px 7px; border-radius: var(--r-full); }
+  #vbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  #vbar .t { font-size: 12px; color: var(--muted); margin-left: auto; }
+  #detail { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px 16px 40px; }
+  #detail h2 { font-size: 15px; margin: 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .quote { margin: 10px 0; padding: 8px 12px; background: var(--panel); border-left: 3px solid var(--line-strong); border-radius: var(--r-sm); font-size: 14px; line-height: 1.6; }
+  .reason { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
+  .warn { font-size: 13px; color: var(--proposal-line); background: var(--proposal-bg); border-radius: var(--r-sm); padding: 6px 10px; margin: 6px 0; line-height: 1.55; }
+  .errbox { font-size: 13px; color: var(--danger); background: var(--danger-soft); border-radius: var(--r-sm); padding: 8px 10px; margin: 8px 0; line-height: 1.55; }
+  .busy { font-size: 14px; color: var(--accent-strong); padding: 14px 0; display: flex; gap: 8px; align-items: center; }
+  .spin { width: 14px; height: 14px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .pv { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: var(--r-md); overflow: hidden; margin: 10px 0 4px;
+    background: #2b2b2b repeating-conic-gradient(#333 0 25%, #2b2b2b 0 50%) 0 0 / 20px 20px; }
+  .pv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .cands { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+  .cands button { padding: 0; border: 2px solid transparent; border-radius: var(--r-sm); overflow: hidden; background: #000; aspect-ratio: 16/9; }
+  .cands button img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cands button.on { border-color: var(--accent); }
+  .cands button { position: relative; }
+  .cands .vd { position: absolute; left: 4px; top: 4px; font-size: 11px; font-weight: 700; border-radius: var(--r-full); padding: 0 6px; line-height: 17px; }
+  .cands .vd.ok { background: #fff; color: var(--accent-strong); }
+  .cands .vd.no { background: var(--danger); color: #fff; }
+  .sec { margin-top: 14px; }
+  .sec .lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 6px; }
+  textarea, input[type=text], select { width: 100%; font: inherit; font-size: 14px; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 7px 9px; background: var(--bg); color: var(--ink); }
+  textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+  .seg button { border: 0; background: var(--bg); padding: 5px 11px; font-size: 13px; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--ink); color: #fff; }
+  .actions { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+  .actions .primary { flex: 1; }
+  .danger-link { background: none; border: 0; color: var(--danger); font-size: 13px; padding: 6px 4px; }
+  .placeholder { color: var(--muted); font-size: 14px; line-height: 1.7; padding: 6px 0; }
+  .placeholder ol { padding-left: 18px; margin: 6px 0; }
+
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 14px; border-radius: var(--r-md); font-size: 13px; display: none; z-index: 30; }
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 25; }
+  #modal .box { background: var(--bg); border-radius: var(--r-lg); padding: 20px 22px; max-width: 520px; width: calc(100% - 32px); box-shadow: 0 12px 40px rgba(0,0,0,0.2); font-size: 14px; line-height: 1.6; }
+  #modal code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+  @media (max-width: 980px) { #sidebar { display: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div id="sideHead">
+      <div class="title-row">
+        <a id="homeLink" class="icon-btn" href="#" title="프로젝트 홈으로" aria-label="프로젝트 홈으로"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg></a>
+        <h1 id="title">인서트 편집</h1>
+      </div>
+      <div class="sub">컷편집이 끝난 대본 · <a href="#" id="backCut">컷편집으로 돌아가기</a></div>
+      <div id="counts"></div>
+    </div>
+    <div id="sideScroll">
+      <div class="label">인서트 목록</div>
+      <div id="list"></div>
+    </div>
+    <div id="sideFoot">
+      <button id="btnExport" class="primary">FCP로 내보내기</button>
+      <div class="note">승인한 인서트만 <span class="mono">.fcpxml</span>에 들어갑니다. 컷과 함께 한 파일로 나가요.</div>
+    </div>
+  </aside>
+
+  <main id="main" tabindex="0" aria-label="완성 대본">
+    <div id="tlWrap">
+      <div id="tlHead">
+        <span class="ttl">인서트 타임라인</span>
+        <span class="legend">
+          <span><i style="background:var(--f-text)"></i>텍스트</span>
+          <span><i style="background:var(--f-image)"></i>이미지</span>
+          <span><i style="background:var(--f-video)"></i>영상</span>
+          <span><i style="background:var(--f-asset)"></i>실물</span>
+          <span><i class="pending"></i>확인 전</span>
+        </span>
+      </div>
+      <div id="tl" role="slider" aria-label="편집본 재생 위치" tabindex="0"><div id="playhead"></div></div>
+      <div id="tlFoot"><span id="tlNow" class="mono">0:00</span><span id="tlGap"></span><span id="tlDur" class="mono"></span></div>
+    </div>
+    <div id="doc"></div>
+    <button id="mkBtn">＋ 인서트 만들기</button>
+  </main>
+
+  <aside id="right">
+    <div id="stage">
+      <video id="video" preload="metadata" playsinline></video>
+      <div id="ovLayers"></div>
+      <span id="stageBadge"></span>
+    </div>
+    <div id="vbar">
+      <button class="btn" id="btnPlay">▶ 재생</button>
+      <span class="t mono" id="vTime">0:00</span>
+    </div>
+    <div id="detail"></div>
+  </aside>
+</div>
+<div id="tlTip"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="modal"><div class="box" id="modalBox" role="dialog" aria-modal="true"></div></div>
+
+<script>
+const $ = (q) => document.querySelector(q);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+const FORM_KO = { text: '텍스트', image: '이미지', video: '영상', asset: '실물' };
+const STATUS_KO = { deciding: '형태 정하는 중', generating: '만드는 중', ready: '확인 전', approved: '승인', rejected: '취소',
+  error: '오류', unsupported: '영상 준비 중', needs_asset: '자료 필요' };
+const LAYOUT_KO = { top: '상단 요약·섹션 바', comment: '노란 코멘트', chapter: '챕터 카드(어둡게)', quote: '인용 카드(어둡게)', list: '좌상단 목록' };
+const BUSY = new Set(['deciding', 'generating']);
+
+let S = null;            // /api/insert/state
+let selId = null;        // 상세 패널에 보이는 인서트
+let kept = [];           // 원본에서 남은 구간 [{s,e,o}] - o = 편집본 시작
+let pollTimer = null;
+const video = $('#video');
+
+function toast(msg, ms = 2200) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => (t.style.display = 'none'), ms); }
+function showModal(html) { $('#modalBox').innerHTML = html; $('#modal').style.display = 'flex'; }
+function hideModal() { $('#modal').style.display = 'none'; }
+$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') hideModal(); });
+const fileUrl = (f) => `/api/insert/file?f=${encodeURIComponent(f)}`;
+
+async function api(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || '실패했습니다');
+  return j;
+}
+
+// ---------------------------------------------------------------- 시간 변환 (원본 <-> 편집본)
+function buildKept() {
+  const spans = [...S.cut_spans].sort((a, b) => a.start - b.start);
+  kept = []; let cur = 0, acc = 0;
+  for (const c of spans) {
+    if (c.start > cur) { kept.push({ s: cur, e: c.start, o: acc }); acc += c.start - cur; }
+    cur = Math.max(cur, c.end);
+  }
+  if (cur < S.duration_src) kept.push({ s: cur, e: S.duration_src, o: acc });
+}
+function toOut(t) {
+  for (const k of kept) { if (t < k.s) return k.o; if (t < k.e) return k.o + (t - k.s); }
+  return S.duration_out;
+}
+function toSrc(o) {
+  for (const k of kept) { if (o < k.o + (k.e - k.s)) return k.s + Math.max(0, o - k.o); }
+  return kept.length ? kept[kept.length - 1].e : 0;
+}
+
+// ---------------------------------------------------------------- 로드
+async function load() {
+  S = await (await fetch('/api/insert/state')).json();
+  if (S.error) { $('#doc').innerHTML = `<p class="empty">${esc(S.error)}</p>`; return; }
+  document.title = `인서트 편집 · ${S.name}`;
+  $('#title').textContent = `인서트 편집 · ${S.name}`;
+  $('#homeLink').href = `http://127.0.0.1:${S.home_port || 8764}/`;
+  $('#backCut').href = '/';
+  if (!video.src) {
+    video.src = '/media';
+    // 첫 프레임이 검게 비지 않게 - 남은 첫 말 위치로
+    video.addEventListener('loadedmetadata', () => { if (video.currentTime === 0 && S.words.length) video.currentTime = S.words[0].s; }, { once: true });
+  }
+  buildKept();
+  renderDoc();
+  renderAll();
+  schedulePoll();
+}
+function renderAll() { renderCounts(); renderList(); renderTimeline(); paintInserts(); renderDetail(); }
+
+async function refresh() {
+  const prevSel = selId;
+  const prevStatus = S.items.find((i) => i.id === prevSel)?.status;
+  const st = await (await fetch('/api/insert/state')).json();
+  const cutsChanged = JSON.stringify(st.cut_spans) !== JSON.stringify(S.cut_spans);
+  S = st;
+  if (cutsChanged) { buildKept(); renderDoc(); }
+  selId = S.items.some((i) => i.id === prevSel) ? prevSel : null;
+  // 다른 인서트를 만드는 동안의 폴링이 입력 중인 글자를 지우지 않게 - 선택한 인서트 상태가 그대로면 상세 패널은 두고
+  const typing = $('#detail').contains(document.activeElement) && document.activeElement.matches('textarea, input, select');
+  if (typing && S.items.find((i) => i.id === selId)?.status === prevStatus) {
+    renderCounts(); renderList(); renderTimeline(); paintInserts();
+  } else renderAll();
+  schedulePoll();
+}
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (S.items.some((i) => BUSY.has(i.status))) pollTimer = setTimeout(refresh, 1500);
+}
+
+// ---------------------------------------------------------------- 대본 (잘린 말은 안 보임)
+function renderDoc() {
+  const doc = $('#doc'); doc.innerHTML = '';
+  let cur = []; const sents = [];
+  for (const w of S.words) { cur.push(w); if (/[.?!]$/.test(w.t)) { sents.push(cur); cur = []; } }
+  if (cur.length) sents.push(cur);
+  const frag = document.createDocumentFragment();
+  for (const s of sents) {
+    const row = document.createElement('div'); row.className = 'sent'; row.dataset.s = s[0].s;
+    const ts = document.createElement('span'); ts.className = 'ts mono'; ts.textContent = fmt(s[0].o); ts.title = '여기부터 재생';
+    ts.addEventListener('click', () => { video.currentTime = s[0].s; video.play(); });
+    const tx = document.createElement('span'); tx.className = 'txt';
+    s.forEach((w, k) => {
+      const sp = document.createElement('span'); sp.className = 'w'; sp.dataset.wi = w.wi; sp.textContent = w.t;
+      tx.appendChild(sp); if (k < s.length - 1) tx.appendChild(document.createTextNode(' '));
+    });
+    row.append(ts, tx); frag.appendChild(row);
+  }
+  doc.appendChild(frag);
+  if (!S.words.length) doc.innerHTML = '<p class="empty">남은 대본이 없습니다.</p>';
+}
+
+function wordEl(wi) { return document.querySelector(`.w[data-wi="${wi}"]`); }
+function paintInserts() {
+  document.querySelectorAll('.w.ins').forEach((el) => { el.className = 'w'; delete el.dataset.ins; });
+  for (const it of S.items) {
+    if (it.status === 'rejected') continue;
+    for (let wi = it.wi_start; wi <= it.wi_end; wi++) {
+      const el = wordEl(wi); if (!el) continue;
+      el.className = `w ins ${it.form || 'none'}${it.status === 'approved' ? ' ok' : ''}${it.id === selId ? ' sel' : ''}`;
+      el.dataset.ins = it.id;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- 목록 + 숫자
+function sortedItems() { return [...S.items].sort((a, b) => (a.t_start ?? 0) - (b.t_start ?? 0)); }
+function renderCounts() {
+  const n = (st) => S.items.filter((i) => st.includes(i.status)).length;
+  const c = [['전체', S.items.length], ['승인', n(['approved'])], ['확인 전', n(['ready'])], ['진행 중', n(['deciding', 'generating'])],
+    ['확인 필요', n(['error', 'unsupported', 'needs_asset'])]].filter(([k, v]) => v || k === '전체');
+  $('#counts').innerHTML = c.map(([k, v]) => `<span class="count">${k} <b>${v}</b></span>`).join('');
+}
+function statusChip(it) {
+  const cls = it.status === 'approved' ? 'approved' : it.status === 'ready' ? 'ready' : BUSY.has(it.status) ? 'busy'
+    : ['error', 'unsupported', 'needs_asset'].includes(it.status) ? 'error' : '';
+  return `<span class="schip ${cls}">${STATUS_KO[it.status] || it.status}</span>`;
+}
+function formChip(it) { return `<span class="fchip ${it.form || 'none'}">${it.form ? FORM_KO[it.form] : '형태 미정'}</span>`; }
+function itemLabel(it) { const l = (it.decision?.lines || []).filter(Boolean).join(' / '); return l || it.text; }
+function renderList() {
+  const list = $('#list');
+  if (!S.items.length) {
+    list.innerHTML = `<div class="empty">대본에서 인서트를 넣을 부분을 드래그한 뒤 <b>＋ 인서트 만들기</b>를 누르세요.<br>형태(텍스트·이미지·영상)는 내용과 앞뒤 문맥을 보고 자동으로 정합니다.</div>`;
+    return;
+  }
+  list.innerHTML = '';
+  for (const it of sortedItems()) {
+    const b = document.createElement('button');
+    b.className = `ins-item${it.id === selId ? ' active' : ''}${it.status === 'rejected' ? ' rejected' : ''}`;
+    b.innerHTML = `<span class="tm mono">${fmt(it.t_start)}</span><span class="meta">${formChip(it)}${statusChip(it)}</span><span class="tx">${esc(itemLabel(it))}</span>`;
+    b.addEventListener('click', () => select(it.id, true));
+    list.appendChild(b);
+  }
+}
+
+// ---------------------------------------------------------------- 타임라인 띠 (어디에 인서트가 있는지 한눈에)
+function renderTimeline() {
+  const tl = $('#tl'); const D = S.duration_out || 1;
+  tl.querySelectorAll('.blk,.tick').forEach((n) => n.remove());
+  const step = D > 1500 ? 300 : D > 600 ? 120 : 60;
+  for (let t = step; t < D; t += step) {
+    const k = document.createElement('div'); k.className = 'tick'; k.style.left = `${(t / D) * 100}%`;
+    k.innerHTML = `<span>${fmt(t)}</span>`; tl.appendChild(k);
+  }
+  for (const it of S.items) {
+    if (it.status === 'rejected' || it.t_start == null) continue;
+    const b = document.createElement('div');
+    const st = it.status === 'approved' ? '' : BUSY.has(it.status) ? ' busy' : ['error', 'unsupported', 'needs_asset'].includes(it.status) ? ' err' : ' pending';
+    b.className = `blk ${it.form || 'none'}${st}${it.id === selId ? ' sel' : ''}`;
+    b.style.left = `${(it.t_start / D) * 100}%`;
+    b.style.width = `${Math.max(0.25, ((it.t_end - it.t_start) / D) * 100)}%`;
+    b.dataset.id = it.id;
+    tl.appendChild(b);
+  }
+  $('#tlDur').textContent = fmt(D);
+  // 가장 긴 빈 구간 - 가이드 4장: 12초 넘게 비는 곳은 "넣지 않는 곳"일 때만
+  const live = sortedItems().filter((i) => i.status !== 'rejected' && i.t_start != null);
+  let gap = { len: 0, at: 0 }, last = 0;
+  for (const i of live) { if (i.t_start - last > gap.len) gap = { len: i.t_start - last, at: last }; last = Math.max(last, i.t_end); }
+  if (D - last > gap.len) gap = { len: D - last, at: last };
+  $('#tlGap').textContent = live.length ? `인서트 ${live.length}개 · 가장 긴 빈 구간 ${Math.round(gap.len)}초 (${fmt(gap.at)}~)` : '';
+  movePlayhead();
+}
+function tlTimeAt(clientX) { const r = $('#tl').getBoundingClientRect(); return Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (S.duration_out || 0); }
+let tlDrag = false;
+$('#tl').addEventListener('mousedown', (e) => {
+  const blk = e.target.closest('.blk');
+  if (blk) { select(blk.dataset.id, true); return; }
+  tlDrag = true; video.currentTime = toSrc(tlTimeAt(e.clientX));
+});
+window.addEventListener('mousemove', (e) => {
+  if (tlDrag) video.currentTime = toSrc(tlTimeAt(e.clientX));
+  const tip = $('#tlTip'); const blk = e.target.closest && e.target.closest('#tl .blk');
+  if (blk) {
+    const it = S.items.find((i) => i.id === blk.dataset.id);
+    tip.innerHTML = `${fmt(it.t_start)} · ${it.form ? FORM_KO[it.form] : ''} · ${STATUS_KO[it.status]}<br>${esc(itemLabel(it)).slice(0, 80)}`;
+    tip.style.display = 'block'; tip.style.left = `${e.clientX + 12}px`; tip.style.top = `${e.clientY + 14}px`;
+  } else if (e.target.closest && e.target.closest('#tl')) {
+    tip.textContent = fmt(tlTimeAt(e.clientX)); tip.style.display = 'block'; tip.style.left = `${e.clientX + 12}px`; tip.style.top = `${e.clientY + 14}px`;
+  } else tip.style.display = 'none';
+});
+window.addEventListener('mouseup', () => { tlDrag = false; });
+
+// ---------------------------------------------------------------- 재생: 잘린 구간은 건너뛰고, 인서트를 영상 위에 겹쳐 보여 준다
+function movePlayhead() {
+  const o = toOut(video.currentTime || 0);
+  $('#playhead').style.left = `${(o / (S.duration_out || 1)) * 100}%`;
+  $('#tlNow').textContent = fmt(o); $('#vTime').textContent = `${fmt(o)} / ${fmt(S.duration_out)}`;
+}
+function skipCuts() {
+  const t = video.currentTime;
+  for (const c of S.cut_spans) if (t >= c.start && t < c.end - 0.03) { video.currentTime = c.end; return; }
+}
+let lastOv = '', lastWord = null;
+function overlayAt(t) {
+  // 지금 시각을 덮는 인서트(승인·확인 전) - 선택한 인서트가 겹치면 그것을 우선
+  const cands = S.items.filter((i) => ['ready', 'approved'].includes(i.status) && i.files?.length && t >= i.src_start && t < Math.max(i.src_end, i.src_start + 1.5));
+  return cands.find((i) => i.id === selId) || cands[0] || null;
+}
+function tick() {
+  if (!S) return;
+  if (!video.paused) skipCuts();
+  movePlayhead();
+  const it = overlayAt(video.currentTime);
+  const key = it ? it.id + it.files.join() : '';
+  if (key !== lastOv) {
+    lastOv = key;
+    $('#ovLayers').innerHTML = it ? it.files.map((f) => `<img class="ov" src="${fileUrl(f)}" alt="">`).join('') : '';
+    $('#stageBadge').style.display = it ? 'block' : 'none';
+    if (it) $('#stageBadge').textContent = `${FORM_KO[it.form]} · ${STATUS_KO[it.status]}`;
+  }
+  // 지금 말하는 단어 표시
+  const w = S.words.find((x) => video.currentTime >= x.s && video.currentTime < x.e);
+  if (w?.wi !== lastWord) {
+    if (lastWord != null) wordEl(lastWord)?.classList.remove('now');
+    lastWord = w?.wi ?? null;
+    if (lastWord != null) wordEl(lastWord)?.classList.add('now');
+  }
+}
+video.addEventListener('timeupdate', tick);
+(function loop() { if (!video.paused) tick(); requestAnimationFrame(loop); })();
+video.addEventListener('play', () => ($('#btnPlay').textContent = '❚❚ 정지'));
+video.addEventListener('pause', () => ($('#btnPlay').textContent = '▶ 재생'));
+$('#btnPlay').addEventListener('click', () => (video.paused ? video.play() : video.pause()));
+
+// ---------------------------------------------------------------- 드래그로 구간 선택 -> 인서트 만들기
+let pendingSel = null;
+function selectedWords() {
+  const s = window.getSelection(); if (!s || s.isCollapsed) return null;
+  const el = (n) => (n.nodeType === 3 ? n.parentElement : n)?.closest?.('.w');
+  let a = el(s.anchorNode), b = el(s.focusNode);
+  if (!a || !b) {
+    const ws = [...document.querySelectorAll('#doc .w')].filter((w) => s.containsNode(w, true));
+    if (!ws.length) return null; a = ws[0]; b = ws[ws.length - 1];
+  }
+  let x = +a.dataset.wi, y = +b.dataset.wi; if (x > y) [x, y] = [y, x];
+  return { wi_start: x, wi_end: y };
+}
+$('#doc').addEventListener('mouseup', () => {
+  setTimeout(() => {
+    const r = selectedWords(); const btn = $('#mkBtn');
+    if (!r) { btn.style.display = 'none'; pendingSel = null; return; }
+    pendingSel = r;
+    const rect = window.getSelection().getRangeAt(0).getBoundingClientRect();
+    const main = $('#main').getBoundingClientRect();
+    btn.style.left = `${Math.max(8, rect.left - main.left + rect.width / 2 - 70)}px`;
+    btn.style.top = `${rect.bottom - main.top + $('#main').scrollTop + 8}px`;
+    btn.style.display = 'block';
+  }, 0);
+});
+$('#doc').addEventListener('click', (e) => {
+  const w = e.target.closest('.w.ins');
+  if (w && window.getSelection().isCollapsed) select(w.dataset.ins, false);
+});
+$('#mkBtn').addEventListener('mousedown', (e) => e.preventDefault());  // 선택이 풀리지 않게
+$('#mkBtn').addEventListener('click', async () => {
+  if (!pendingSel) return;
+  const overlap = S.items.find((i) => i.status !== 'rejected' && i.wi_start <= pendingSel.wi_end && pendingSel.wi_start <= i.wi_end);
+  $('#mkBtn').style.display = 'none'; window.getSelection().removeAllRanges();
+  try {
+    const { item } = await api('/api/insert/create', pendingSel);
+    S.items.push(item); selId = item.id; renderAll(); schedulePoll();
+    toast(overlap ? '겹치는 인서트가 이미 있어요 - 둘 다 확인해 보세요' : '형태를 정하고 만드는 중…');
+    await refresh();
+  } catch (e) { toast(e.message); }
+});
+
+// ---------------------------------------------------------------- 상세 패널
+function select(id, scroll) {
+  selId = id; renderList(); renderTimeline(); paintInserts(); renderDetail();
+  const it = S.items.find((i) => i.id === id);
+  if (it) {
+    if (scroll) wordEl(it.wi_start)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (video.paused) { video.currentTime = it.src_start + 0.05; tick(); }
+  }
+}
+function renderDetail() {
+  const box = $('#detail'); const it = S.items.find((i) => i.id === selId);
+  if (!it) {
+    box.innerHTML = `<div class="placeholder"><b>인서트 만드는 법</b><ol>
+      <li>가운데 대본에서 넣을 부분을 드래그</li><li><b>＋ 인서트 만들기</b> - 내용·앞뒤 문맥·역할을 보고 텍스트 / 이미지 / 영상 중 형태를 정해 만들어요</li>
+      <li>결과를 보고 <b>승인</b> 또는 <b>취소</b>. 이미지는 후보 중에서 고르기</li><li>다 되면 <b>FCP로 내보내기</b></li></ol>
+      위 타임라인 띠에서 어디에 인서트가 있는지 보이고, 클릭하면 그 시점으로 이동해요. 기준은 <span class="mono">docs/인서트-가이드.md</span>.</div>`;
+    return;
+  }
+  const d = it.decision || {};
+  const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
+  let h = `<h2>${formChip(it)}${statusChip(it)}<span class="mono" style="font-size:13px;color:var(--muted);font-weight:400">${fmt(it.t_start)}–${fmt(it.t_end)} (${Math.round(dur)}초)</span>
+    ${d.layer ? `<span style="font-size:12px;color:var(--muted);font-weight:400">· ${esc(d.layer)}</span>` : ''}</h2>
+    <div class="quote">${esc(it.text)}</div>`;
+  if (BUSY.has(it.status)) {
+    h += `<div class="busy"><span class="spin"></span>${it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : it.form === 'image' ? `이미지 후보를 만드는 중… (약 30초)` : '만드는 중…'}</div>`;
+  }
+  if (d.reason) h += `<div class="reason">${esc(d.reason)}</div>`;
+  if (it.form === 'image' && d.point) h += `<div class="reason"><b style="color:var(--ink)">그림이 보여 줄 것</b> · ${esc(d.point)}</div>`;
+  for (const w of d.warnings || []) h += `<div class="warn">${esc(w)}</div>`;
+  if (it.error) h += `<div class="errbox">${esc(it.error)}</div>`;
+
+  if (it.files?.length && ['ready', 'approved'].includes(it.status)) {
+    h += `<div class="pv">${it.files.map((f) => `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
+      <div class="row" style="justify-content:space-between"><span class="note">격자 = 투명. 실제 화면은 위 영상에서 확인</span><button class="btn" id="dPlay">이 구간 재생</button></div>`;
+  }
+  if (it.form === 'image' && it.candidates?.length && !BUSY.has(it.status)) {
+    const ck = it.checks || [];
+    h += `<div class="sec"><div class="lbl">이미지 후보 - 하나를 고르세요${ck.length ? ' · ✓ = 판정 모델 통과' : ''}</div><div class="cands">${it.candidates.map((c, k) => {
+      const v = ck[k]; const badge = v ? `<span class="vd ${v.ok ? 'ok' : 'no'}">${v.ok ? '✓' : '✗'}</span>` : '';
+      return `<button data-k="${k}" class="${k === it.chosen ? 'on' : ''}" aria-label="후보 ${k + 1}" title="${esc(v && !v.ok ? v.note : '')}">${badge}<img src="${fileUrl(c)}" alt=""></button>`;
+    }).join('')}</div>${ck[it.chosen] && !ck[it.chosen].ok ? `<div class="warn">이 후보: ${esc(ck[it.chosen].note)}</div>` : ''}</div>`;
+  }
+  if (it.form === 'video' && d.scene) h += `<div class="sec"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
+  if (it.form === 'asset' && !BUSY.has(it.status)) {
+    h += `<div class="sec"><div class="lbl">필요한 실물 자료</div><div class="quote">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div>
+      <input type="file" id="dUpload" accept="image/*"><div class="note" style="margin-top:4px">올리면 ${d.layout === 'fullscreen' ? '전체 화면' : '화자 옆(오른쪽 1/3)'}에 배치해요</div></div>`;
+  }
+  if (['text', 'image', 'asset'].includes(it.form) && d.lines && !BUSY.has(it.status)) {
+    const isText = it.form === 'text';
+    h += `<div class="sec"><div class="lbl">${isText ? '화면 글자 (한 줄에 한 줄씩)' : '사진 위 노란 글자 (없으면 비워 두기)'}</div>
+      <textarea id="dLines">${esc((d.lines || []).join('\n'))}</textarea>
+      ${isText ? `<div class="row" style="margin-top:6px"><select id="dLayout" style="flex:1">${Object.entries(LAYOUT_KO).map(([k, v]) => `<option value="${k}"${k === d.layout ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+      <input type="text" id="dSource" placeholder="출처 (인용 카드일 때, 예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}
+      <div class="row" style="margin-top:6px"><button class="btn" id="dApplyText">글자 반영</button><span class="note">다시 생성하지 않고 바로 고쳐요</span></div></div>`;
+  }
+  if (!BUSY.has(it.status) && it.form !== null) {
+    h += `<div class="sec"><div class="lbl">요청 넣고 다시 만들기</div>
+      ${(it.notes || []).length ? `<div class="note" style="margin-bottom:4px">지금까지 요청: ${it.notes.map(esc).join(' · ')}</div>` : ''}
+      <textarea id="dNote" placeholder="예: 숟가락이 아니라 그냥 나뭇가지여야 해요" style="min-height:44px"></textarea>
+      <div class="row" style="margin-top:6px"><button class="btn" id="dNoteGo">요청 반영해 다시 만들기</button></div></div>`;
+  }
+  if (!BUSY.has(it.status)) {
+    h += `<div class="sec"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
+      `<button data-form="${k}" class="${k === it.form ? 'on' : ''}">${v}</button>`).join('')}</div>
+      ${d.alternatives?.length ? `<span class="note" style="margin-left:6px">대안: ${d.alternatives.map((a) => FORM_KO[a]).join(', ')}</span>` : ''}</div>`;
+    h += `<div class="actions">
+      ${it.status === 'approved' ? `<button class="btn" data-act="reopen">승인 취소</button>`
+        : `<button class="primary" data-act="approve" ${it.status === 'ready' ? '' : 'disabled'}>승인</button>`}
+      ${it.status === 'rejected' ? `<button class="btn" data-act="reopen">다시 살리기</button>` : `<button class="btn" data-act="reject" ${['ready', 'approved'].includes(it.status) ? '' : 'disabled'}>취소</button>`}
+      <button class="btn" data-act="regenerate">다시 만들기</button>
+      <button class="danger-link" data-act="delete">삭제</button></div>`;
+  }
+  box.innerHTML = h;
+
+  box.querySelector('#dPlay')?.addEventListener('click', () => { video.currentTime = Math.max(0, it.src_start - 1); video.play(); });
+  box.querySelectorAll('.cands button').forEach((b) => b.addEventListener('click', () => act(it, 'choose', { index: +b.dataset.k })));
+  box.querySelectorAll('[data-form]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.form === it.form && !confirm('같은 형태로 다시 만들까요?')) return;
+    act(it, 'form', { form: b.dataset.form });
+  }));
+  box.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.act === 'delete' && !confirm('이 인서트를 목록에서 지울까요?')) return;
+    act(it, b.dataset.act);
+  }));
+  box.querySelector('#dNoteGo')?.addEventListener('click', () => {
+    const note = $('#dNote').value.trim(); if (!note) return toast('요청을 적어 주세요');
+    act(it, 'regenerate', { note });
+  });
+  box.querySelector('#dLayout')?.addEventListener('change', (e) => { $('#dSource').style.display = e.target.value === 'quote' ? '' : 'none'; });
+  box.querySelector('#dApplyText')?.addEventListener('click', () => act(it, 'edit_text', {
+    lines: $('#dLines').value.split('\n').map((s) => s.trim()).filter(Boolean),
+    ...(box.querySelector('#dLayout') ? { layout: $('#dLayout').value, source: $('#dSource').value } : {}),
+  }));
+  box.querySelector('#dUpload')?.addEventListener('change', async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    toast('올리는 중…');
+    const r = await fetch(`/api/insert/upload?id=${it.id}&name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
+    const j = await r.json(); if (!j.ok) return toast(j.error);
+    await refresh(); toast('배치했어요 - 확인 후 승인하세요');
+  });
+}
+async function act(it, action, extra = {}) {
+  try {
+    await api('/api/insert/update', { id: it.id, action, ...extra });
+    if (action === 'delete') selId = null;
+    if (action === 'approve') {  // 승인하면 다음 확인 전 인서트로
+      const next = sortedItems().find((i) => i.status === 'ready' && i.id !== it.id && (i.t_start ?? 0) >= (it.t_start ?? 0))
+        || sortedItems().find((i) => i.status === 'ready' && i.id !== it.id);
+      if (next) selId = next.id;
+    }
+    await refresh();
+    lastOv = '';
+    if (['approve', 'reject', 'reopen'].includes(action)) toast({ approve: '승인했어요', reject: '취소했어요 - 내보내기에서 빠져요', reopen: '확인 전으로 되돌렸어요' }[action]);
+    if (['regenerate', 'form'].includes(action)) toast('다시 만드는 중…');
+  } catch (e) { toast(e.message); }
+}
+
+// ---------------------------------------------------------------- 내보내기
+$('#btnExport').addEventListener('click', async () => {
+  const pending = S.items.filter((i) => i.status === 'ready').length;
+  if (pending && !confirm(`확인 전 인서트 ${pending}개는 빠지고, 승인한 것만 들어갑니다. 내보낼까요?`)) return;
+  try {
+    const r = await api('/api/insert/export');
+    showModal(`<h3 style="margin:0 0 8px">내보내기 완료</h3>
+      <p>승인한 인서트 <b>${r.approved}개</b>를 컷 편집본과 함께 넣었어요.</p><p><code>${esc(r.fcpxml)}</code></p>
+      <p class="note">Final Cut Pro에서 이 파일을 열면 인서트가 화자 위 연결 클립으로 제자리에 있어요. 역할(인서트.텍스트 / 인서트.이미지)로 한 번에 켜고 끌 수 있어요.<br>
+      FCP에 이미 가져온 뒤 다시 내보내면, FCP에서 한 작업은 새 프로젝트로 따로 생겨요.</p>
+      <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="mReveal">Finder에서 보기</button><button class="primary" onclick="hideModal()">닫기</button></div>`);
+    $('#mReveal').addEventListener('click', () => api('/api/insert/reveal'));
+  } catch (e) { toast(e.message); }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches('textarea, input, select')) return;
+  if (e.key === ' ') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+  if (e.key === 'Escape') { hideModal(); $('#mkBtn').style.display = 'none'; }
+});
+
+load();
+</script>
+</body>
+</html>

@@ -128,6 +128,44 @@ def build_markers_xml(edl: dict, clock: RationalClock, kept_segments: list[dict]
     return by_segment
 
 
+def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: list[dict], seg_offset_frames: list[int],
+                      seg_dur_frames: list[int], out_path: Path, absolute: bool) -> tuple[list[str], dict[int, list[str]]]:
+    """Approved inserts -> connected clips (docs/백로그/자료-화면-삽입.md 7장, verified on FCP 12.3 in V0).
+
+    A connected clip lives INSIDE the spine clip that contains its timeline start, and its offset
+    is in that parent's SOURCE time: child.offset = parent.start + (T - parent.offset). Each
+    layer (e.g. image + yellow caption) gets its own lane above the speaker. Only stills for now
+    (PNG/JPG - format without a frame rate, asset duration 0s, verified in V0)."""
+    def timeline_frame(t: float) -> int:
+        for i, seg in enumerate(kept_segments):
+            if t < seg["source_start"]:
+                return seg_offset_frames[i]  # starts inside a cut -> snap to the next kept frame
+            if t < seg["source_end"]:
+                return seg_offset_frames[i] + min(clock.frames(t - seg["source_start"]), seg_dur_frames[i] - 1)
+        return seg_offset_frames[-1] + seg_dur_frames[-1] - 1
+
+    resources = ['<format id="vautostill" name="FFVideoFormatRateUndefined" width="1920" height="1080" colorSpace="1-1-1 (Rec. 709)"/>']
+    by_seg: dict[int, list[str]] = {}
+    for n, ins in enumerate(inserts):
+        t0 = timeline_frame(ins["start"])
+        dur = max(timeline_frame(ins["end"]) - t0, clock.frames(1.0))
+        i = max(k for k, off in enumerate(seg_offset_frames) if off <= t0)
+        child_off = clock.frames(kept_segments[i]["source_start"]) + (t0 - seg_offset_frames[i])
+        for k, layer in enumerate(ins["layers"]):
+            f = Path(layer)
+            if f.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+                print(f"[inserts] {f.name}: still images only for now - skipped")
+                continue
+            ref = f"vins{n}_{k}"
+            src = f.resolve().as_uri() if absolute else Path(relpath(f.absolute(), start=out_path.absolute().parent)).as_posix()
+            resources.append(f'<asset id="{ref}" name="{escape(f.stem)}" start="0s" duration="0s" hasVideo="1" format="vautostill" videoSources="1">'
+                             f'<media-rep kind="original-media" src="{escape(src)}"/></asset>')
+            by_seg.setdefault(i, []).append(
+                f'<video ref="{ref}" lane="{k + 1}" offset="{clock.time_str_frames(child_off)}" duration="{clock.time_str_frames(dur)}" '
+                f'role="{escape(ins["role"])}" name="{escape(ins["name"])}"/>')
+    return (resources if len(resources) > 1 else []), by_seg
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("edl", type=Path)
@@ -146,6 +184,8 @@ def main() -> None:
                      help="Skip all markers - for isolating whether markers cause an import failure")
     ap.add_argument("--transition-frames", type=int, default=3,
                      help="Cross dissolve length at each join in frames (0 = hard cuts). Default 3 (~0.1s).")
+    ap.add_argument("--inserts", type=Path, default=None,
+                     help="inserts_manifest.json (scripts/inserts.py) - approved inserts placed as connected clips")
     args = ap.parse_args()
 
     out_path = args.out or args.edl.with_suffix(".fcpxml")
@@ -183,6 +223,9 @@ def main() -> None:
     total_timeline_frames = acc
 
     markers_by_segment = build_markers_xml(edl, clock, kept_segments, seg_offset_frames, seg_dur_frames)
+    insert_resources, inserts_by_segment = ([], {}) if args.inserts is None else build_inserts_xml(
+        json.loads(args.inserts.read_text())["inserts"], clock, kept_segments, seg_offset_frames, seg_dur_frames,
+        out_path, args.absolute_media_path)
 
     if args.absolute_media_path:
         src_ref = args.source.resolve().as_uri()
@@ -195,6 +238,8 @@ def main() -> None:
     n_transitions = 0
     for i, seg in enumerate(kept_segments):
         markers_xml = "" if args.no_markers else "\n          ".join(markers_by_segment.get(i, []))
+        # DTD order inside a clip: anchored (connected) clips come before markers
+        markers_xml = "\n          ".join(inserts_by_segment.get(i, []) + ([markers_xml] if markers_xml else []))
         # A short cross dissolve at every join softens the jump cut and crossfades the audio.
         # It needs media handles on both sides (half the dissolve each), which the removed
         # region between two kept segments provides; skipped at the ends of the source.
@@ -226,7 +271,7 @@ def main() -> None:
       videoSources="1" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">
       <media-rep kind="original-media" src="{escape(src_ref)}"/>
     </asset>
-    <effect id="vautofx1" name="Cross Dissolve" uid="FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265"/>
+    <effect id="vautofx1" name="Cross Dissolve" uid="FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265"/>{"".join(chr(10) + "    " + r for r in insert_resources)}
   </resources>
   <library>
     <event name="video-automation">
