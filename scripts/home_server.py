@@ -147,7 +147,11 @@ def project_status(folder: Path) -> dict:
     같은 폴더를 동시에 떠 있는 동안 호출해도 안전하다(둘 다 읽기만 함)."""
     edit = folder / "edit"
     ng_path = edit / "ng.json"
-    info: dict = {"name": folder.name}
+    info: dict = {"name": folder.name, "insert_only": is_insert_only(folder)}
+    # 인서트 탭(10-09)이 컷 확정 영상과 인서트 전용 영상을 함께 보여 준다 - 개수는 둘 다 같은 파일에서
+    ins = _read_json(edit / "inserts.json", {"items": []}).get("items", [])
+    info["insert_total"] = len(ins)
+    info["insert_approved"] = sum(1 for it in ins if it.get("status") == "approved")
 
     # 정렬용 "마지막 활동 시각" - decisions.json(검토 중이면 매 결정마다 갱신) > actions.log >
     # ng.json(처리만 끝나고 아직 한 번도 안 연 경우) > raw.mp4(처리조차 시작 안 한 경우) 순으로
@@ -177,11 +181,8 @@ def project_status(folder: Path) -> dict:
             info["paused"] = pnew.get("state") == "paused"
         return info
 
-    if is_insert_only(folder) and pnew is not None:  # 완성본 + 인서트만 (10-09) - 처리 끝, 컷 검토 없음
-        items = _read_json(edit / "inserts.json", {"items": []}).get("items", [])
+    if info["insert_only"] and pnew is not None:  # 완성본 + 인서트만 (10-09) - 처리 끝, 컷 검토 없음
         info["status"] = "inserts"
-        info["insert_total"] = len(items)
-        info["insert_approved"] = sum(1 for it in items if it.get("status") == "approved")
         return info
 
     if not ng_path.exists():
