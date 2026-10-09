@@ -95,6 +95,13 @@ def main() -> None:
 
     setup_videos_folder(project_dir)
 
+    try:  # 인서트 글꼴을 미리 받아 둔다 (실패해도 설정은 계속 - 인서트 화면이 다시 받기를 안내)
+        import fonts
+        miss = [fonts.LABELS[k] for k, ok in fonts.ensure_all().items() if not ok]
+        print("인서트 글꼴 확인됨" if not miss else f"인서트 글꼴을 받지 못했습니다(인터넷 연결 확인): {', '.join(sorted(set(miss)))}")
+    except Exception as e:
+        print(f"인서트 글꼴 확인 건너뜀: {e}")
+
     for msg in migrate.migrate_global():  # 업데이트 뒤 ~/.video-cut/ 호환성 확인 (1회)
         print(f"[migrate] {msg}")
 

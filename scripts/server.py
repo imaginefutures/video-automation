@@ -27,7 +27,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python, pid_alive
+from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python, pid_alive, is_insert_only
 if __name__ == "__main__":
     ensure_project_python()  # 아래 audio_map 등이 numpy를 import하므로 그 전에 - common.py 참고
 from build_edl import compute_kept_segments, BOUNDARY_PAD_SEC
@@ -1270,6 +1270,11 @@ class Handler(BaseHTTPRequestHandler):
         # transcribe (R2: the server now binds and opens the browser before the pipeline
         # starts, see run.py/serve()).
         if path in ("/", "/index.html"):
+            if self.session is not None and is_insert_only(self.folder):  # 완성본 프로젝트엔 컷 검토가 없다
+                self.send_response(302)
+                self.send_header("Location", "/insert")
+                self.end_headers()
+                return
             return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
         if path == "/insert":
             return self._file(WEB_DIR / "insert.html", "text/html; charset=utf-8")
@@ -1285,15 +1290,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             if self.session is not None:
                 return self._json({"ready": True, "render": self.session.render_status,
-                                   "cut_spans": self.session.cut_spans()})
-            return self._json({"ready": False, **_pipeline_status(self.folder)})
+                                   "cut_spans": self.session.cut_spans(), "insert_only": is_insert_only(self.folder)})
+            return self._json({"ready": False, "insert_only": is_insert_only(self.folder), **_pipeline_status(self.folder)})
         if self.session is None:  # everything below needs a built Session
             return self._json({"ok": False, "ready": False, "error": "아직 처리 중입니다"}, 503)
         if path == "/api/session":
             return self._json(self.session.payload())
         if path == "/api/insert/state":
+            self.session.inserts.maybe_auto_suggest()  # 처음 열 때 한 번 - 대본 전체 자리 제안
             return self._json({**self.session.inserts.payload(), "home_port": home_port(),
-                               "confirmed_at": self.session.decisions.get("confirmed_at")})
+                               "confirmed_at": self.session.decisions.get("confirmed_at"),
+                               "insert_only": is_insert_only(self.folder)})
         if path == "/api/insert/file":
             from urllib.parse import urlsplit, parse_qs
             name = (parse_qs(urlsplit(self.path).query).get("f") or [""])[0]
@@ -1388,12 +1395,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "item": res})
             if self.path == "/api/insert/export":
                 edl_path = self.session.edit / "edl.json"
+                if is_insert_only(self.folder):  # 완성본 - 잘린 곳 없는 한 덩어리
+                    write_json(edl_path, {"source_duration": self.session.duration, "boundary_pad_sec": 0,
+                                          "kept_segments": compute_kept_segments([], self.session.duration),
+                                          "cut_spans": [], "markers": []})
                 if not edl_path.exists():
                     raise ValueError("컷편집을 먼저 확정하세요")
                 with self.session.lock:
                     out = self.session.export_fcpxml(edl_path)
                 n = sum(1 for it in self.session.inserts.data["items"] if it["status"] == "approved")
                 return self._json({"ok": True, "fcpxml": str(out), "approved": n})
+            if self.path == "/api/insert/suggest":  # 다시 제안 - 손대지 않은 제안만 바꾼다
+                if (self.session.inserts.data.get("suggest") or {}).get("state") == "running":
+                    raise ValueError("이미 제안하는 중입니다")
+                threading.Thread(target=self.session.inserts.suggest_all, kwargs={"replace": True}, daemon=True).start()
+                return self._json({"ok": True})
+            if self.path == "/api/insert/fonts":
+                import fonts
+                fonts.ensure_all()
+                return self._json({"ok": True, "fonts_missing": fonts.missing_labels(), "errors": fonts.last_errors()})
             if self.path == "/api/insert/reveal":
                 subprocess.run(["open", "-R", str(self.session.folder / f"{self.session.name}.fcpxml")], check=False)
                 return self._json({"ok": True})

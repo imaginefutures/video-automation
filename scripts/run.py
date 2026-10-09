@@ -59,7 +59,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import load_env, ensure_api_keys, ensure_project_python, video_dir, edit_dir, write_json, PROJECT_ROOT, VIDEO_EDIT_DIR  # noqa: E402
+from common import load_env, ensure_api_keys, ensure_project_python, video_dir, edit_dir, write_json, PROJECT_ROOT, VIDEO_EDIT_DIR, is_insert_only, mark_insert_only  # noqa: E402
 import migrate  # noqa: E402
 
 # ----------------------------------------------------------------------------- R2: 처리 중 진행 화면
@@ -83,6 +83,8 @@ PIPELINE_STAGES: list[tuple[str, int]] = [
     ("전체 루프", 1),         # global_review (PD + 시청자 두 관점)
     ("무음 리듬", 1),         # plan_pauses
 ]
+# 인서트만 넣는 완성본(10-09): 컷편집 단계 없이 정리·전사만
+INSERT_ONLY_STAGES: list[tuple[str, int]] = [("정리", 1), ("전사", 1), ("인서트 제안", 1)]
 _PIPELINE_TOTAL_STEPS = sum(n for _, n in PIPELINE_STAGES)
 _pipeline_done = 0
 # 10-06: 진행 화면이 "처리 준비 중" 스피너로 영원히 돌던 문제 - (1) 상태 파일을 단계가 *끝난
@@ -291,6 +293,8 @@ def main() -> None:
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--insert-only", action="store_true",
+                    help="편집이 끝난 완성본 - 정리·전사만 하고 인서트 편집 화면으로 (프로젝트에 기록돼 이후 실행도 같은 모드)")
     ap.add_argument("--skip-server", action="store_true",
                     help="검토 서버를 새로 띄우지 않는다 - 이미 떠 있는 서버의 진행 화면 '다시 시도'(server.py)가 씀")
     args = ap.parse_args()
@@ -305,6 +309,13 @@ def main() -> None:
     else:
         folder = video_dir(args.folder)
     edit = edit_dir(folder)
+    if args.insert_only:
+        mark_insert_only(folder)
+    insert_only = is_insert_only(folder)
+    if insert_only:
+        global PIPELINE_STAGES, _PIPELINE_TOTAL_STEPS
+        PIPELINE_STAGES = INSERT_ONLY_STAGES
+        _PIPELINE_TOTAL_STEPS = sum(n for _, n in PIPELINE_STAGES)
     for msg in migrate.migrate_project(folder):  # 업데이트 뒤 호환 안 되는 캐시만 조용히 정리
         print(f"[migrate] {msg}")
     raw = folder / "raw.mp4"
@@ -363,6 +374,14 @@ def main() -> None:
         print("정리: cached")
 
     step("전사", [str(HERE / "transcribe.py"), str(folder)], folder)
+
+    if insert_only:  # 컷편집 단계(음향 분석·NG·무음)는 건너뛴다 - 이미 편집이 끝난 영상
+        # 대본 전체를 읽고 인서트 자리 제안 (텍스트는 미리 그려 둠). 실패해도 화면에서 다시 제안할 수 있어 처리를 막지 않는다
+        step("인서트 제안", [str(HERE / "inserts.py"), str(folder), "--suggest"], folder)
+        _write_pipeline_status(folder, "처리 완료", "done")
+        notify("처리 완료", f"{folder.name} 인서트 편집 준비됨")
+        print(f"\n insert UI: http://127.0.0.1:{args.port}/insert  (folder: {folder})")
+        return
 
     if not args.no_llm and not (edit / "prosody.json").exists():
         step("음향 분석 - 피치·에너지", [str(HERE / "prosody.py"), str(folder)], folder)

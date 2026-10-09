@@ -40,7 +40,7 @@ PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
-    api_keys_status, edit_dir, ensure_project_python, load_env, pid_alive, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
+    api_keys_status, edit_dir, ensure_project_python, is_insert_only, load_env, mark_insert_only, pid_alive, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, BRAND_OUTRO, VIDEO_EDIT_DIR, SPLIT_DIR,
 )
 
@@ -175,6 +175,13 @@ def project_status(folder: Path) -> dict:
             info["status"] = "processing"
             info["resumable"] = _resumable(folder)
             info["paused"] = pnew.get("state") == "paused"
+        return info
+
+    if is_insert_only(folder) and pnew is not None:  # 완성본 + 인서트만 (10-09) - 처리 끝, 컷 검토 없음
+        items = _read_json(edit / "inserts.json", {"items": []}).get("items", [])
+        info["status"] = "inserts"
+        info["insert_total"] = len(items)
+        info["insert_approved"] = sum(1 for it in items if it.get("status") == "approved")
         return info
 
     if not ng_path.exists():
@@ -374,7 +381,7 @@ def open_review(name: str) -> dict:
 
 # --------------------------------------------------------------------------- 영상 생성 (업로드)
 
-def create_project(title: str, content_length: int, rfile) -> dict:
+def create_project(title: str, content_length: int, rfile, mode: str = "cut") -> dict:
     """"영상 생성" 폼 하나를 처리한다 - 제목 검증 → API 키 보유 확인 → 중복 확인까지 전부
     바이트를 읽기 **전에** 끝낸 뒤에만 rfile을 청크 단위로 raw.mp4.part에 스트리밍 쓰기하고
     (대용량 영상을 한 번에 메모리에 올리지 않음), 완료되면 원자적 rename으로 raw.mp4를
@@ -409,6 +416,8 @@ def create_project(title: str, content_length: int, rfile) -> dict:
         try:
             _stream_to_file(rfile, part, content_length)
             part.rename(folder / "raw.mp4")
+            if mode == "insert":  # 편집이 끝난 완성본 - run.py가 정리·전사만 하고 인서트 편집으로
+                mark_insert_only(folder)
         except Exception:
             part.unlink(missing_ok=True)
             try:
@@ -1000,9 +1009,10 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_create_project(self):
         q = parse_qs(urlsplit(self.path).query)
         title = (q.get("title") or [""])[0]
+        mode = "insert" if (q.get("mode") or [""])[0] == "insert" else "cut"
         length = int(self.headers.get("Content-Length", 0))
         try:
-            result = create_project(title, length, self.rfile)
+            result = create_project(title, length, self.rfile, mode)
             return self._json({"ok": True, **result})
         except ValueError as e:
             return self._json({"ok": False, "error": str(e)}, 400)

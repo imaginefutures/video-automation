@@ -252,6 +252,7 @@ function statusBadge(p) {
   if (p.status === 'error') return { cls: 'error', text: '처리 실패' };
   if (p.status === 'processing') return { cls: 'processing', text: p.resumable && !p.managed ? '처리 멈춤' : '처리 중' };
   if (p.status === 'reviewing') return { cls: 'reviewing', text: `검토 중 · ${p.pending}건 남음` };
+  if (p.status === 'inserts') return { cls: 'confirmed', text: '인서트 편집' };
   return { cls: 'confirmed', text: '확정' };
 }
 
@@ -278,6 +279,9 @@ function renderCard(p) {
     meta.appendChild(Object.assign(document.createElement('span'), { textContent: `확정일 ${fmtDate(p.confirmed_at)}` }));
     const rs = fmtDuration(p.review_sec);
     if (rs) meta.appendChild(Object.assign(document.createElement('span'), { textContent: `검토 시간 ${rs}` }));
+  }
+  if (p.status === 'inserts') {
+    meta.appendChild(Object.assign(document.createElement('span'), { textContent: p.insert_total ? `인서트 ${p.insert_total}개 · 승인 ${p.insert_approved}개` : '완성본 · 아직 인서트 없음' }));
   }
   if (p.status === 'reviewing' && p.total) {
     meta.appendChild(Object.assign(document.createElement('span'), { textContent: `검토 대상 ${p.total}건 중 ${p.pending}건 남음` }));
@@ -311,7 +315,7 @@ function renderCard(p) {
     card.addEventListener('click', () => {
       if (p.status === 'error') return showErrorDetail(p, card);
       if (p.status === 'processing' && !p.managed && p.resumable) return resumeProcessing(p.name, card);
-      return openReview(p.name, card, p.status === 'confirmed' ? 'insert' : '');
+      return openReview(p.name, card, ['confirmed', 'inserts'].includes(p.status) ? 'insert' : '');
     });
   }
   return card;
@@ -790,7 +794,14 @@ $('#btnUpdateHistory').addEventListener('click', openUpdateHistory);
 // --------------------------------------------------------------------------------- 영상 생성
 function renderNewVideoModal() {
   showModal(`<h2>새 영상</h2>
-    <p class="note">제목을 입력하고 원본 파일을 올리면 처리가 자동으로 시작됩니다</p>
+    <p class="note">제목을 입력하고 파일을 올리면 처리가 자동으로 시작됩니다</p>
+    <div class="field">
+      <div class="field-label" style="margin-bottom:6px">작업</div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;cursor:pointer"><input type="radio" name="newVideoMode" value="cut" checked style="margin-top:4px">
+        <span><b>컷편집부터</b><br><span class="note">촬영 원본 - NG·말더듬·쉼을 정리한 뒤 인서트까지</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="radio" name="newVideoMode" value="insert" style="margin-top:4px">
+        <span><b>인서트만</b><br><span class="note">편집이 끝난 영상 - 전사만 하고 바로 인서트 편집으로 (컷편집 없음)</span></span></label>
+    </div>
     <div class="field">
       <div class="field-label" style="margin-bottom:6px">제목</div>
       <input type="text" id="newVideoTitle" placeholder="예: 강의1">
@@ -818,7 +829,8 @@ function startUpload() {
     <p class="note" id="uploadNote">업로드 중… 0%</p>`;
 
   const xhr = new XMLHttpRequest();  // fetch에는 업로드 진행률 이벤트가 없어 XHR을 쓴다
-  xhr.open('POST', `/api/videos/create?title=${encodeURIComponent(title)}`);
+  const mode = document.querySelector('input[name="newVideoMode"]:checked')?.value || 'cut';
+  xhr.open('POST', `/api/videos/create?title=${encodeURIComponent(title)}&mode=${mode}`);
   xhr.upload.onprogress = (e) => {
     if (!e.lengthComputable) return;
     const pct = Math.round((e.loaded / e.total) * 100);

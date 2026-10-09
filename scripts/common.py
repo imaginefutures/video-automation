@@ -225,6 +225,19 @@ def video_dir(name_or_path: str | Path) -> Path:
 SPLIT_SOURCE_NAME = "source.mp4"
 
 
+def is_insert_only(folder: Path) -> bool:
+    """10-09: 편집이 끝난 완성본에 인서트만 넣는 프로젝트 - 처리는 정리·전사까지만, 검토는 인서트 편집 화면으로."""
+    try:
+        return json.loads((folder / "edit" / "project.json").read_text()).get("mode") == "insert"
+    except (OSError, ValueError):
+        return False
+
+
+def mark_insert_only(folder: Path) -> None:
+    (folder / "edit").mkdir(parents=True, exist_ok=True)
+    (folder / "edit" / "project.json").write_text(json.dumps({"mode": "insert"}))
+
+
 def is_split_project(folder: Path) -> bool:
     """주제별 분할(docs/백로그/주제별-분할.md) 폴더인지 - 컷편집과 완전히 분리된 작업이라 폴더
     구조도 다르다(auto-split/<이름>/source.mp4 + work/). 전사·음향 지도 코드는 그대로 공유하므로

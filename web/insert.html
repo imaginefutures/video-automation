@@ -63,6 +63,7 @@
   .schip.ready { color: var(--proposal-line); border-color: var(--proposal-line); }
   .schip.error { color: var(--danger); border-color: var(--danger); }
   .schip.busy { color: var(--accent-strong); border-color: var(--accent-soft); background: var(--accent-soft); }
+  .schip.sug { border-style: dashed; color: var(--muted); }
   #sideFoot { padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
   .primary { background: var(--ink); color: #fff; border: 0; border-radius: var(--r-md); padding: 9px 14px; font-weight: 600; font-size: 14px; }
   .primary:hover:not(:disabled) { background: #000; }
@@ -88,6 +89,10 @@
   #tl .blk.busy { opacity: 0.4; animation: pulse 1.2s ease-in-out infinite; }
   #tl .blk.err { background: var(--danger) !important; }
   #tl .blk.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+  /* 제안만 된 것(아직 안 만듦)은 테두리만 점선 */
+  #tl .blk.sug { background: transparent !important; border: 2px dashed; top: 8px; bottom: 8px; }
+  #sugBar { display: none; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 0 0 8px; flex-wrap: wrap; }
+  #sugBar .btn { padding: 2px 10px; font-size: 12px; }
   @keyframes pulse { 50% { opacity: 0.15; } }
   #tl #playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--danger); pointer-events: none; }
   #tlTip { position: fixed; z-index: 20; display: none; background: var(--ink); color: #fff; font-size: 12px; padding: 4px 8px; border-radius: var(--r-sm); pointer-events: none; max-width: 320px; }
@@ -105,6 +110,7 @@
   .w.ins.ok { text-decoration-style: solid; }
   .w.ins.text { text-decoration-color: var(--f-text); } .w.ins.image { text-decoration-color: var(--f-image); } .w.ins.video { text-decoration-color: var(--f-video); } .w.ins.asset { text-decoration-color: var(--f-asset); } .w.ins.none { text-decoration-color: var(--line-strong); }
   .w.ins.sel { background: var(--accent-soft); }
+  .w.ins.sug { text-decoration-thickness: 2px; text-decoration-style: dashed; opacity: 0.85; }
   #mkBtn { position: absolute; z-index: 10; display: none; background: var(--ink); color: #fff; border: 0; border-radius: var(--r-full); padding: 6px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
   #mkBtn:hover { background: #000; }
 
@@ -192,6 +198,8 @@
           <span><i class="pending"></i>확인 전</span>
         </span>
       </div>
+      <div id="sugBar"></div>
+      <div id="fontWarn" class="warn" style="display:none;margin:0 0 8px"></div>
       <div id="tl" role="slider" aria-label="편집본 재생 위치" tabindex="0"><div id="playhead"></div></div>
       <div id="tlFoot"><span id="tlNow" class="mono">0:00</span><span id="tlGap"></span><span id="tlDur" class="mono"></span></div>
     </div>
@@ -221,7 +229,7 @@ const $ = (q) => document.querySelector(q);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
 const FORM_KO = { text: '텍스트', image: '이미지', video: '영상', asset: '실물' };
-const STATUS_KO = { deciding: '형태 정하는 중', generating: '만드는 중', ready: '확인 전', approved: '승인', rejected: '취소',
+const STATUS_KO = { suggested: '제안', deciding: '형태 정하는 중', generating: '만드는 중', ready: '확인 전', approved: '승인', rejected: '취소',
   error: '오류', unsupported: '영상 준비 중', needs_asset: '자료 필요' };
 const LAYOUT_KO = { top: '상단 요약·섹션 바', comment: '노란 코멘트', chapter: '챕터 카드(어둡게)', quote: '인용 카드(어둡게)', list: '좌상단 목록' };
 const BUSY = new Set(['deciding', 'generating']);
@@ -272,6 +280,7 @@ async function load() {
   $('#title').textContent = `인서트 편집 · ${S.name}`;
   $('#homeLink').href = `http://127.0.0.1:${S.home_port || 8764}/`;
   $('#backCut').href = '/';
+  if (S.insert_only) $('#backCut').parentElement.textContent = '편집이 끝난 완성본 · 인서트만';
   if (!video.src) {
     video.src = '/media';
     // 첫 프레임이 검게 비지 않게 - 남은 첫 말 위치로
@@ -282,7 +291,35 @@ async function load() {
   renderAll();
   schedulePoll();
 }
-function renderAll() { renderCounts(); renderList(); renderTimeline(); paintInserts(); renderDetail(); }
+function renderAll() { renderCounts(); renderList(); renderTimeline(); paintInserts(); renderDetail(); renderFontWarn(); renderSugBar(); }
+function renderSugBar() {
+  const bar = $('#sugBar'); const sg = S.suggest || { state: 'none' };
+  const again = `<button class="btn" id="sugAgain">다시 제안</button>`;
+  bar.style.display = sg.state === 'none' ? 'none' : 'flex';
+  if (sg.state === 'running') bar.innerHTML = `<span class="spin"></span>대본 전체를 읽고 인서트 자리를 제안하는 중… (1~3분)`;
+  else if (sg.state === 'error') bar.innerHTML = `<span style="color:var(--danger)">자리 제안 실패: ${esc(sg.error)}</span>${again}`;
+  else if (sg.state === 'done') {
+    const n = S.items.filter((i) => i.origin === 'suggest').length;
+    bar.innerHTML = `자동 제안 ${n}개 · 텍스트는 미리 만들어 뒀고, 이미지·영상은 <b>만들기</b>를 눌러야 만들어요 (점선)${again}`;
+  }
+  $('#sugAgain')?.addEventListener('click', async () => {
+    if (!confirm('손대지 않은 제안만 지우고 대본 전체를 다시 읽어 제안할까요? 승인·수정·생성한 것은 그대로 둡니다. (영상당 약 $0.3)')) return;
+    try { await api('/api/insert/suggest'); S.suggest = { state: 'running' }; renderSugBar(); schedulePoll(); } catch (e) { toast(e.message); }
+  });
+}
+function renderFontWarn() {
+  const box = $('#fontWarn'); const miss = S.fonts_missing || [];
+  if (!miss.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = `글꼴 <b>${miss.map(esc).join(', ')}</b>을(를) 받지 못했어요 (인터넷 연결 확인). 지금 만드는 글자는 대체 글꼴로 나와요.
+    <button class="btn" id="fontRetry" style="margin-left:8px;padding:2px 10px">다시 받기</button>`;
+  $('#fontRetry').addEventListener('click', async () => {
+    toast('글꼴 받는 중…');
+    try { const r = await api('/api/insert/fonts'); S.fonts_missing = r.fonts_missing; renderFontWarn();
+      toast(r.fonts_missing.length ? '아직 받지 못했어요' : '글꼴을 받았어요 - 대체 글꼴로 만든 인서트는 "글자 반영"을 누르면 다시 그려요'); }
+    catch (e) { toast(e.message); }
+  });
+}
 
 async function refresh() {
   const prevSel = selId;
@@ -301,7 +338,7 @@ async function refresh() {
 }
 function schedulePoll() {
   clearTimeout(pollTimer);
-  if (S.items.some((i) => BUSY.has(i.status))) pollTimer = setTimeout(refresh, 1500);
+  if (S.items.some((i) => BUSY.has(i.status)) || S.suggest?.state === 'running') pollTimer = setTimeout(refresh, 1500);
 }
 
 // ---------------------------------------------------------------- 대본 (잘린 말은 안 보임)
@@ -333,7 +370,7 @@ function paintInserts() {
     if (it.status === 'rejected') continue;
     for (let wi = it.wi_start; wi <= it.wi_end; wi++) {
       const el = wordEl(wi); if (!el) continue;
-      el.className = `w ins ${it.form || 'none'}${it.status === 'approved' ? ' ok' : ''}${it.id === selId ? ' sel' : ''}`;
+      el.className = `w ins ${it.form || 'none'}${it.status === 'approved' ? ' ok' : ''}${it.status === 'suggested' ? ' sug' : ''}${it.id === selId ? ' sel' : ''}`;
       el.dataset.ins = it.id;
     }
   }
@@ -343,12 +380,12 @@ function paintInserts() {
 function sortedItems() { return [...S.items].sort((a, b) => (a.t_start ?? 0) - (b.t_start ?? 0)); }
 function renderCounts() {
   const n = (st) => S.items.filter((i) => st.includes(i.status)).length;
-  const c = [['전체', S.items.length], ['승인', n(['approved'])], ['확인 전', n(['ready'])], ['진행 중', n(['deciding', 'generating'])],
+  const c = [['전체', S.items.length], ['승인', n(['approved'])], ['확인 전', n(['ready'])], ['제안', n(['suggested'])], ['진행 중', n(['deciding', 'generating'])],
     ['확인 필요', n(['error', 'unsupported', 'needs_asset'])]].filter(([k, v]) => v || k === '전체');
   $('#counts').innerHTML = c.map(([k, v]) => `<span class="count">${k} <b>${v}</b></span>`).join('');
 }
 function statusChip(it) {
-  const cls = it.status === 'approved' ? 'approved' : it.status === 'ready' ? 'ready' : BUSY.has(it.status) ? 'busy'
+  const cls = it.status === 'approved' ? 'approved' : it.status === 'ready' ? 'ready' : it.status === 'suggested' ? 'sug' : BUSY.has(it.status) ? 'busy'
     : ['error', 'unsupported', 'needs_asset'].includes(it.status) ? 'error' : '';
   return `<span class="schip ${cls}">${STATUS_KO[it.status] || it.status}</span>`;
 }
@@ -382,11 +419,12 @@ function renderTimeline() {
   for (const it of S.items) {
     if (it.status === 'rejected' || it.t_start == null) continue;
     const b = document.createElement('div');
-    const st = it.status === 'approved' ? '' : BUSY.has(it.status) ? ' busy' : ['error', 'unsupported', 'needs_asset'].includes(it.status) ? ' err' : ' pending';
+    const st = it.status === 'approved' ? '' : it.status === 'suggested' ? ' sug' : BUSY.has(it.status) ? ' busy' : ['error', 'unsupported', 'needs_asset'].includes(it.status) ? ' err' : ' pending';
     b.className = `blk ${it.form || 'none'}${st}${it.id === selId ? ' sel' : ''}`;
     b.style.left = `${(it.t_start / D) * 100}%`;
     b.style.width = `${Math.max(0.25, ((it.t_end - it.t_start) / D) * 100)}%`;
     b.dataset.id = it.id;
+    if (it.status === 'suggested') b.style.borderColor = `var(--f-${it.form || 'asset'})`;
     tl.appendChild(b);
   }
   $('#tlDur').textContent = fmt(D);
@@ -540,6 +578,7 @@ function renderDetail() {
   if (it.form === 'image' && d.point) h += `<div class="reason"><b style="color:var(--ink)">그림이 보여 줄 것</b> · ${esc(d.point)}</div>`;
   for (const w of d.warnings || []) h += `<div class="warn">${esc(w)}</div>`;
   if (it.error) h += `<div class="errbox">${esc(it.error)}</div>`;
+  if (it.font_fallback?.length) h += `<div class="warn">채널 글꼴(${it.font_fallback.map(esc).join(', ')}) 대신 대체 글꼴로 만들어졌어요. 글꼴을 받은 뒤 아래 <b>글자 반영</b>을 누르면 다시 그려요.</div>`;
 
   if (it.files?.length && ['ready', 'approved'].includes(it.status)) {
     h += `<div class="pv">${it.files.map((f) => f.endsWith('.mp4') ? `<video src="${fileUrl(f)}" muted loop autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>` : `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
@@ -556,12 +595,18 @@ function renderDetail() {
     h += `<div class="sec"><div class="lbl">검사한 장면 (판정 모델이 본 프레임)</div><div class="cands">${it.candidates.map((c) =>
       `<span style="display:block;border-radius:var(--r-sm);overflow:hidden;aspect-ratio:16/9;background:#000"><img src="${fileUrl(c)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></span>`).join('')}</div></div>`;
   }
-  if (it.form === 'video' && d.scene) h += `<div class="sec"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
-  if (it.form === 'asset' && !BUSY.has(it.status)) {
+  if (it.status === 'suggested') {
+    const what = it.form === 'image' ? (d.image_kind === 'photo' ? '생성 사진' : '삽화') : it.form === 'video' ? '모션그래픽' : '';
+    if (d.lines?.length) h += `<div class="sec"><div class="lbl">${it.form === 'text' ? '화면 글자' : '얹을 노란 글자'}</div><div class="quote">${d.lines.map(esc).join('<br>')}</div></div>`;
+    if (it.form !== 'asset' && d.scene) h += `<div class="sec"><div class="lbl">${what} 구상</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
+    if (it.form !== 'asset') h += `<div class="actions"><button class="primary" data-act="make">${what} 만들기 ${it.form === 'image' ? '(후보 3장 · 약 30초 · 약 $0.2)' : it.form === 'video' ? '(약 3~4분 · 약 $0.5)' : ''}</button></div>`;
+  }
+  if (it.form === 'video' && d.scene && it.status !== 'suggested') h += `<div class="sec"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
+  if (it.form === 'asset' && !BUSY.has(it.status) && it.status !== 'rejected') {
     h += `<div class="sec"><div class="lbl">필요한 실물 자료</div><div class="quote">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div>
       <input type="file" id="dUpload" accept="image/*"><div class="note" style="margin-top:4px">올리면 ${d.layout === 'fullscreen' ? '전체 화면' : '화자 옆(오른쪽 1/3)'}에 배치해요</div></div>`;
   }
-  if (['text', 'image', 'asset'].includes(it.form) && d.lines && !BUSY.has(it.status)) {
+  if (['text', 'image', 'asset'].includes(it.form) && d.lines && !BUSY.has(it.status) && it.status !== 'suggested') {
     const isText = it.form === 'text';
     h += `<div class="sec"><div class="lbl">${isText ? '화면 글자 (한 줄에 한 줄씩)' : '사진 위 노란 글자 (없으면 비워 두기)'}</div>
       <textarea id="dLines">${esc((d.lines || []).join('\n'))}</textarea>
@@ -569,7 +614,7 @@ function renderDetail() {
       <input type="text" id="dSource" placeholder="출처 (인용 카드일 때, 예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}
       <div class="row" style="margin-top:6px"><button class="btn" id="dApplyText">글자 반영</button><span class="note">다시 생성하지 않고 바로 고쳐요</span></div></div>`;
   }
-  if (!BUSY.has(it.status) && it.form !== null) {
+  if (!BUSY.has(it.status) && it.form !== null && it.status !== 'suggested') {
     h += `<div class="sec"><div class="lbl">요청 넣고 다시 만들기</div>
       ${(it.notes || []).length ? `<div class="note" style="margin-bottom:4px">지금까지 요청: ${it.notes.map(esc).join(' · ')}</div>` : ''}
       <textarea id="dNote" placeholder="예: 숟가락이 아니라 그냥 나뭇가지여야 해요" style="min-height:44px"></textarea>
@@ -579,7 +624,7 @@ function renderDetail() {
     h += `<div class="sec"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
       `<button data-form="${k}" class="${k === it.form ? 'on' : ''}">${v}</button>`).join('')}</div>
       ${d.alternatives?.length ? `<span class="note" style="margin-left:6px">대안: ${d.alternatives.map((a) => FORM_KO[a]).join(', ')}</span>` : ''}</div>`;
-    h += `<div class="actions">
+    h += it.status === 'suggested' ? `<div class="actions"><button class="btn" data-act="reject">무시</button><button class="danger-link" data-act="delete">삭제</button></div>` : `<div class="actions">
       ${it.status === 'approved' ? `<button class="btn" data-act="reopen">승인 취소</button>`
         : `<button class="primary" data-act="approve" ${it.status === 'ready' ? '' : 'disabled'}>승인</button>`}
       ${it.status === 'rejected' ? `<button class="btn" data-act="reopen">다시 살리기</button>` : `<button class="btn" data-act="reject" ${['ready', 'approved'].includes(it.status) ? '' : 'disabled'}>취소</button>`}
@@ -628,6 +673,7 @@ async function act(it, action, extra = {}) {
     lastOv = '';
     if (['approve', 'reject', 'reopen'].includes(action)) toast({ approve: '승인했어요', reject: '취소했어요 - 내보내기에서 빠져요', reopen: '확인 전으로 되돌렸어요' }[action]);
     if (['regenerate', 'form'].includes(action)) toast('다시 만드는 중…');
+    if (action === 'make') toast('만드는 중…');
   } catch (e) { toast(e.message); }
 }
 
@@ -650,6 +696,9 @@ document.addEventListener('keydown', (e) => {
   if (e.target.matches('textarea, input, select')) return;
   if (e.key === ' ') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
   if (e.key === 'Escape') { hideModal(); $('#mkBtn').style.display = 'none'; }
+  const cur = S?.items.find((i) => i.id === selId);
+  if (cur && (e.key === 'a' || e.key === 'A') && cur.status === 'ready') act(cur, 'approve');   // 승인하고 다음 확인 전으로
+  if (cur && (e.key === 'x' || e.key === 'X') && ['ready', 'approved', 'suggested'].includes(cur.status)) act(cur, 'reject');
 });
 
 load();

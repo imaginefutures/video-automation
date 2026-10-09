@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from build_edl import compute_kept_segments
 from common import log_llm_usage, thinking_kwargs, write_json
+import fonts
 from split_intro import BRAND_CONTEXT  # 채널 소개 + "Never" 목록 - 인트로 이미지와 같은 규칙
 
 DECIDE_MODEL = "claude-opus-5-5"
@@ -46,12 +47,11 @@ MOTION_REFS = {
     "compare": ["education__history-of-ai-documentary-short-film__2102844654169575547"],
     "system": ["education__zoomable-app-architecture-canvas__2105309987983745060"],
 }
-FPS_NUM, FPS_DEN = 30000, 1001
+FPS_NUM, FPS_DEN = 30000, 1001  # 영상 정보를 못 읽었을 때만 - 보통은 그 영상의 프레임레이트로 렌더
 
 W, H = 1920, 1080
-FONT_GOTHIC = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
-FONT_HEAVY_INDEX = 16       # Apple SD Gothic Neo Heavy
-FONT_SERIF = "/System/Library/Fonts/Supplemental/AppleMyungjo.ttf"
+# 채널 글꼴은 scripts/fonts.py (10-09 사용자 지정, docs/인서트-가이드.md 5장)
+FALLBACK_FONT = ("/System/Library/Fonts/AppleSDGothicNeo.ttc", 16)  # 받기 실패 시 (Heavy)
 WHITE = (255, 255, 255, 255)
 YELLOW = (255, 224, 0, 255)  # 가이드 5장: 노란 코멘트 #FFE000~#FFFF5A
 OUTLINE = (20, 20, 20, 255)
@@ -89,6 +89,28 @@ class InsertDecision(BaseModel):
         description="video일 때만: concept(개념이 그림으로 변함) / steps(단계·과정) / compare(시대·두 대상 비교) / system(구조·관계). 아니면 none")
     alternatives: list[Literal["text", "image", "video", "asset"]] = Field(description="그다음으로 괜찮은 형태")
     warnings: list[str] = Field(description="한국어 주의사항: 넣지 않는 구간, 촘촘함, 사실 확인 필요 등. 없으면 빈 배열")
+
+
+class Suggestion(InsertDecision):
+    s_from: int = Field(description="시작 문장 번호 (대본의 [번호])")
+    s_to: int = Field(description="끝 문장 번호 (같거나 큼)")
+
+
+class Suggestions(BaseModel):
+    suggestions: list[Suggestion]
+
+
+SUGGEST_SYSTEM_HEAD = """너는 베싸TV(근거 기반 육아 강의 채널)의 영상 편집자다. 편집이 끝난 강의 대본 전체를 읽고, 인서트(화면 위에 얹는 글자·그림·영상)를
+넣을 자리를 제안한다. 아래 인서트 가이드(완성본 3편 분석)를 그대로 따른다.
+- 자리는 문장 번호 범위로 준다. 한 인서트는 보통 1~2문장, 같은 요점을 이어 말하는 동안 유지되는 상단 요약·섹션 바는 더 길어도 된다
+- 리듬은 가이드 4장: 화자 구간에서 7~13초마다 새 인서트가 기준. 가이드 3장 "넣지 않는 곳"(개인 일화, 공감·고백, 강사가 대사를 연기, 마무리·다음 편 예고)은 비워 둔다
+- 구조 층(섹션 바·챕터 카드)을 먼저 잡아 영상의 질문-답 흐름이 바만 읽어도 보이게 하고, 그 사이를 요점·근거·장면·목소리로 채운다
+- 형태 비율: 텍스트가 대부분. 이미지는 장면을 보여 줘야 할 때, 영상은 움직임이 아니면 설명이 안 될 때만(영상당 0~3개), 실물은 책·논문·학자처럼 만들면 안 되는 것
+- 이미 있는 인서트와 겹치는 문장은 제안하지 않는다
+- 글자는 받아쓰기가 아니라 편집자가 다시 쓴 슬로건. 숫자·인명·연구 결과는 대본에 있는 것만
+- image의 scene은 영어로 주제·구도만, 흉내 내는 대상(무엇을 무엇처럼)은 이름으로 쓰지 않는다
+- 화면 글자에 이모지를 쓰지 않는다 (채널 글꼴에 없음). 웃음·감정은 'ㅎㅎ', '..', '!'처럼 글자로
+"""
 
 
 class ImagePrompt(BaseModel):
@@ -132,7 +154,8 @@ Hard contract:
 - Duration D seconds is given. seek(0) is already a composed frame. The key message is readable by ~0.6s and stays
   readable for most of the clip. Nothing important starts after D-0.5s.
 - 1920x1080, margin 0, overflow hidden. DOM + inline SVG or a single <canvas>. No external resources at all
-  (no web fonts, CDNs, images, network). Font: font-family "Apple SD Gothic Neo", sans-serif (weights 400/700/800).
+  (no web fonts, CDNs, images, network). Font: font-family "Pretendard", sans-serif - weights 700 and 800 are provided
+  (we inject the @font-face); use 800 for headings, 700 for labels.
 - Channel style: background warm cream #FAF9F5; main accent deep violet #4A1B6C; soft violets #EFE9F3 and #CBBAD8;
   gold #FFC800 only as one or two tiny accents; ink #141413. Flat, editorial, uncluttered, one idea at a time.
   Easing is closed-form and gentle (easeOutCubic, critically damped springs) - no bouncy overshoot, no glows.
@@ -143,6 +166,27 @@ Hard contract:
 - Never an empty or frozen frame: something moves gently at all times, but motion must serve the explanation.
 
 Return only the HTML, inside one ```html code block."""
+
+
+def _fallback_labels(layout: str) -> list[str]:
+    """이 레이아웃에 쓸 채널 글꼴 중 받지 못해 대체 글꼴로 그린 것 (화면에 표시)."""
+    keys = {"quote": ["jeju"], "caption": ["pretendard"]}.get(layout, ["gangwon"])
+    return [fonts.LABELS[k] for k in keys if fonts.path(k) is None]
+
+
+def _inject_fonts(html: str) -> str:
+    """모션 HTML에 채널 글꼴(프리텐다드)을 직접 넣는다 - 외부 요청 없이, 어디서 열어도 같은 글꼴."""
+    faces = []
+    for key, weight in (("pretendard", 800), ("pretendard_bold", 700)):
+        p = fonts.path(key)
+        if p:
+            # data URI - Chromium은 file:// 페이지가 다른 file:// 글꼴을 읽는 걸 CORS로 막는다
+            b64 = base64.b64encode(p.read_bytes()).decode()
+            faces.append(f"@font-face{{font-family:'Pretendard';font-weight:{weight};src:url(data:font/otf;base64,{b64}) format('opentype');}}")
+    if not faces:
+        return html
+    style = "<style>" + "".join(faces) + "</style>"
+    return html.replace("<head>", "<head>" + style, 1) if "<head>" in html else style + html
 
 
 def _now() -> str:
@@ -160,6 +204,10 @@ class InsertStore:
         self.dir.mkdir(exist_ok=True)
         self.lock = threading.RLock()
         self.data = json.loads(self.path.read_text()) if self.path.exists() else {"items": []}
+        sg = self.data.get("suggest")
+        if sg and sg.get("state") == "running":  # 서버가 제안 도중 꺼졌으면
+            sg.update(state="error", error="서버가 다시 시작돼 중단됐습니다 - 다시 제안을 누르세요")
+        threading.Thread(target=fonts.ensure_all, daemon=True).start()  # 첫 인서트 전에 미리 받아 둔다
         for it in self.data["items"]:  # 서버가 생성 도중 꺼졌으면 다시 만들 수 있게
             if it["status"] in ("deciding", "generating"):
                 it["status"], it["error"] = "error", "서버가 다시 시작돼 중단됐습니다 - 다시 만들기를 누르세요"
@@ -190,6 +238,15 @@ class InsertStore:
                 out.append(w)
         return out
 
+    def maybe_auto_suggest(self) -> None:
+        """인서트 화면을 처음 열 때 한 번 - 대본 전체를 읽고 자리를 제안한다 (중간안, 10-09 사용자 결정)."""
+        with self.lock:
+            if self.data.get("suggest") or not self.s.words:
+                return
+            self.data["suggest"] = {"state": "running", "started_at": _now()}
+            self._save()
+        threading.Thread(target=self.suggest_all, daemon=True).start()
+
     def payload(self) -> dict:
         kept = self._kept()
         words = self.kept_words(kept)
@@ -209,6 +266,8 @@ class InsertStore:
             "words": [{"wi": w["wi"], "t": w["text"], "s": w["start"], "e": w["end"],
                        "o": round(self.to_timeline(kept, w["start"]), 2)} for w in words],
             "items": items,
+            "fonts_missing": fonts.missing_labels(),
+            "suggest": self.data.get("suggest") or {"state": "none"},
         }
 
     # ---- 저장
@@ -256,6 +315,85 @@ class InsertStore:
             self._set(it, decision=dec, form=dec["form"], status="generating", candidates=[], chosen=None, files=[])
             self.generate(it)
         except Exception as e:  # 화면에 그대로 보여 준다 - 조용히 실패하지 않게
+            self._set(it, status="error", error=str(e)[:400], progress=None)
+
+    # ---- 0) 대본 전체 제안 (중간안): 자리·형태·글자 초안. 텍스트는 바로 그리고, 이미지·영상·실물은 "만들기"를 눌러야 만든다
+
+    def suggest_all(self, replace: bool = False) -> dict:
+        import anthropic
+        with self.lock:
+            self.data["suggest"] = {"state": "running", "started_at": _now()}
+            if replace:  # 손대지 않은 제안만 지우고 다시 - 사용자가 승인·수정·생성한 것은 남긴다
+                self.data["items"] = [it for it in self.data["items"]
+                                      if not (it.get("origin") == "suggest" and it["status"] in ("suggested", "ready") and not it.get("touched"))]
+            self._save()
+        try:
+            kept = self._kept()
+            sents = self._sentences(self.kept_words(kept))
+            by_wi = {w["wi"]: w for w in self.s.words}
+            lines = [f"[{k}] ({int(self.to_timeline(kept, by_wi[x['wi_start']]['start']) // 60)}:"
+                     f"{int(self.to_timeline(kept, by_wi[x['wi_start']]['start']) % 60):02d}) {x['text']}" for k, x in enumerate(sents)]
+            with self.lock:
+                existing = [it for it in self.data["items"] if it["status"] != "rejected"]
+            taken = set()
+            ex_lines = []
+            for it in existing:
+                ks = [k for k, x in enumerate(sents) if x["wi_end"] >= it["wi_start"] and x["wi_start"] <= it["wi_end"]]
+                taken.update(ks)
+                if ks:
+                    ex_lines.append(f"- 문장 {ks[0]}~{ks[-1]}: {it.get('form')} \"{' / '.join((it.get('decision') or {}).get('lines', []))[:50]}\"")
+            total = sum(k["source_end"] - k["source_start"] for k in kept)
+            user = (f"영상 길이 {total / 60:.0f}분, 문장 {len(sents)}개.\n\n이미 있는 인서트 (이 문장들은 피한다):\n"
+                    + ("\n".join(ex_lines) or "(없음)") + "\n\n대본:\n" + "\n".join(lines))
+            client = anthropic.Anthropic()
+            # 긴 영상은 응답이 길어 스트리밍이 필수 (SDK가 10분 넘을 수 있는 요청을 거부)
+            with client.messages.stream(
+                    model=DECIDE_MODEL, max_tokens=32000, system=SUGGEST_SYSTEM_HEAD + "\n=== 인서트 가이드 ===\n" + GUIDE_PATH.read_text(),
+                    messages=[{"role": "user", "content": user}], output_format=Suggestions,
+                    **thinking_kwargs(DECIDE_MODEL, effort="medium")) as stream:
+                resp = stream.get_final_message()
+            log_llm_usage(self.folder, "insert_suggest", DECIDE_MODEL, resp.usage)
+            if resp.parsed_output is None:
+                raise RuntimeError(f"제안 응답을 읽지 못했습니다 (stop_reason={resp.stop_reason})")
+            made = 0
+            for sg in sorted(resp.parsed_output.suggestions, key=lambda x: x.s_from):
+                a, b = max(0, sg.s_from), min(len(sents) - 1, max(sg.s_from, sg.s_to))
+                if a >= len(sents) or any(k in taken for k in range(a, b + 1)):
+                    continue
+                taken.update(range(a, b + 1))
+                dec = sg.model_dump(exclude={"s_from", "s_to"})
+                wi_s, wi_e = sents[a]["wi_start"], sents[b]["wi_end"]
+                text = " ".join(x["text"] for x in sents[a:b + 1])
+                it = {"id": uuid.uuid4().hex[:8], "wi_start": wi_s, "wi_end": wi_e, "text": text, "origin": "suggest",
+                      "status": "suggested", "created_at": _now(), "updated_at": _now(), "decision": dec, "form": dec["form"],
+                      "files": [], "candidates": [], "chosen": None, "error": None}
+                if dec["form"] == "text":  # 텍스트는 비용이 거의 없어 미리 그려 둔다
+                    name = f"{it['id']}_text_{int(time.time())}.png"
+                    render_text(dec["layout"], dec["lines"], dec.get("source", "")).save(self.dir / name)
+                    it.update(files=[name], status="ready", font_fallback=_fallback_labels(dec["layout"]))
+                with self.lock:
+                    self.data["items"].append(it)
+                made += 1
+            with self.lock:
+                self.data["suggest"] = {"state": "done", "finished_at": _now(), "count": made}
+                self._save()
+        except Exception as e:
+            with self.lock:
+                self.data["suggest"] = {"state": "error", "error": str(e)[:300]}
+                self._save()
+        return self.data["suggest"]
+
+    def _make(self, iid: str) -> None:
+        """제안된 이미지·영상·실물을 실제로 만든다 (형태 결정은 제안 단계에서 끝남)."""
+        it = self._get(iid)
+        try:
+            dec = dict(it["decision"])
+            self._set(it, status="generating", error=None, progress=None)
+            if dec["form"] == "image" and not dec.get("point"):
+                dec.update(self.write_image_prompt(it, dec))
+                self._set(it, decision=dec)
+            self.generate(it)
+        except Exception as e:
             self._set(it, status="error", error=str(e)[:400], progress=None)
 
     # ---- 1) 형태 결정
@@ -320,6 +458,7 @@ class InsertStore:
                   "- 숫자·연도·인명·연구 결과는 대본에 있는 것만 쓴다. 지어내지 않는다\n"
                   "- 실존 인물의 얼굴, 책 표지, 논문 화면, 실제 촬영 장면은 만들지 말고 form=asset으로 사용자에게 요청한다\n"
                   "- image의 scene은 영어로, 주제와 구도만 쓴다\n"
+                  "- 화면 글자에 이모지를 쓰지 않는다 (채널 글꼴에 없어 빈 네모로 나온다). 웃음은 'ㅎㅎ', '..'처럼 글자로\n"
                   "- 이미지 모델은 익숙한 물건으로 끌려간다. 장면의 핵심이 '무엇을 무엇처럼'(대체·흉내·비교)이면, scene에서 흉내 내는 대상의 "
                   "이름을 그릴 물건처럼 쓰지 말고(예: 'stick like a spoon' 금지) 실제로 그릴 물건만 구체적으로 묘사하고, must_show에 '무엇이 아닌지'를 적는다\n"
                   "\n=== 인서트 가이드 ===\n" + GUIDE_PATH.read_text())
@@ -372,7 +511,7 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
         if form == "text":
             name = f"{it['id']}_text_{int(time.time())}.png"
             render_text(dec["layout"], dec["lines"], dec.get("source", "")).save(self.dir / name)
-            self._set(it, files=[name], status="ready")
+            self._set(it, files=[name], status="ready", font_fallback=_fallback_labels(dec["layout"]))
         elif form == "image":
             self._generate_images(it)
         elif form == "video":
@@ -564,7 +703,7 @@ Duration D = {dur:.2f} seconds.
         html = (m.group(1) if m else text).strip()
         if "seek" not in html:
             raise RuntimeError("모션 HTML에 seek(t)가 없습니다 - 다시 만들어 보세요")
-        return html
+        return _inject_fonts(html)
 
     def _shots(self, html_path: Path, times: list[float]) -> list[bytes]:
         from playwright.sync_api import sync_playwright
@@ -611,8 +750,13 @@ Duration D = {dur:.2f} seconds.
     def _render_mp4(self, it: dict, html_path: Path, dur: float, out: Path) -> None:
         import subprocess
         from playwright.sync_api import sync_playwright
-        n = max(1, round(dur * FPS_NUM / FPS_DEN))
-        ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "image2pipe", "-framerate", f"{FPS_NUM}/{FPS_DEN}", "-c:v", "mjpeg",
+        # 시퀀스와 같은 프레임레이트로 - 24fps 완성본에 29.97fps 클립을 얹으면 FCP가 변환하며 프레임이 뭉개진다 (10-09)
+        try:
+            fn, fd = (int(x) for x in str(self.s.probe["frame_rate"]).split("/"))
+        except (KeyError, ValueError, TypeError):
+            fn, fd = FPS_NUM, FPS_DEN
+        n = max(1, round(dur * fn / fd))
+        ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "image2pipe", "-framerate", f"{fn}/{fd}", "-c:v", "mjpeg",
                                "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-preset", "medium",
                                "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)
         try:
@@ -622,7 +766,7 @@ Duration D = {dur:.2f} seconds.
                 page.goto(html_path.as_uri())
                 page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
                 for k in range(n):
-                    page.evaluate(f"window.seek({k * FPS_DEN / FPS_NUM})")
+                    page.evaluate(f"window.seek({k * fd / fn})")
                     ff.stdin.write(page.screenshot(type="jpeg", quality=95))
                     if k % 30 == 0:
                         self._progress(it, f"렌더링 {k}/{n} 프레임…")
@@ -671,7 +815,7 @@ Duration D = {dur:.2f} seconds.
         if not lines:
             return None
         name = f"{it['id']}_overlay_{int(time.time())}.png"
-        render_text("comment", lines, "").save(self.dir / name)
+        render_text("caption", lines, "").save(self.dir / name)
         return name
 
     def _log_image_cost(self, n: int) -> None:
@@ -686,6 +830,16 @@ Duration D = {dur:.2f} seconds.
 
     def update(self, iid: str, action: str, body: dict) -> dict:
         it = self._get(iid)
+        if action not in ("delete",):
+            it["touched"] = True  # 다시 제안할 때 지우지 않는다
+        if action == "make":
+            if it["status"] not in ("suggested", "error"):
+                raise ValueError("이미 만들었거나 만드는 중입니다")
+            threading.Thread(target=self._make, args=(iid,), daemon=True).start()
+            return it
+        if action == "reject" and it["status"] == "suggested":
+            self._set(it, status="rejected")
+            return it
         if action in ("approve", "reject", "reopen"):
             if it["status"] not in ("ready", "approved", "rejected"):
                 raise ValueError("아직 결과가 없어 승인할 수 없습니다")
@@ -722,7 +876,8 @@ Duration D = {dur:.2f} seconds.
             if it["form"] == "text":
                 name = f"{it['id']}_text_{int(time.time())}.png"
                 render_text(dec["layout"], lines, dec.get("source", "")).save(self.dir / name)
-                self._set(it, files=[name], status="ready" if it["status"] != "approved" else "approved")
+                self._set(it, files=[name], status="ready" if it["status"] != "approved" else "approved",
+                          font_fallback=_fallback_labels(dec["layout"]))
             elif it["form"] == "image" and it["files"]:
                 overlay = self._render_overlay(it)
                 self._set(it, files=[it["files"][0]] + ([overlay] if overlay else []))
@@ -777,24 +932,34 @@ Duration D = {dur:.2f} seconds.
 
 # ----------------------------------------------------------------------------- 텍스트 렌더 (가이드 5장 스타일)
 
-def _font(size: int, serif: bool = False):
+def _font(size: int, key: str = "gangwon"):
     from PIL import ImageFont
-    return ImageFont.truetype(FONT_SERIF, size) if serif else ImageFont.truetype(FONT_GOTHIC, size, index=FONT_HEAVY_INDEX)
+    p = fonts.path(key)
+    if p:
+        return ImageFont.truetype(str(p), size)
+    if Path(FALLBACK_FONT[0]).exists():  # 받지 못했을 때 - 인서트에 font_fallback 표시가 남는다
+        return ImageFont.truetype(FALLBACK_FONT[0], size, index=FALLBACK_FONT[1])
+    return ImageFont.load_default(size)
 
 
-def _fit(draw, lines: list[str], size: int, max_w: int, serif: bool = False):
+def _fit(draw, lines: list[str], size: int, max_w: int, key: str = "gangwon"):
     while size > 24:
-        f = _font(size, serif)
+        f = _font(size, key)
         if all(draw.textlength(l, font=f) <= max_w for l in lines):
             return f, size
         size -= 4
-    return _font(size, serif), size
+    return _font(size, key), size
+
+
+_EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D\u2B00-\u2BFF]")
 
 
 def render_text(layout: str, lines: list[str], source: str = ""):
     """투명 1920x1080 PNG. 화자 화면 위에 FCP 연결 클립으로 얹힌다."""
     from PIL import Image, ImageDraw
-    lines = [l for l in lines if l.strip()] or [" "]
+    # 채널 글꼴에는 이모지가 없어 빈 네모로 찍힌다 (10-09 제안 시험에서 🙏 → □)
+    lines = [_EMOJI_RE.sub("", l).strip() for l in lines]
+    lines = [l for l in lines if l] or [" "]
     dim = layout in ("chapter", "quote")
     im = Image.new("RGBA", (W, H), (0, 0, 0, 190 if dim else 0))
     d = ImageDraw.Draw(im)
@@ -815,12 +980,17 @@ def render_text(layout: str, lines: list[str], source: str = ""):
     elif layout == "chapter":    # 어둡게 + 가운데 큰 제목 (2~4초)
         f, size = _fit(d, lines, 128, W - 240)
         center(f, size, (H - len(lines) * size * 1.3) / 2, WHITE, 0)
-    elif layout == "quote":      # 어둡게 + 명조 인용 + 우상단 출처
-        f, size = _fit(d, lines, 56, W - 320, serif=True)
-        center(f, size, (H - len(lines) * size * 1.5) / 2, WHITE, 0)
+    elif layout == "quote":      # 어둡게 + 제주명조 인용 + 우상단 출처 (가는 획이라 얇은 외곽선으로 또렷하게)
+        f, size = _fit(d, lines, 68, W - 320, key="jeju")
+        center(f, size, (H - len(lines) * size * 1.5) / 2, WHITE, 2)
         if source.strip():
-            sf = _font(30, serif=True)
+            sf = _font(30, key="jeju")
             d.text((W - 120 - d.textlength(source, font=sf), 90), source, font=sf, fill=(230, 230, 230, 255))
+    elif layout == "caption":    # 삽화·사진 위 노란 글씨 = 프리텐다드
+        f, size = _fit(d, lines, 64, int(W * 0.44), key="pretendard")
+        x = int(W * 0.54)
+        for i, l in enumerate(lines):
+            d.text((x, 130 + i * size * 1.3), l, font=f, fill=YELLOW, stroke_width=max(5, size // 12), stroke_fill=OUTLINE)
     elif layout == "list":       # 좌상단 누적 목록
         f, size = _fit(d, lines, 64, int(W * 0.6))
         for i, l in enumerate(lines):
@@ -829,3 +999,23 @@ def render_text(layout: str, lines: list[str], source: str = ""):
         f, size = _fit(d, lines, 84, W - 200)
         center(f, size, 46, WHITE, max(6, size // 11))
     return im
+
+
+if __name__ == "__main__":
+    # run.py(인서트 전용 프로젝트)가 전사 직후 부른다: python scripts/inserts.py <폴더> --suggest
+    # 실패해도 0으로 끝낸다 - 화면이 오류와 "다시 제안"을 보여 주고, 처리 자체는 막지 않는다
+    import argparse
+    import sys
+    from common import load_env, video_dir
+    ap = argparse.ArgumentParser()
+    ap.add_argument("folder")
+    ap.add_argument("--suggest", action="store_true")
+    a = ap.parse_args()
+    load_env()
+    from server import Session
+    st = Session(video_dir(a.folder)).inserts
+    if a.suggest and not st.data.get("suggest"):
+        r = st.suggest_all()
+        print(f"인서트 제안: {r}")
+    sys.exit(0)
+

@@ -682,6 +682,7 @@ async function pipelineBoot() {
     setTimeout(pipelineBoot, 1000);
     return;
   }
+  if (st.insert_only) { location.replace('/insert'); return; }  // 완성본 프로젝트 - 컷 검토 없이 인서트 편집으로
   if (document.getElementById('pipelineProgress')) {
     location.reload();  // was showing the progress view - reload so load() runs fresh below
     return;
