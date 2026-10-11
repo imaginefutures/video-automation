@@ -167,17 +167,20 @@ Hard contract:
   readable for most of the clip. Nothing important starts after D-0.5s.
 - 1920x1080, margin 0, overflow hidden. DOM + inline SVG or a single <canvas>. No external resources at all
   (no web fonts, CDNs, images, network). Font: font-family "Pretendard", sans-serif - weights 700 and 800 are provided
-  (we inject the @font-face); use 800 for headings, 700 for labels.
-- Channel style: background warm cream #FAF9F5; main accent deep violet #4A1B6C; soft violets #EFE9F3 and #CBBAD8;
-  gold #FFC800 only as one or two tiny accents; ink #141413. Flat, editorial, uncluttered, one idea at a time.
-  Easing is closed-form and gentle (easeOutCubic, critically damped springs) - no bouncy overshoot, no glows.
-- Keep the bottom 15% of the frame empty (burned-in subtitles live there).
-- Korean text: use word-break: keep-all; main text >= 56px, labels >= 36px; never overflow, overlap or get cut off.
-  Use the given Korean caption lines verbatim when provided. Do not invent numbers, names or facts.
-- Draw people simply (flat silhouettes / simple shapes), never realistic faces.
-- Never an empty or frozen frame: something moves gently at all times, but motion must serve the explanation.
+  (we inject the @font-face).
+- Korean text: word-break: keep-all; never overflow, overlap or get cut off. Use the given Korean caption lines verbatim
+  when provided. Do not invent numbers, names or facts.
+- Follow the channel's motion rules below exactly - tokens, composition, motion and the "never" list.
 
 Return only the HTML, inside one ```html code block."""
+
+MOTION_RULES_PATH = Path(__file__).resolve().parent.parent / "assets" / "brand" / "motion-rules.md"
+
+
+def motion_system() -> str:
+    """기술 계약 + 채널 모션 규칙(assets/brand/motion-rules.md) - 스타일 규칙은 이 파일 하나에만 둔다."""
+    rules = MOTION_RULES_PATH.read_text() if MOTION_RULES_PATH.exists() else ""
+    return MOTION_SYSTEM + ("\n\n=== Channel motion rules ===\n" + rules if rules else "")
 
 
 _catalog_cache: dict[str, str] = {}
@@ -928,7 +931,7 @@ Duration D = {dur:.2f} seconds.
             for b in shots:
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}})
         client = anthropic.Anthropic()
-        with client.messages.stream(model=DECIDE_MODEL, max_tokens=32000, system=MOTION_SYSTEM,
+        with client.messages.stream(model=DECIDE_MODEL, max_tokens=32000, system=motion_system(),
                                     messages=[{"role": "user", "content": content}],
                                     **thinking_kwargs(DECIDE_MODEL, effort="medium")) as stream:
             msg = stream.get_final_message()
@@ -948,8 +951,10 @@ Duration D = {dur:.2f} seconds.
             page = b.new_page(viewport={"width": W, "height": H})
             errors: list[str] = []
             page.on("pageerror", lambda e: errors.append(str(e)))
-            page.goto(html_path.as_uri())
+            page.goto(html_path.resolve().as_uri())
             page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
+            # 내장 글꼴은 따로 늦게 풀린다 - 기다리지 않으면 첫 프레임이 대체 글꼴로 찍힌다
+            page.evaluate("async () => { await document.fonts.ready; window.seek(0); await document.fonts.ready; return true; }")
             for t in times:
                 page.evaluate(f"window.seek({t})")
                 out.append(page.screenshot(type="jpeg", quality=85))
@@ -959,28 +964,124 @@ Duration D = {dur:.2f} seconds.
         return out
 
     def _judge_motion(self, it: dict, shots: list[bytes], times: list[float]) -> tuple[bool, str]:
+        """두 단계 판정. ① 의도를 모른 채 화면만 보고 무엇을 말하는지 읽게 한다 - 의도를 먼저 알려 주면
+        '그렇게 보인다'고 후하게 판정한다(외부 연구 정리: 자막 없이도 이해되나가 핵심 시험). ② 그 읽기를 의도와 비교 + 형식 검사."""
         import anthropic
+
+        class Reading(BaseModel):
+            message: str = Field(description="자막·설명 없이 이 장면들만 본 시청자가 받아들일 메시지, 한국어 한두 문장")
+            focal: str = Field(description="각 프레임에서 시선이 먼저 가는 것, 짧게")
 
         class MotionVerdict(BaseModel):
             ok: bool
-            problems: str = Field(description="고칠 점을 영어로 구체적으로 (프레임 번호와 위치). 문제가 없으면 빈 문자열")
+            problems: str = Field(description="고칠 점을 영어로 구체적으로 (프레임 시각과 위치). 문제가 없으면 빈 문자열")
 
-        dec = it["decision"]
-        content: list[dict] = [{"type": "text", "text": (
-            "These are frames of a motion-graphic insert for a Korean parenting lecture, at the given times. Judge strictly:\n"
-            "1) any Korean text overflowing, overlapping, cut off at the edge, or too small to read (<36px)?\n"
-            "2) anything drawn in the bottom 15% of the frame (reserved for subtitles)?\n"
-            "3) empty/blank or broken-looking frames, garbled shapes, realistic faces?\n"
-            f"4) does it clearly show this point: {dec.get('scene', '')}\n"
-            f"5) are these caption lines shown correctly (if any): {dec.get('lines', [])}\n"
-            "ok=true only if all pass.")}]
+        frames: list[dict] = []
         for t, b in zip(times, shots):
-            content += [{"type": "text", "text": f"t={t:.1f}s"},
-                        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}}]
-        resp = anthropic.Anthropic().messages.parse(model=JUDGE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": content}],
-                                                    output_format=MotionVerdict, **thinking_kwargs(JUDGE_MODEL))
-        log_llm_usage(self.folder, "insert_motion_judge", JUDGE_MODEL, resp.usage)
-        return resp.parsed_output.ok, resp.parsed_output.problems
+            frames += [{"type": "text", "text": f"t={t:.1f}s"},
+                       {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}}]
+        client = anthropic.Anthropic()
+        r1 = client.messages.parse(model=JUDGE_MODEL, max_tokens=800, output_format=Reading, **thinking_kwargs(JUDGE_MODEL),
+                                   messages=[{"role": "user", "content": [{"type": "text", "text": (
+                                       "These are frames of a short muted motion-graphic clip, in time order. You have no other context. "
+                                       "What message would a viewer take away? What draws the eye first in each frame?")}] + frames}])
+        log_llm_usage(self.folder, "insert_motion_read", JUDGE_MODEL, r1.usage)
+        reading = r1.parsed_output
+        dec = it["decision"]
+        r2 = client.messages.parse(model=JUDGE_MODEL, max_tokens=1500, output_format=MotionVerdict, **thinking_kwargs(JUDGE_MODEL),
+                                   messages=[{"role": "user", "content": [{"type": "text", "text": (
+            "Frames of a motion-graphic insert for a Korean parenting lecture. Judge strictly:\n"
+            f"1) Intended point: {dec.get('scene', '')}\n"
+            f"   A viewer who saw only these frames (no subtitles) understood: \"{reading.message}\" (eye goes to: {reading.focal}).\n"
+            "   If that reading misses or distorts the intended point, it FAILS - say what viewers misread and what would fix it.\n"
+            "2) any Korean text overflowing, overlapping, cut off at the edge, or too small to read (<36px)?\n"
+            "3) anything drawn in the bottom 15% of the frame (reserved for subtitles)?\n"
+            "4) empty/blank or broken-looking frames, garbled shapes, realistic faces, more than one competing focal point?\n"
+            f"5) are these caption lines shown correctly (if any): {dec.get('lines', [])}\n"
+            "ok=true only if all pass.")}] + frames}])
+        log_llm_usage(self.folder, "insert_motion_judge", JUDGE_MODEL, r2.usage)
+        v = r2.parsed_output
+        self._set(it, motion_reading=reading.message)
+        return v.ok, v.problems
+
+    def _motion_scan(self, html_path: Path, dur: float) -> list[str]:
+        """AI 없이 잡을 수 있는 문제 (외부 연구 정리: 'AI가 만든 티' 상당수는 코드로 검사 가능).
+        저해상도로 0.1초마다 훑어 깜빡임·멈춘 구간·브랜드 밖 색·글자량·seek 순수성을 본다. 반환 = 영어 문제 목록(수정 요청에 그대로 들어감)."""
+        import io
+        import numpy as np
+        from PIL import Image
+        from playwright.sync_api import sync_playwright
+        html = html_path.read_text()
+        problems: list[str] = []
+        body = re.sub(r"url\(data:[^)]+\)", "", html)
+        for pat, what in ((r"Math\.random\s*\(", "Math.random()"), (r"Date\.now|new Date\b|performance\.now", "Date/performance clock"),
+                          (r"requestAnimationFrame|setTimeout|setInterval", "timers/requestAnimationFrame"),
+                          (r"(?<![-\w])(transition|animation)\s*:", "CSS transition/animation")):
+            if re.search(pat, body):
+                problems.append(f"seek(t) must be a pure function of t but the code uses {what} - remove it and compute everything from t.")
+        times = [round(k * 0.1, 2) for k in range(int(dur / 0.1) + 1)]
+        frames, texts = [], []
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            page = b.new_page(viewport={"width": W, "height": H}, device_scale_factor=0.125)  # 240x135 - 훑기용
+            page.goto(html_path.resolve().as_uri())
+            page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
+            page.evaluate("async () => { await document.fonts.ready; window.seek(0); await document.fonts.ready; return true; }")
+            mid = dur / 2
+            page.evaluate(f"window.seek({mid})")
+            ref_mid = np.asarray(Image.open(io.BytesIO(page.screenshot(type="png"))).convert("RGB"), dtype=np.int16)
+            for t in times:
+                page.evaluate(f"window.seek({t})")
+                frames.append(np.asarray(Image.open(io.BytesIO(page.screenshot(type="png"))).convert("RGB"), dtype=np.int16))
+                if abs(t * 2 - round(t * 2)) < 1e-6:  # 0.5초마다 화면 글자량
+                    # 실제로 보이는 한글·영문 글자만 (숫자·기호는 빼고, 조상까지 곱한 불투명도로 - 부모가 투명하면 안 보인다)
+                    texts.append((t, page.evaluate("""() => { let n = 0; const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                        const vis = (el) => { let op = 1; for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+                            const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden') return 0; op *= parseFloat(cs.opacity); } return op; };
+                        while (w.nextNode()) { const el = w.currentNode.parentElement; if (!el) continue; const r = el.getBoundingClientRect();
+                          if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth && vis(el) > 0.25)
+                            n += (w.currentNode.textContent.match(/[가-힣A-Za-z]/g) || []).length; } return n; }""")))
+            page.evaluate(f"window.seek({mid})")  # 순서를 바꿔 다시 찍어도 같은 그림이어야 한다
+            again_mid = np.asarray(Image.open(io.BytesIO(page.screenshot(type="png"))).convert("RGB"), dtype=np.int16)
+            b.close()
+        if np.abs(ref_mid - again_mid).mean() > 2.0:
+            problems.append(f"seek({mid:.1f}) gives a different picture depending on what was rendered before - state leaks between frames; make seek fully recompute the frame from t.")
+        gray = [f.mean(axis=2) for f in frames]
+        d = [0.0] + [float(np.abs(gray[i] - gray[i - 1]).mean()) for i in range(1, len(gray))]
+        flick = [times[i] for i in range(1, len(gray) - 1)
+                 if d[i] > 6 and d[i + 1] > 6 and float(np.abs(gray[i + 1] - gray[i - 1]).mean()) < 0.35 * min(d[i], d[i + 1])]
+        if flick:
+            problems.append(f"Flicker: something appears and disappears within 0.2s around t={', '.join(f'{x:.1f}s' for x in flick[:4])} - make transitions last at least 0.2s and never alternate states.")
+        # 멈춤 = 1초 전 화면과 거의 같음. 0.1초 간격으로 보면 숨 쉬듯 1~2% 움직이는 정상 화면도 멈춤으로 오판한다(10-12 실측:
+        # 0.1초 차이 0.11, 1.5초 차이 0.36). 결정적 렌더라 정말 멈춘 화면은 차이가 0에 가깝다
+        lag = 10
+        still, start = [], None
+        for i in range(lag, len(gray)):
+            moving = float(np.abs(gray[i] - gray[i - lag]).mean()) > 0.05
+            if not moving and start is None:
+                start = times[i - lag]
+            if (moving or i == len(d) - 1) and start is not None:
+                end = times[i]
+                if end - start >= 2.5 and start > 0.3 and end < dur - 0.5:  # 2초 안팎은 읽을 시간 - 그보다 길면 멈춘 화면
+                    still.append((start, end))
+                start = None
+        if still:
+            problems.append("Frozen: nothing moves during " + ", ".join(f"{a:.1f}-{b:.1f}s" for a, b in still[:3])
+                            + " - add a gentle continuous drift or breathing scale (1-2%) so the frame never freezes.")
+        palette = np.array([[0xFA, 0xF9, 0xF5], [0x4A, 0x1B, 0x6C], [0xEF, 0xE9, 0xF3], [0xCB, 0xBA, 0xD8], [0xFF, 0xC8, 0x00],
+                            [0x14, 0x14, 0x13], [0xFF, 0xFF, 0xFF]], dtype=np.int32)
+        sample = np.concatenate([f.reshape(-1, 3) for f in frames[:: max(1, len(frames) // 8)]]).astype(np.int32)  # 제곱합이 int16을 넘는다
+        mx, mn = sample.max(axis=1), sample.min(axis=1)
+        saturated = (mx - mn) > 60  # 회색·혼합 경계는 제외하고 뚜렷한 색만
+        dist = np.sqrt(((sample[:, None, :] - palette[None, :, :]) ** 2).sum(axis=2)).min(axis=1)
+        off = float(((dist > 80) & saturated).mean())
+        if off > 0.06:
+            problems.append(f"Off-brand colors: about {off * 100:.0f}% of the picture uses saturated colors outside the channel tokens - use only #FAF9F5, #4A1B6C, #EFE9F3, #CBBAD8, #FFC800 (tiny), #141413.")
+        heavy = [(t, n) for t, n in texts if n > 55]  # 제목 + 짧은 단계 3개(약 50자)는 통과
+        if heavy:
+            t, n = max(heavy, key=lambda x: x[1])
+            problems.append(f"Too much text: about {n} letters on screen at t={t:.1f}s - keep at most ~20 per block and 2 blocks; the narrator is speaking, the screen should show, not transcribe.")
+        return problems
 
     def _render_mp4(self, it: dict, html_path: Path, dur: float, out: Path) -> None:
         import subprocess
@@ -1029,6 +1130,9 @@ Duration D = {dur:.2f} seconds.
         self._stage(it, "shots", "프레임 검사 중…")
         shots = self._shots(html_path, times)
         ok, problems = self._judge_motion(it, shots, times)
+        scan = self._motion_scan(html_path, dur)  # 깜빡임·멈춤·색·글자량·순수성 (AI 없이)
+        if scan:
+            ok, problems = False, "\n".join(filter(None, [problems] + [f"- {x}" for x in scan]))
         if not ok:  # 한 번만 고친다 (원칙 3)
             self._stage(it, "motion", "검사에서 나온 문제를 고치는 중…")
             html = self._write_motion_html(it, dur, fix=(html, problems, shots))
@@ -1036,6 +1140,10 @@ Duration D = {dur:.2f} seconds.
             html_path.write_text(_inject_fonts(html))
             shots = self._shots(html_path, times)
             ok, problems = self._judge_motion(it, shots, times)
+            scan = self._motion_scan(html_path, dur)
+            if scan:
+                ok, problems = False, "\n".join(filter(None, [problems] + [f"- {x}" for x in scan]))
+        self._set(it, motion_scan=scan)
         keyframes = []
         for k, b in enumerate(shots):
             name = f"{it['id']}_key{k}_{stamp}.jpg"
@@ -1271,6 +1379,7 @@ def _render_motion_cli(html: str, out: str, dur: float, rate: str) -> int:
             page = b.new_page(viewport={"width": W, "height": H})
             page.goto(Path(html).resolve().as_uri())
             page.wait_for_function("typeof window.seek === 'function'", timeout=10000)
+            page.evaluate("async () => { await document.fonts.ready; window.seek(0); await document.fonts.ready; return true; }")  # 첫 프레임 대체 글꼴 방지
             for k in range(n):
                 page.evaluate(f"window.seek({k * fd / fn})")
                 ff.stdin.write(page.screenshot(type="jpeg", quality=95))
