@@ -587,9 +587,10 @@ function movePlayhead() {
   $('#playhead').style.left = `${(o / (S.duration_out || 1)) * 100}%`;
   $('#tlNow').textContent = fmt(o); $('#vTime').textContent = `${fmt(o)} / ${fmt(S.duration_out)}`;
 }
+let cutSkipSeek = false;  // 아래 이동이 잘린 구간 건너뛰기임을 seeking 핸들러에 알림
 function skipCuts() {
   const t = video.currentTime;
-  for (const c of S.cut_spans) if (t >= c.start && t < c.end - 0.03) { video.currentTime = c.end; return; }
+  for (const c of S.cut_spans) if (t >= c.start && t < c.end - 0.03) { cutSkipSeek = true; video.currentTime = c.end; return; }
 }
 let lastOv = '', lastWord = null;
 function overlayAt(t) {
@@ -656,7 +657,7 @@ video.addEventListener('play', () => {
   sfxLastT = video.currentTime - 0.15;
   document.querySelectorAll('#detail video').forEach((v) => v.pause());  // 본 영상과 동시에 디코딩하지 않게
 });
-video.addEventListener('pause', () => ($('#btnPlay').textContent = '▶ 재생'));
+video.addEventListener('pause', () => { $('#btnPlay').textContent = '▶ 재생'; sfxStopAll(); });
 $('#btnPlay').addEventListener('click', () => (video.paused ? video.play() : video.pause()));
 
 // ---------------------------------------------------------------- 드래그로 구간 선택 -> 인서트 만들기
@@ -712,7 +713,10 @@ function select(id, scroll) {
   const it = S.items.find((i) => i.id === id);
   if (it) {
     if (scroll) wordEl(it.wi_start)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    if (video.paused) { video.currentTime = it.src_start + 0.05; tick(); }
+    // 재생 중이면 재생도 이 인서트로 옮긴다 - 안 그러면 목록에서 다른 걸 골라도 이전 자리 재생이 계속 나온다 (10-12 사용자 확인).
+    // 0.5초 앞부터라 효과음·들어가는 순간이 같이 들린다. 멈춰 있으면 인서트가 보이는 첫 장면으로만
+    video.currentTime = video.paused ? it.src_start + 0.05 : Math.max(0, it.src_start - 0.5);
+    tick();
   }
 }
 // 이전/다음 인서트 (↑/↓) - 컷편집 화면의 ↑/↓ 순회와 같은 방식
@@ -837,6 +841,8 @@ function sfxLoad(id) {
     .catch((e) => { delete sfxBuf[id]; throw e; }));
 }
 function sfxPreload() { if (actx) for (const i of S.items) if (i.sfx) sfxLoad(i.sfx).catch(() => {}); }
+const sfxLive = new Set();  // 지금 소리 나는 효과음 - 영상을 멈추거나 다른 곳으로 옮기면 같이 끈다
+function sfxStopAll() { for (const src of sfxLive) { try { src.stop(); } catch (e) { /* 이미 끝남 */ } } sfxLive.clear(); }
 async function sfxPlay(id, db) {
   if (!id) return;
   try {
@@ -845,11 +851,16 @@ async function sfxPlay(id, db) {
     const src = actx.createBufferSource(); src.buffer = buf;
     const g = actx.createGain(); g.gain.value = Math.pow(10, (db ?? 0) / 20);
     src.connect(g).connect(actx.destination); src.start();
+    sfxLive.add(src); src.onended = () => sfxLive.delete(src);
   } catch (e) { /* 재생 실패는 조용히 - 편집은 계속 */ }
 }
+// 효과음만 듣기(▶) - 누를 때마다 겹쳐 쌓이지 않게 앞의 소리를 끊고
+function sfxPreview(id, db) { sfxStopAll(); sfxPlay(id, db); }
+// 잘린 구간을 건너뛰는 이동(cutSkipSeek)은 빼고 - FCP에서는 효과음이 컷을 넘어 계속 나니 미리보기도 끊지 않는다
+video.addEventListener('seeking', () => { if (cutSkipSeek) cutSkipSeek = false; else sfxStopAll(); });
 // 첫 클릭 때 오디오를 깨우고 쓰는 효과음을 미리 받아 둔다 - 재생 중 인서트 시작 지점에서 늦게 나지 않게
 document.addEventListener('pointerdown', () => { if (!actx) { actx = new AudioContext(); sfxPreload(); } }, { once: true, capture: true });
-function playSfxOf(id) { const i = S.items.find((x) => x.id === id); if (i?.sfx) sfxPlay(i.sfx, i.sfx_db); }
+function playSfxOf(id) { const i = S.items.find((x) => x.id === id); if (i?.sfx) sfxPreview(i.sfx, i.sfx_db); }
 const pctOf = (it) => it.sfx_pct ?? S.sfx_mix?.pct ?? 100;
 const dbTxt = (db) => db == null ? '' : `${db > 0 ? '+' : ''}${db.toFixed(1)}dB`;
 
@@ -1101,7 +1112,7 @@ function renderDetail() {
     const id = e.target.value || null; e.target.blur();  // 포커스가 남으면 refresh가 상세를 다시 안 그려 크기 슬라이더가 안 나온다
     try { await api('/api/insert/update', { id: it.id, action: 'sfx', sfx: id }); await refresh(); if (id) playSfxOf(it.id); } catch (err) { toast(err.message); }
   });
-  box.querySelector('#dSfxPlay')?.addEventListener('click', () => sfxPlay(it.sfx, it.sfx_db));
+  box.querySelector('#dSfxPlay')?.addEventListener('click', () => sfxPreview(it.sfx, it.sfx_db));
   const setVol = async (pct) => {
     try { await api('/api/insert/update', { id: it.id, action: 'sfx_vol', pct }); await refresh(); playSfxOf(it.id); } catch (err) { toast(err.message); }
   };

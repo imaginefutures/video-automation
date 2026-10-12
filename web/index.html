@@ -1138,6 +1138,7 @@ function renderScrollTicks() {
       ev.stopPropagation();
       el.scrollIntoView({ block: 'center', behavior: 'auto' });  // 먼 지점 점프 - 항상 즉시
       selectWordRange(it.wiStart, it.wiEnd);
+      followPlay();
     });
     layer.appendChild(tick);
   }
@@ -2033,6 +2034,7 @@ function jumpToCutSpan(dir) {  // dir: +1 = 다음(↓) · -1 = 이전(↑)
   // 실측 최대 1.5초까지 걸렸음, 속도가 생명인 동작이라 애니메이션을 아예 없앤다).
   document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'auto' });
   select(item.a, item.b);
+  followPlay();
 }
 // 사이드바 "판단 필요" 툴바(◀ 이전/다음 ▶)의 전용 탐색 - pendingList()와 같은 범위(judge layer
 // NG + 발화 블록)지만 이미 결정한 항목도 포함한다("쭉 한번에 검토"하다 마음이 바뀌어도 다시
@@ -2054,6 +2056,7 @@ function jumpToReviewItem(dir) {  // dir: +1 = 다음 · -1 = 이전
   else { const rev = [...list].reverse(); item = rev.find((p) => p.start < cur - 0.01) || rev[0]; }
   document.querySelector(`.tok[data-t="${item.a}"]`)?.scrollIntoView({ block: 'center', behavior: 'auto' });
   select(item.a, item.b);
+  followPlay();
 }
 // 화살표 좌우 = 단어 단위 커서 이동(읽는 속도로 훑기, 무음) - Shift면 선택을 그 방향으로
 // 확장한다(구 단위 일괄 삭제/살리기용). 잠긴 단어도 지나가며 볼 수는 있게 그대로 둔다 -
@@ -2197,6 +2200,10 @@ $('#btnQuickReel').addEventListener('click', () => { if (reel) stopReel(); else 
 // transcript. Space is the same toggle: play from the cursor (wherever was last clicked/
 // selected - see select()), or stop if already playing.
 function updatePlayInfo() { if (!play) $('#playInfo').textContent = `커서 ${fmt(cursorTime)}`; }
+// 항목 이동(↑/↓, 판단 필요 ◀▶, 스크롤 눈금)은 재생 중이면 재생도 그 항목으로 옮긴다 - 안 그러면 다음 항목으로 가도
+// 이전 자리 재생이 계속 나온다 (10-12 사용자 확인). 멈춰 있으면 select()가 옮긴 커서만. 단어 클릭·←/→ 커서는 그대로
+// (한 단어씩 훑을 때마다 재생이 다시 시작되면 끊긴다). 릴은 자기 순서대로 가야 하니 건드리지 않는다
+function followPlay() { if (play && !reel) playRange(cursorTime, S.duration, { skip: true }); }
 function togglePlay() { if (play) stop(); else playRange(cursorTime, S.duration, { skip: true }); }
 $('#btnPlay').addEventListener('click', togglePlay);
 // The native controls (or a click on the picture) play the raw file, which ignores every cut -

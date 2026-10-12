@@ -340,7 +340,7 @@ function render() {
       `<span class="st ${miss.length ? '' : 'ok'}">${miss.length ? '필요: ' + miss.join(' · ') : '✓ 준비됨'}</span>`;
     b.querySelector('.t').textContent = g.title || '제목 없음';
     b.title = g.title || '';
-    b.onclick = () => document.getElementById(`seg-${k}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    b.onclick = () => { document.getElementById(`seg-${k}`).scrollIntoView({ behavior: 'smooth', block: 'start' }); followPlay(g.start, `${k + 1}편`); };
     list.appendChild(b);
   });
 
@@ -380,7 +380,7 @@ function render() {
         li.innerHTML = `<span class="tag">${it.kind === 'boundary' ? '경계 확인' : '경계로는 못 고침'}</span><span><a>${fmt(S.sentences[it.sent].start)}</a> <span class="nt"></span></span><button class="ok-btn" title="확인했고 고칠 필요 없음 - 이 알림을 없앱니다">문제 없음</button>`;
         li.querySelector('.nt').textContent = it.note;
         li.querySelector('.ok-btn').onclick = () => dismissIssue(it);
-        li.querySelector('a').onclick = () => selectSent(it.sent, true);
+        li.querySelector('a').onclick = () => { selectSent(it.sent, true); followPlay(S.sentences[it.sent].start, `문장 ${fmt(S.sentences[it.sent].start)}`); };
         ul.appendChild(li);
       }
       head.appendChild(ul);
@@ -526,6 +526,12 @@ function editInline(el, initial, done) {
   el.onblur = () => end(true);
 }
 
+// 목록에서 다른 곳을 고르면: 재생 중이면 재생도 그리로 옮기고(안 그러면 이전 자리 재생이 계속 나온다 - 10-12 사용자 확인),
+// 멈춰 있으면 위치만 옮겨 Space가 거기서 시작하게
+function followPlay(t, label) {
+  if (player.paused) { player.currentTime = t; stopAt = null; $('#npLabel').textContent = label; }
+  else playRange(t, null, label);
+}
 function playRange(a, b, label) {
   player.currentTime = a; stopAt = b; player.play();
   $('#npLabel').textContent = label;
