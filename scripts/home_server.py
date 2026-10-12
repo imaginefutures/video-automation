@@ -972,12 +972,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/assets/file":
             q = parse_qs(urlsplit(self.path).query)
             try:
-                f = assets_lib.path((q.get("kind") or [""])[0], (q.get("id") or [""])[0])
-            except ValueError:
+                kind, sid = (q.get("kind") or [""])[0], (q.get("id") or [""])[0]
+                f = assets_lib.font_path(sid) if kind == "font" else assets_lib.path(kind, sid)  # 글꼴은 기본 글꼴도 미리보기
+            except (ValueError, KeyError):
                 f = None
             if not f:
                 return self.send_error(404)
-            return self._file(f, mimetypes.guess_type(str(f))[0] or "application/octet-stream")
+            ctype = {".otf": "font/otf", ".ttf": "font/ttf", ".woff": "font/woff"}.get(f.suffix.lower())
+            return self._file(f, ctype or mimetypes.guess_type(str(f))[0] or "application/octet-stream")
         if path == "/api/setup/ffmpeg/status":
             with _ffmpeg_install_lock:
                 return self._json(dict(_ffmpeg_install_state))
@@ -1137,8 +1139,10 @@ class Handler(BaseHTTPRequestHandler):
 
 # ------------------------------------------------------------------------------ 공통 자산
 def assets_usage() -> dict[str, dict[str, int]]:
-    """효과음 id → 그 효과음을 단 인서트 수 (취소한 인서트 제외). 지울 때 몇 곳에서 빠지는지 보여 주려고."""
+    """지울 때 몇 곳에서 빠지는지 보여 주려고: 효과음 id → 그 효과음을 단 인서트 수(취소한 인서트 제외),
+    글꼴 id → 글자 스타일에 그 글꼴을 고른 영상 수."""
     out: dict[str, int] = {}
+    font: dict[str, int] = {}
     root = videos_root()
     for folder in (sorted(p for p in root.iterdir() if is_project_folder(p)) if root.is_dir() else []):
         try:
@@ -1148,13 +1152,19 @@ def assets_usage() -> dict[str, dict[str, int]]:
         for it in data.get("items", []):
             if it.get("sfx") and it.get("status") != "rejected":
                 out[it["sfx"]] = out.get(it["sfx"], 0) + 1
-    return {"sfx": out}
+        for fid in {v["font"] for v in (data.get("styles") or {}).values() if v.get("font")}:
+            font[fid] = font.get(fid, 0) + 1
+    return {"sfx": out, "font": font}
 
 
 def assets_view() -> list[dict]:
     used = assets_usage()
-    return [{"kind": k, **meta, "items": [{**it, "used": used.get(k, {}).get(it["id"], 0)} for it in assets_lib.items(k)]}
+    view = [{"kind": k, **meta, "items": [{**it, "used": used.get(k, {}).get(it["id"], 0)} for it in assets_lib.items(k)]}
             for k, meta in assets_lib.KINDS.items()]
+    for v in view:
+        if v["kind"] == "font":  # 기본 글꼴은 보이기만 (지우거나 바꿀 수 없음)
+            v["builtin"] = [{**c, "used": used["font"].get(c["id"], 0)} for c in assets_lib.font_choices() if c["builtin"]]
+    return view
 
 
 class _Tee:

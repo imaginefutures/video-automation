@@ -747,7 +747,7 @@ function nextPending() {
 // ---------------------------------------------------------------- 영상 설정 (사이드바) - 열면 오른쪽 상세 자리가 그 설정 패널로 바뀐다
 let panel = null;  // null | 'styles' | 'sfx'
 function panelKey() {
-  return JSON.stringify(panel === 'styles' ? S.styles
+  return JSON.stringify(panel === 'styles' ? [S.styles, S.fonts]
     : [S.sfx_mix, S.items.filter((i) => i.sfx).map((i) => [i.id, i.sfx, i.sfx_pct, i.sfx_db, i.status, i.t_start])]);
 }
 function renderPanel() { $('#decisionBar').style.display = 'none'; panel === 'styles' ? renderStyles() : renderSfxMix(); }
@@ -773,16 +773,16 @@ function panelHead(title) {
 
 // ---------------------------------------------------------------- 글자 스타일 (7종, 영상마다 위치·크기 조정)
 let styleFocus = null;
-const styleEdit = {};  // key -> {size,x,y} 아직 적용 안 한 값
+const styleEdit = {};  // key -> {size,x,y,font} 아직 적용 안 한 값
 const SL = [['size', '크기', 24, 160, 1, 'px'], ['x', '가로', 0, 100, 0.5, '%'], ['y', '세로', 0, 100, 0.5, '%']];
-function styleVals(st) { return { ...{ size: st.size, x: st.x, y: st.y }, ...(styleEdit[st.key] || {}) }; }
+function styleVals(st) { return { ...{ size: st.size, x: st.x, y: st.y, font: st.font }, ...(styleEdit[st.key] || {}) }; }
 let stylePrevTimer = null;
 function showStylePreview(key) {
   const st = S.styles.find((x) => x.key === key); if (!st) return;
   const v = styleVals(st);
   clearTimeout(stylePrevTimer);
   stylePrevTimer = setTimeout(() => {
-    $('#ovLayers').innerHTML = `<img class="ov" src="/api/insert/style_preview?key=${key}&size=${v.size}&x=${v.x}&y=${v.y}&_=${Date.now()}" alt="">`;
+    $('#ovLayers').innerHTML = `<img class="ov" src="/api/insert/style_preview?key=${key}&size=${v.size}&x=${v.x}&y=${v.y}&font=${encodeURIComponent(v.font)}&_=${Date.now()}" alt="">`;
     $('#stageBadge').style.display = 'block'; $('#stageBadge').textContent = `${st.name} 미리보기`;
     lastOv = 'style-preview';
   }, 120);
@@ -809,6 +809,8 @@ function renderStyles() {
       const v = styleVals(st); const dirty = !!styleEdit[st.key];
       return `<section class="card-sec style-card${styleFocus === st.key ? ' focus' : ''}" data-key="${st.key}">
         <h3>${esc(st.name)} <span class="tag">${st.count}개</span>${st.changed ? '<span class="tag ch">조정됨</span>' : ''}</h3>
+        <div class="sl"><span>글꼴</span><select data-k="font" style="grid-column:2/4;min-width:0">${(S.fonts || []).map((f) =>
+          `<option value="${esc(f.id)}"${f.id === v.font ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}</select></div>
         ${SL.map(([k, lbl, mn, mx, step, unit]) => `<div class="sl"><span>${lbl}</span><input type="range" data-k="${k}" min="${mn}" max="${mx}" step="${step}" value="${v[k]}"><span class="val">${(+v[k]).toFixed(k === 'size' ? 0 : 1)}${unit}</span></div>`).join('')}
         <div class="row" style="margin-top:8px;justify-content:flex-end">
           <button class="btn" data-st="reset" ${st.changed || dirty ? '' : 'disabled'}>기본값</button>
@@ -819,11 +821,11 @@ function renderStyles() {
   box.querySelectorAll('.style-card').forEach((card) => {
     const key = card.dataset.key; const st = S.styles.find((x) => x.key === key);
     card.addEventListener('pointerdown', () => { if (styleFocus !== key) focusStyle(key); });
-    card.querySelectorAll('input[type=range]').forEach((r) => r.addEventListener('input', () => {
-      const cur = styleVals(st); cur[r.dataset.k] = +r.value;
-      const same = SL.every(([k]) => cur[k] === st[k]);
+    card.querySelectorAll('input[type=range], select[data-k]').forEach((r) => r.addEventListener(r.tagName === 'SELECT' ? 'change' : 'input', () => {
+      const cur = styleVals(st); cur[r.dataset.k] = r.dataset.k === 'font' ? r.value : +r.value;
+      const same = ['font', ...SL.map(([k]) => k)].every((k) => cur[k] === st[k]);
       if (same) delete styleEdit[key]; else styleEdit[key] = cur;
-      r.parentElement.querySelector('.val').textContent = `${(+r.value).toFixed(r.dataset.k === 'size' ? 0 : 1)}${r.dataset.k === 'size' ? 'px' : '%'}`;
+      if (r.dataset.k !== 'font') r.parentElement.querySelector('.val').textContent = `${(+r.value).toFixed(r.dataset.k === 'size' ? 0 : 1)}${r.dataset.k === 'size' ? 'px' : '%'}`;
       card.querySelector('[data-st=apply]').disabled = !styleEdit[key];
       card.querySelector('[data-st=reset]').disabled = !(st.changed || styleEdit[key]);
       styleFocus = key; showStylePreview(key);

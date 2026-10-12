@@ -28,7 +28,9 @@ OUTRO_W, OUTRO_H = 1920, 1080
 KINDS = {
     "sfx": {"label": "효과음", "mode": "list", "media": "audio", "max_mb": 100},
     "outro": {"label": "아웃트로 이미지", "mode": "single", "media": "image", "max_mb": 30},
+    "font": {"label": "글꼴", "mode": "list", "media": "font", "max_mb": 30},
 }
+FONT_EXTS = {".ttf", ".otf", ".woff"}  # Pillow(FreeType)가 읽는 형식 - woff2는 못 읽는다
 _lock = threading.Lock()
 
 
@@ -139,7 +141,24 @@ def _store_outro(src: Path, dest_stem: Path) -> tuple[Path, dict]:
     return f, {}
 
 
-_STORE = {"sfx": _store_audio, "outro": _store_outro}
+def _store_font(src: Path, dest_stem: Path) -> tuple[Path, dict]:
+    """글자 스타일에서 고를 글꼴. 실제로 그려지는지 Pillow로 열어 보고, 이름은 글꼴 안의 이름으로."""
+    from PIL import ImageFont
+    ext = src.suffix.lower()
+    if ext not in FONT_EXTS:
+        raise ValueError(f"지원하지 않는 형식입니다 ({ext or '확장자 없음'}) - ttf, otf, woff를 쓰세요")
+    f = dest_stem.with_suffix(ext)
+    src.replace(f)
+    try:
+        family, style = ImageFont.truetype(str(f), 40).getname()
+    except Exception:
+        f.unlink(missing_ok=True)
+        raise ValueError("글꼴로 읽을 수 없는 파일입니다")
+    name = f"{family} {style}".strip() if style and style.lower() not in ("regular", "normal") else (family or "")
+    return f, ({"name": name[:40]} if name else {})
+
+
+_STORE = {"sfx": _store_audio, "outro": _store_outro, "font": _store_font}
 
 
 def add(kind: str, filename: str, data: bytes) -> dict:
@@ -158,7 +177,7 @@ def add(kind: str, filename: str, data: bytes) -> dict:
     finally:
         src.unlink(missing_ok=True)
     name = re.sub(r"\s+", " ", Path(filename).stem).strip()[:40] or sid
-    item = {"id": sid, "name": name, "file": f.name, **info}
+    item = {"id": sid, "name": name, "file": f.name, **info}  # info의 name(글꼴 안 이름 등)이 파일 이름보다 앞선다
     with _lock:
         all_ = _load()
         old = all_.get(kind, []) if k["mode"] == "list" else []
@@ -195,3 +214,18 @@ def delete(kind: str, sid: str = "") -> None:
             (ASSETS_DIR / kind / s["file"]).unlink(missing_ok=True)
         all_[kind] = [s for s in lst if s not in hit]
         _save(all_)
+
+
+# ---- 글꼴: 글자 스타일이 고르는 값은 기본 글꼴 키(fonts.FONTS) 또는 올린 글꼴의 id
+BUILTIN_FONTS = ("gangwon", "jeju", "pretendard")
+
+
+def font_choices() -> list[dict]:
+    import fonts
+    return ([{"id": k, "name": fonts.LABELS[k], "builtin": True} for k in BUILTIN_FONTS]
+            + [{"id": s["id"], "name": s["name"], "builtin": False} for s in items("font")])
+
+
+def font_path(key: str) -> Path | None:
+    import fonts
+    return fonts.path(key) if key in fonts.FONTS else path("font", key)

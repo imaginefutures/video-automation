@@ -110,6 +110,7 @@
   .asset-sec button.link { border: 0; background: none; padding: 4px 6px; color: var(--muted); }
   .asset-sec button.link:hover { color: var(--ink); }
   .asset-sec .empty { font-size: 13px; color: var(--muted); padding: 4px 0; }
+  .asset-row .font-sample { margin-left: 10px; font-size: 17px; color: var(--ink); }
   .asset-img { width: 320px; max-width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
   #modal .field input[type=number] { width: 72px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); font: inherit; font-size: 13px; }
   #modal .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
@@ -537,18 +538,22 @@ $('#btnAssetsBack').addEventListener('click', () => setTab(workTab));
 
 // --------------------------------------------------------------------------------- 공통 자산
 // 모든 영상이 같이 쓰는 파일(docs/백로그/공통-자산.md). 등록·교체·삭제는 여기서만, 각 작업 화면은 골라 쓰기만 한다.
-const ASSET_ACCEPT = { audio: 'audio/*,video/*,.mov,.mp4,.mp3,.wav,.m4a,.aif,.aiff,.caf,.flac,.ogg', image: 'image/png,image/jpeg,image/webp' };
+const ASSET_ACCEPT = { audio: 'audio/*,video/*,.mov,.mp4,.mp3,.wav,.m4a,.aif,.aiff,.caf,.flac,.ogg', image: 'image/png,image/jpeg,image/webp', font: '.ttf,.otf,.woff' };
 let assetAudio = null;
 async function loadAssets() {
   let kinds;
   try { kinds = (await (await fetch('/api/assets')).json()).kinds; } catch (e) { toast('서버에 연결할 수 없습니다'); return; }
-  $('#assetsPanel').innerHTML = kinds.map(assetSecHtml).join('');
+  // 글꼴은 그 글꼴로 쓴 예시 줄로 보여 준다
+  const fk = kinds.find((k) => k.kind === 'font');
+  const faces = fk ? [...(fk.builtin || []), ...fk.items].map((x) => `@font-face{font-family:"asset-${x.id}";src:url("/api/assets/file?kind=font&id=${x.id}")}`).join('') : '';
+  $('#assetsPanel').innerHTML = `<style>${faces}</style>` + kinds.map(assetSecHtml).join('');
   kinds.forEach(wireAssetSec);
 }
 function assetSecHtml(k) {
   const single = k.mode === 'single'; const it = k.items[0];
   const body = single
     ? (it ? `<img class="asset-img" src="/api/assets/file?kind=${k.kind}&t=${Date.now()}" alt="${esc(k.label)}">` : '<div class="empty">없음</div>')
+    : k.kind === 'font' ? fontRowsHtml(k)
     : (k.items.length ? k.items.map((x) => `<div class="asset-row" data-id="${x.id}">
         <button class="play" data-play title="듣기">▶</button>
         <span class="nm" title="${esc(x.name)}">${esc(x.name)}</span>
@@ -562,6 +567,15 @@ function assetSecHtml(k) {
       <button data-add>${single ? (it ? '바꾸기' : '올리기') : '＋ 추가'}</button>
       <input type="file" hidden accept="${ASSET_ACCEPT[k.media]}" ${single ? '' : 'multiple'}></div>
     <div>${body}</div></section>`;
+}
+function fontRowsHtml(k) {
+  const row = (x, builtin) => `<div class="asset-row font-row" data-id="${x.id}">
+      <span class="dim" style="text-align:center">Aa</span>
+      <span class="nm"><span>${esc(x.name)}</span> <span class="font-sample" style="font-family:'asset-${x.id}'">가나다 ABC 123</span></span>
+      <span class="dim">${builtin ? '기본' : ''}</span>
+      <span class="dim">${x.used ? `영상 ${x.used}개` : ''}</span>
+      ${builtin ? '<span></span><span></span>' : '<button class="link" data-ren>이름</button><button class="link" data-del>삭제</button>'}</div>`;
+  return (k.builtin || []).map((x) => row(x, true)).join('') + k.items.map((x) => row(x, false)).join('');
 }
 async function uploadAssets(kind, files, btn) {
   if (!files.length) return;
@@ -598,7 +612,8 @@ function wireAssetSec(k) {
   }
   sec.querySelectorAll('.asset-row').forEach((r) => {
     const x = k.items.find((i) => i.id === r.dataset.id);
-    r.querySelector('[data-play]').addEventListener('click', () => {
+    if (!x) return;  // 기본 글꼴
+    r.querySelector('[data-play]')?.addEventListener('click', () => {
       if (assetAudio) assetAudio.pause();
       assetAudio = new Audio(`/api/assets/file?kind=${k.kind}&id=${x.id}`); assetAudio.play().catch(() => {});
     });
@@ -607,8 +622,10 @@ function wireAssetSec(k) {
       if (name && name.trim() && name.trim() !== x.name) assetPost('/api/assets/rename', { kind: k.kind, id: x.id, name: name.trim() });
     });
     r.querySelector('[data-del]').addEventListener('click', () => {
-      const where = x.used ? `인서트 ${x.used}곳에서 빠지고, ` : '';
-      if (confirm(`"${x.name}"을 지울까요? ${where}이미 내보낸 FCP 프로젝트에서도 파일을 찾을 수 없게 됩니다.`)) assetPost('/api/assets/delete', { kind: k.kind, id: x.id });
+      const msg = k.kind === 'font'
+        ? `"${x.name}"을 지울까요? ${x.used ? `영상 ${x.used}개의 글자 스타일이 기본 글꼴로 돌아갑니다 (이미 만든 인서트 이미지는 그대로).` : ''}`
+        : `"${x.name}"을 지울까요? ${x.used ? `인서트 ${x.used}곳에서 빠지고, ` : ''}이미 내보낸 FCP 프로젝트에서도 파일을 찾을 수 없게 됩니다.`;
+      if (confirm(msg)) assetPost('/api/assets/delete', { kind: k.kind, id: x.id });
     });
   });
 }

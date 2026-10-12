@@ -430,6 +430,7 @@ class InsertStore:
             "items": items,
             "fonts_missing": fonts.missing_labels(),
             "styles": self.styles_view(),
+            "fonts": assets_lib.font_choices(),
             "sfx_lib": assets_lib.items("sfx"),
             "sfx_mix": self.sfx_mix_view(items),
             "suggest": self.data.get("suggest") or {"state": "none"},
@@ -1347,7 +1348,7 @@ Duration D = {dur:.2f} seconds.
         for key in STYLE_ORDER:
             st = merged_style(key, ov)
             d = STYLE_DEFAULTS[key]
-            view.append({"key": key, "name": d["name"], "size": st["size"], "x": st["x"], "y": st["y"],
+            view.append({"key": key, "name": d["name"], "size": st["size"], "x": st["x"], "y": st["y"], "font": st["font"],
                          "default": {k: d[k] for k in STYLE_EDITABLE}, "changed": key in ov,
                          "count": len(self._style_items(key))})
         return view
@@ -1357,7 +1358,7 @@ Duration D = {dur:.2f} seconds.
         import io
         if key not in STYLE_DEFAULTS:
             raise ValueError("알 수 없는 스타일입니다")
-        ov = {key: {k: float(values[k]) for k in STYLE_EDITABLE if k in values}}
+        ov = {key: _style_values(values)}
         items = self._style_items(key)
         dec = (items[0].get("decision") or {}) if items else {}
         lines = dec.get("lines") or STYLE_DEFAULTS[key]["sample"]
@@ -1377,7 +1378,7 @@ Duration D = {dur:.2f} seconds.
                 styles.pop(key, None)
             else:
                 d = STYLE_DEFAULTS[key]
-                clean = {k: float(values[k]) for k in STYLE_EDITABLE if k in values}
+                clean = _style_values(values)
                 clean = {k: v for k, v in clean.items() if v != d[k]}
                 if clean:
                     styles[key] = clean
@@ -1504,8 +1505,9 @@ Duration D = {dur:.2f} seconds.
 # ----------------------------------------------------------------------------- 텍스트 렌더 (가이드 5장 스타일)
 
 def _font(size: int, key: str = "gangwon"):
+    """key = 기본 글꼴 키(fonts.FONTS) 또는 공통 자산에 올린 글꼴 id."""
     from PIL import ImageFont
-    p = fonts.path(key)
+    p = assets_lib.font_path(key)
     if p:
         return ImageFont.truetype(str(p), size)
     if Path(FALLBACK_FONT[0]).exists():  # 받지 못했을 때 - 인서트에 font_fallback 표시가 남는다
@@ -1544,7 +1546,17 @@ STYLE_DEFAULTS = {
     "caption": {"name": "이미지 위 노란 글씨", "size": 64, "x": 54.0, "y": 12.037, "align": "left", "anchor": "top", "max_w": 44, "font": "pretendard",
                 "color": "yellow", "dim": False, "stroke_min": 5, "stroke_div": 12, "sample": ["이건 막대기 아니고~ 숟가락이야!"]},
 }
-STYLE_EDITABLE = ("size", "x", "y")
+STYLE_EDITABLE = ("size", "x", "y", "font")  # font = 기본 글꼴 키 또는 공통 자산 글꼴 id (10-12 사용자 요청)
+
+
+def _style_values(values: dict) -> dict:
+    """화면에서 온 조정값 정리 - 숫자는 숫자로, 글꼴은 고를 수 있는 것만."""
+    out = {k: float(values[k]) for k in ("size", "x", "y") if k in values and values[k] not in (None, "")}
+    if values.get("font"):
+        if values["font"] not in {c["id"] for c in assets_lib.font_choices()}:
+            raise ValueError("없는 글꼴입니다")
+        out["font"] = str(values["font"])
+    return out
 
 
 def _find_anchor(ws: list[dict], anchor: str) -> tuple[int, int]:
@@ -1581,6 +1593,8 @@ def merged_style(key: str, overrides: dict | None) -> dict:
     for k, v in ((overrides or {}).get(key) or {}).items():
         if k in STYLE_EDITABLE:
             st[k] = v
+    if st["font"] != STYLE_DEFAULTS[key]["font"] and assets_lib.font_path(st["font"]) is None:
+        st["font"] = STYLE_DEFAULTS[key]["font"]  # 공통 자산에서 지운 글꼴 - 기본 글꼴로 그린다
     return st
 
 
