@@ -176,6 +176,33 @@ def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: 
                     f'duration="{clock.time_str_frames(min(dur, media_frames))}" videoRole="{escape(ins["role"])}" name="{escape(ins["name"])}"/>')
             else:
                 print(f"[inserts] {f.name}: unsupported layer type - skipped")
+    # 효과음 (10-12): 인서트가 시작하는 순간 파일 전체를 재생 - 연결 오디오 클립, 역할 '효과음(effects)'.
+    # 겹치는 효과음은 서로 다른 아래 레인(-1, -2, …)으로
+    lanes_end: list[int] = []  # 레인별로 이미 차지한 타임라인 끝 프레임
+    sfx_assets: dict[str, str] = {}
+    for n, ins in enumerate(inserts):
+        sx = ins.get("sfx")
+        if not sx:
+            continue
+        t0 = timeline_frame(ins["start"])
+        i = max(k for k, off in enumerate(seg_offset_frames) if off <= t0)
+        child_off = clock.frames(kept_segments[i]["source_start"]) + (t0 - seg_offset_frames[i])
+        dur = max(1, -(-int(round(sx["duration"] * clock.fps * 1000)) // 1000))  # 올림 - 끝이 잘리지 않게
+        k = next((j for j, end in enumerate(lanes_end) if end <= t0), len(lanes_end))
+        if k == len(lanes_end):
+            lanes_end.append(0)
+        lanes_end[k] = t0 + dur
+        f = Path(sx["path"])
+        ref = sfx_assets.get(str(f))
+        if ref is None:
+            ref = sfx_assets[str(f)] = f"vsfx{len(sfx_assets)}"
+            src = f.resolve().as_uri() if absolute else Path(relpath(f.absolute(), start=out_path.absolute().parent)).as_posix()
+            resources.append(f'<asset id="{ref}" name="{escape(sx["name"])}" start="0s" duration="{clock.time_str_frames(dur)}" hasAudio="1" '
+                             f'audioSources="1" audioChannels="{int(sx.get("channels", 2))}" audioRate="{int(sx.get("rate", 48000))}">'
+                             f'<media-rep kind="original-media" src="{escape(src)}"/></asset>')
+        by_seg.setdefault(i, []).append(
+            f'<asset-clip ref="{ref}" lane="{-(k + 1)}" offset="{clock.time_str_frames(child_off)}" duration="{clock.time_str_frames(dur)}" '
+            f'audioRole="effects" name="{escape("효과음 " + sx["name"])}"/>')
     return (resources if len(resources) > 1 else []), by_seg
 
 

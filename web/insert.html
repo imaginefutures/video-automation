@@ -176,6 +176,17 @@
   .cands button { padding: 0; border: 2px solid transparent; border-radius: var(--r-sm); overflow: hidden; background: #000; aspect-ratio: 16/9; }
   .cands button img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .cands button.on { border-color: var(--accent); }
+  .style-card { cursor: pointer; }
+  .style-card.focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .style-card .sl { display: grid; grid-template-columns: 52px 1fr 58px; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .style-card input[type=range] { width: 100%; accent-color: var(--accent); }
+  .style-card .val { font-family: var(--mono); font-size: 12px; text-align: right; color: var(--ink); }
+  .style-card .tag { font-size: 11px; border-radius: var(--r-full); padding: 0 7px; line-height: 18px; background: var(--chip); color: var(--muted); font-weight: 400; }
+  .style-card .tag.ch { background: var(--accent-soft); color: var(--accent-strong); }
+  .side-tools { display: flex; gap: 6px; margin-top: 10px; }
+  .side-tools .btn { flex: 1; }
+  .side-tools .btn.on { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+  .sfx-mark { font-size: 11px; color: var(--muted); }
   .confirm-row { margin-top: 8px; padding: 9px 11px; border: 1px solid var(--accent-soft); background: #f5f9ff; border-radius: var(--r-md); font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .confirm-row .primary { padding: 7px 14px; font-size: 13px; }
   .cands button { position: relative; }
@@ -215,6 +226,7 @@
       </div>
       <div class="sub"><a href="#" id="backCut">컷편집으로</a></div>
       <div id="counts"></div>
+      <div class="side-tools"><button class="btn" id="btnStyles">글자 스타일</button></div>
     </div>
     <div id="sideScroll">
       <div class="label">인서트 목록</div>
@@ -342,6 +354,11 @@ let lastDetailKey = '';
 function renderAll() {
   renderCounts(); renderList(); renderTimeline(); paintInserts(); renderFontWarn(); renderSugBar();
   // 상세는 바뀌었을 때만 다시 그린다 - 매번 그리면 미리보기 영상이 새로 만들어져 본 영상 재생이 끊기고 싱크가 밀린다
+  if (styleMode) {  // 슬라이더를 끄는 중에 폴링이 패널을 다시 그리지 않게 - 스타일 값이 바뀌었을 때만
+    const sk = JSON.stringify(S.styles);
+    if (sk !== lastDetailKey) { lastDetailKey = sk; renderStyles(); }
+    return;
+  }
   const it = S.items.find((i) => i.id === selId);
   const key = JSON.stringify([selId, it, pendingForm]);
   if (key !== lastDetailKey) { lastDetailKey = key; renderDetail(); } else renderDecisionBar();
@@ -465,7 +482,7 @@ function renderList() {
   for (const it of sortedItems()) {
     const b = document.createElement('button');
     b.className = `ins-item${it.id === selId ? ' active' : ''}${it.status === 'rejected' ? ' rejected' : ''}`;
-    b.innerHTML = `<span class="tm mono">${fmt(it.t_start)}</span><span class="meta">${formChip(it)}${statusChip(it)}</span><span class="tx">${esc(itemLabel(it))}</span>`;
+    b.innerHTML = `<span class="tm mono">${fmt(it.t_start)}${it.sfx ? ' <span class="sfx-mark" title="효과음">♪</span>' : ''}</span><span class="meta">${formChip(it)}${statusChip(it)}</span><span class="tx">${esc(itemLabel(it))}</span>`;
     b.addEventListener('click', () => select(it.id, true));
     list.appendChild(b);
   }
@@ -546,10 +563,18 @@ function overlayStruct(t, main) {
   const isStruct = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
   return S.items.find((i) => i !== main && isStruct(i) && ['ready', 'approved'].includes(i.status) && i.files?.length && t >= i.src_start && t < i.src_end) || null;
 }
+let sfxLastT = null;
 function tick() {
   if (!S) return;
   if (!video.paused) skipCuts();
+  // 재생 중 인서트 시작 지점을 지나면 연결된 효과음을 파일 길이 그대로 재생
+  const nowT = video.currentTime;
+  if (!video.paused && sfxLastT != null && nowT > sfxLastT && nowT - sfxLastT < 1) {
+    for (const i of S.items) if (i.sfx && i.status !== 'rejected' && i.src_start > sfxLastT && i.src_start <= nowT) sfxPlay(i.sfx);
+  }
+  sfxLastT = nowT;
   movePlayhead();
+  if (styleMode && styleFocus) return;  // 스타일 미리보기 중에는 인서트 겹쳐 보기를 멈춘다
   const it = overlayAt(video.currentTime);
   const st = overlayStruct(video.currentTime, it);
   const key = (it ? it.id + it.files.join() : '') + (st ? '|' + st.id + st.files.join() : '');
@@ -655,6 +680,92 @@ function nextPending() {
   return list.find((i) => i.status === 'ready' && (!cur || (i.t_start ?? 0) > (cur.t_start ?? 0))) || list.find((i) => i.status === 'ready');
 }
 
+// ---------------------------------------------------------------- 글자 스타일 (7종, 영상마다 위치·크기 조정)
+let styleMode = false, styleFocus = null;
+const styleEdit = {};  // key -> {size,x,y} 아직 적용 안 한 값
+const SL = [['size', '크기', 24, 160, 1, 'px'], ['x', '가로', 0, 100, 0.5, '%'], ['y', '세로', 0, 100, 0.5, '%']];
+function styleVals(st) { return { ...{ size: st.size, x: st.x, y: st.y }, ...(styleEdit[st.key] || {}) }; }
+let stylePrevTimer = null;
+function showStylePreview(key) {
+  const st = S.styles.find((x) => x.key === key); if (!st) return;
+  const v = styleVals(st);
+  clearTimeout(stylePrevTimer);
+  stylePrevTimer = setTimeout(() => {
+    $('#ovLayers').innerHTML = `<img class="ov" src="/api/insert/style_preview?key=${key}&size=${v.size}&x=${v.x}&y=${v.y}&_=${Date.now()}" alt="">`;
+    $('#stageBadge').style.display = 'block'; $('#stageBadge').textContent = `${st.name} 미리보기`;
+    lastOv = 'style-preview';
+  }, 120);
+}
+function focusStyle(key) {
+  styleFocus = key; video.pause();
+  // 그 스타일을 쓰는 첫 인서트 위치의 화면 위에서 미리 본다
+  const it = sortedItems().find((i) => i.files?.length && ['ready', 'approved'].includes(i.status) &&
+    (key === 'caption' ? ['image', 'asset'].includes(i.form) && i.files.length > 1 : i.form === 'text' && styleKeyOf(i) === key));
+  if (it) video.currentTime = it.src_start + 0.05;
+  document.querySelectorAll('.style-card').forEach((c) => c.classList.toggle('focus', c.dataset.key === key));
+  showStylePreview(key);
+}
+function styleKeyOf(it) {
+  const d = it.decision || {};
+  if (d.layout === 'top') return d.layer === '구조' ? 'section' : 'summary';
+  return d.layout;
+}
+function renderStyles() {
+  $('#decisionBar').style.display = 'none';
+  const box = $('#detail');
+  box.innerHTML = `<div class="row" style="justify-content:space-between;margin:10px 0 0"><b style="font-size:14px">글자 스타일</b><button class="btn" id="stClose">닫기</button></div>` +
+    S.styles.map((st) => {
+      const v = styleVals(st); const dirty = !!styleEdit[st.key];
+      return `<section class="card-sec style-card${styleFocus === st.key ? ' focus' : ''}" data-key="${st.key}">
+        <h3>${esc(st.name)} <span class="tag">${st.count}개</span>${st.changed ? '<span class="tag ch">조정됨</span>' : ''}</h3>
+        ${SL.map(([k, lbl, mn, mx, step, unit]) => `<div class="sl"><span>${lbl}</span><input type="range" data-k="${k}" min="${mn}" max="${mx}" step="${step}" value="${v[k]}"><span class="val">${(+v[k]).toFixed(k === 'size' ? 0 : 1)}${unit}</span></div>`).join('')}
+        <div class="row" style="margin-top:8px;justify-content:flex-end">
+          <button class="btn" data-st="reset" ${st.changed || dirty ? '' : 'disabled'}>기본값</button>
+          <button class="primary" data-st="apply" style="padding:7px 14px;font-size:13px" ${dirty ? '' : 'disabled'}>이 영상에 적용${st.count ? ` (${st.count}개)` : ''}</button></div>
+      </section>`;
+    }).join('');
+  $('#stClose').addEventListener('click', () => toggleStyles(false));
+  box.querySelectorAll('.style-card').forEach((card) => {
+    const key = card.dataset.key; const st = S.styles.find((x) => x.key === key);
+    card.addEventListener('pointerdown', () => { if (styleFocus !== key) focusStyle(key); });
+    card.querySelectorAll('input[type=range]').forEach((r) => r.addEventListener('input', () => {
+      const cur = styleVals(st); cur[r.dataset.k] = +r.value;
+      const same = SL.every(([k]) => cur[k] === st[k]);
+      if (same) delete styleEdit[key]; else styleEdit[key] = cur;
+      r.parentElement.querySelector('.val').textContent = `${(+r.value).toFixed(r.dataset.k === 'size' ? 0 : 1)}${r.dataset.k === 'size' ? 'px' : '%'}`;
+      card.querySelector('[data-st=apply]').disabled = !styleEdit[key];
+      card.querySelector('[data-st=reset]').disabled = !(st.changed || styleEdit[key]);
+      styleFocus = key; showStylePreview(key);
+    }));
+    card.querySelector('[data-st=apply]').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        const r = await api('/api/insert/style', { key, values: styleEdit[key] });
+        delete styleEdit[key]; toast(`${st.name} 적용 - ${r.restyled}개 다시 그림`); await refresh(); focusStyle(key);
+      } catch (err) { toast(err.message); }
+    });
+    card.querySelector('[data-st=reset]').addEventListener('click', async (e) => {
+      e.stopPropagation(); delete styleEdit[key];
+      if (!st.changed) { renderStyles(); focusStyle(key); return; }
+      try { const r = await api('/api/insert/style', { key, reset: true }); toast(`${st.name} 기본값 - ${r.restyled}개 다시 그림`); await refresh(); focusStyle(key); }
+      catch (err) { toast(err.message); }
+    });
+  });
+}
+// ---------------------------------------------------------------- 효과음 (라이브러리는 홈 설정에서 관리)
+const sfxAudio = {};
+function sfxPlay(id) {
+  if (!id) return;
+  const a = sfxAudio[id] || (sfxAudio[id] = new Audio(`/api/sfx/file?id=${id}`));
+  a.currentTime = 0; a.play().catch(() => {});
+}
+function toggleStyles(on) {
+  styleMode = on; $('#btnStyles').classList.toggle('on', on);
+  if (!on) { styleFocus = null; $('#decisionBar').style.display = ''; lastOv = ''; lastDetailKey = ''; renderDetail(); tick(); }
+  else { renderStyles(); if (S.styles?.length) focusStyle(styleFocus || S.styles[0].key); }
+}
+$('#btnStyles').addEventListener('click', () => toggleStyles(!styleMode));
+
 function renderDecisionBar() {
   const bar = $('#decisionBar'); const it = S.items.find((i) => i.id === selId);
   const pend = S.items.filter((i) => i.status === 'ready').length;
@@ -714,6 +825,7 @@ function card(num, title, desc, body) {
 }
 
 function renderDetail() {
+  if (styleMode) { renderStyles(); return; }
   renderDecisionBar();
   const box = $('#detail'); const it = S.items.find((i) => i.id === selId);
   lastDetailKey = JSON.stringify([selId, it, pendingForm]);
@@ -788,6 +900,11 @@ function renderDetail() {
         <div class="row" style="margin-top:6px"><button class="btn" id="dNoteGo">요청 반영해 다시 만들기 · ${COST[it.form] || ''}</button></div></div>`;
     }
     const pf = pendingForm && pendingForm.id === it.id ? pendingForm.form : null;
+    const lib = S.sfx_lib || [];
+    f += `<div class="sub"><div class="lbl">효과음</div>${lib.length ? `<div class="row"><select id="dSfx" style="flex:1"><option value="">없음</option>${lib.map((x) =>
+      `<option value="${x.id}"${x.id === it.sfx ? ' selected' : ''}>${esc(x.name)} (${x.duration.toFixed(1)}s)</option>`).join('')}</select>
+      <button class="btn" id="dSfxPlay" ${it.sfx ? '' : 'disabled'}>▶</button></div>` : `<div class="note">홈 설정에서 효과음 등록</div>`}
+      ${it.sfx && !lib.some((x) => x.id === it.sfx) ? '<div class="warn">연결된 효과음이 삭제됐어요</div>' : ''}</div>`;
     f += `<div class="sub"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
       `<button data-form="${k}" class="${k === (pf || it.form) ? 'on' : ''}">${v}</button>`).join('')}</div>
       ${pf ? `<div class="confirm-row"><span><b>${FORM_KO[pf]}</b>${pf === it.form ? '(으)로 다시' : '(으)로 새로'} 만들어요 · ${COST[pf]}</span>
@@ -817,6 +934,11 @@ function renderDetail() {
     if (['image', 'video'].includes(it.form) && !confirm(`요청을 반영해 ${FORM_KO[it.form]}을(를) 다시 만들까요? (${COST[it.form]})`)) return;
     act(it, 'regenerate', { note });
   });
+  box.querySelector('#dSfx')?.addEventListener('change', async (e) => {
+    const id = e.target.value || null;
+    try { await api('/api/insert/update', { id: it.id, action: 'sfx', sfx: id }); if (id) sfxPlay(id); await refresh(); } catch (err) { toast(err.message); }
+  });
+  box.querySelector('#dSfxPlay')?.addEventListener('click', () => sfxPlay(it.sfx));
   box.querySelector('#dLayout')?.addEventListener('change', (e) => { $('#dSource').style.display = e.target.value === 'quote' ? '' : 'none'; });
   box.querySelector('#dApplyText')?.addEventListener('click', () => act(it, 'edit_text', {
     lines: $('#dLines').value.split('\n').map((s) => s.trim()).filter(Boolean),

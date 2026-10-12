@@ -639,12 +639,14 @@ function renderSetupModal(data) {
     <p class="note">API 키와 ffmpeg는 컷편집 파이프라인을 돌리는 데 필요합니다</p>
     ${setupBodyHtml(data)}
     ${outroHtml(data)}
+    ${sfxHtml()}
     <div style="display:flex;gap:8px;margin-top:16px">
       <button id="modalNo">닫기</button>
       <button id="btnSaveKeys" class="primary">저장</button>
     </div>`);
   wireSetupButtons(data, saveApiKeysFromModal);
   wireOutro();
+  wireSfx();
   $('#modalNo').addEventListener('click', hideModal);
 }
 // 분할 내보내기가 모든 편 끝에 붙이는 공통 아웃트로 (brand/outro.png, 서버가 1920x1080으로 맞춤)
@@ -679,6 +681,56 @@ function wireOutro() {
     await fetch('/api/brand/outro/delete', { method: 'POST', body: '{}' });
     toast('아웃트로를 지웠습니다'); openSettingsModal();
   });
+}
+// 효과음 라이브러리 - 모든 영상이 불러 쓴다. 인서트에 붙이는 건 영상별 인서트 화면에서
+let sfxAudio = null;
+function sfxHtml() {
+  return `<div class="field" style="border-top:1px solid var(--line);padding-top:12px">
+      <div class="field-top"><span class="field-label">효과음</span><span class="field-chip" id="sfxCount"></span></div>
+      <div id="sfxList" style="font-size:13px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="btnSfxPick">＋ 추가</button>
+        <input type="file" id="sfxFile" accept="audio/*,video/*,.mov,.mp4,.mp3,.wav,.m4a,.aif,.aiff,.caf,.flac,.ogg" multiple hidden>
+      </div>
+    </div>`;
+}
+async function loadSfx() {
+  const items = (await (await fetch('/api/sfx')).json()).items || [];
+  $('#sfxCount').textContent = items.length ? `${items.length}개` : '없음';
+  $('#sfxList').innerHTML = items.map((x) => `<div class="sfx-row" data-id="${x.id}" style="display:grid;grid-template-columns:30px 1fr auto auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)">
+      <button data-play title="듣기" style="width:28px;height:28px;padding:0;border-radius:50%">▶</button>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.name)}">${esc(x.name)}</span>
+      <span style="color:var(--muted);font-variant-numeric:tabular-nums">${x.duration.toFixed(1)}s</span>
+      <button data-del>삭제</button></div>`).join('');
+  $$('#sfxList .sfx-row').forEach((r) => {
+    r.querySelector('[data-play]').addEventListener('click', () => {
+      if (sfxAudio) sfxAudio.pause();
+      sfxAudio = new Audio(`/api/sfx/file?id=${r.dataset.id}`); sfxAudio.play().catch(() => {});
+    });
+    r.querySelector('[data-del]').addEventListener('click', async () => {
+      if (!confirm('이 효과음을 지울까요? 연결된 모든 영상의 인서트에서 빠집니다.')) return;
+      await fetch('/api/sfx/delete', { method: 'POST', body: JSON.stringify({ id: r.dataset.id }) });
+      loadSfx();
+    });
+  });
+}
+function wireSfx() {
+  $('#btnSfxPick').addEventListener('click', () => $('#sfxFile').click());
+  $('#sfxFile').addEventListener('change', async (e) => {
+    const files = [...e.target.files]; if (!files.length) return;
+    $('#btnSfxPick').disabled = true; $('#btnSfxPick').textContent = '올리는 중…';
+    let ok = 0;
+    for (const f of files) {
+      try {
+        const r = await (await fetch(`/api/sfx/upload?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f })).json();
+        if (r.ok) ok++; else toast(`${f.name}: ${r.error}`);
+      } catch (err) { toast('서버에 연결할 수 없습니다'); break; }
+    }
+    if (ok) toast(`효과음 ${ok}개 추가`);
+    e.target.value = ''; $('#btnSfxPick').disabled = false; $('#btnSfxPick').textContent = '＋ 추가';
+    loadSfx();
+  });
+  loadSfx();
 }
 async function openSettingsModal() {
   showModal('<p>불러오는 중…</p>');

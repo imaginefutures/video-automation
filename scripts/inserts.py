@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from build_edl import compute_kept_segments
 from common import log_llm_usage, thinking_kwargs, write_json
 import fonts
+import sfx
 from split_intro import BRAND_CONTEXT  # 채널 소개 + "Never" 목록 - 인트로 이미지와 같은 규칙
 
 DECIDE_MODEL = "claude-opus-5-5"
@@ -387,6 +388,8 @@ class InsertStore:
                        "o": round(self.to_timeline(kept, w["start"]), 2)} for w in words],
             "items": items,
             "fonts_missing": fonts.missing_labels(),
+            "styles": self.styles_view(),
+            "sfx_lib": sfx.items(),
             "suggest": self.data.get("suggest") or {"state": "none"},
         }
 
@@ -537,7 +540,7 @@ class InsertStore:
                       "files": [], "candidates": [], "chosen": None, "error": None}
                 if dec["form"] == "text":  # 텍스트는 비용이 거의 없어 미리 그려 둔다
                     name = f"{it['id']}_text_{int(time.time())}.png"
-                    render_text(dec["layout"], dec["lines"], dec.get("source", ""), dec.get("layer")).save(self.dir / name)
+                    render_text(dec["layout"], dec["lines"], dec.get("source", ""), dec.get("layer"), self.data.get("styles")).save(self.dir / name)
                     it.update(files=[name], status="ready", font_fallback=_fallback_labels(dec["layout"]))
                 with self.lock:
                     self.data["items"].append(it)
@@ -692,7 +695,7 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
         if form == "text":
             self._stage(it, "text")
             name = f"{it['id']}_text_{int(time.time())}.png"
-            render_text(dec["layout"], dec["lines"], dec.get("source", ""), dec.get("layer")).save(self.dir / name)
+            render_text(dec["layout"], dec["lines"], dec.get("source", ""), dec.get("layer"), self.data.get("styles")).save(self.dir / name)
             self._set(it, files=[name], status="ready", font_fallback=_fallback_labels(dec["layout"]))
         elif form == "image":
             self._generate_images(it)
@@ -1161,7 +1164,7 @@ Duration D = {dur:.2f} seconds.
         if not lines:
             return None
         name = f"{it['id']}_overlay_{int(time.time())}.png"
-        render_text("caption", lines, "").save(self.dir / name)
+        render_text("caption", lines, "", None, self.data.get("styles")).save(self.dir / name)
         return name
 
     def _log_image_cost(self, n: int) -> None:
@@ -1180,6 +1183,12 @@ Duration D = {dur:.2f} seconds.
             if it["status"] not in ("deciding", "generating"):
                 raise ValueError("만드는 중이 아닙니다")
             self._set(it, cancel=True, progress="중단하는 중… (지금 단계가 끝나면 멈춰요)")
+            return it
+        if action == "sfx":  # 효과음 연결/해제 - 인서트가 시작하는 순간 파일 전체를 재생
+            sid = body.get("sfx") or None
+            if sid and not sfx.get(sid):
+                raise ValueError("없는 효과음입니다")
+            self._set(it, sfx=sid)
             return it
         if action == "dismiss_error":
             self._set(it, error=None, error_info=None, notice=None)
@@ -1233,7 +1242,7 @@ Duration D = {dur:.2f} seconds.
             self._set(it, decision=dec)
             if it["form"] == "text":
                 name = f"{it['id']}_text_{int(time.time())}.png"
-                render_text(dec["layout"], lines, dec.get("source", ""), dec.get("layer")).save(self.dir / name)
+                render_text(dec["layout"], lines, dec.get("source", ""), dec.get("layer"), self.data.get("styles")).save(self.dir / name)
                 self._set(it, files=[name], status="ready" if it["status"] != "approved" else "approved",
                           font_fallback=_fallback_labels(dec["layout"]))
             elif it["form"] == "image" and it["files"]:
@@ -1242,6 +1251,81 @@ Duration D = {dur:.2f} seconds.
         else:
             raise ValueError(f"알 수 없는 동작: {action}")
         return it
+
+    # ---- 글자 스타일 7종: 기본값은 고정, 영상마다 위치·크기만 조정 (10-12 사용자 요청)
+
+    def _style_items(self, key: str) -> list[dict]:
+        out = []
+        for it in self.data["items"]:
+            dec = it.get("decision") or {}
+            if key == "caption":  # 이미지·실물 위 노란 글씨 레이어
+                if it.get("form") in ("image", "asset") and len(it.get("files") or []) > 1:
+                    out.append(it)
+            elif it.get("form") == "text" and it.get("files") and style_key(dec.get("layout", ""), dec.get("layer")) == key:
+                out.append(it)
+        return out
+
+    def styles_view(self) -> list[dict]:
+        ov = self.data.get("styles") or {}
+        view = []
+        for key in STYLE_ORDER:
+            st = merged_style(key, ov)
+            d = STYLE_DEFAULTS[key]
+            view.append({"key": key, "name": d["name"], "size": st["size"], "x": st["x"], "y": st["y"],
+                         "default": {k: d[k] for k in STYLE_EDITABLE}, "changed": key in ov,
+                         "count": len(self._style_items(key))})
+        return view
+
+    def style_preview(self, key: str, values: dict) -> bytes:
+        """조정 중인 값으로 그 영상의 실제 문구(없으면 예시)를 그려 PNG로 - 저장하지 않는다."""
+        import io
+        if key not in STYLE_DEFAULTS:
+            raise ValueError("알 수 없는 스타일입니다")
+        ov = {key: {k: float(values[k]) for k in STYLE_EDITABLE if k in values}}
+        items = self._style_items(key)
+        dec = (items[0].get("decision") or {}) if items else {}
+        lines = dec.get("lines") or STYLE_DEFAULTS[key]["sample"]
+        layout = {"section": "top", "summary": "top"}.get(key, key)
+        layer = "구조" if key == "section" else None
+        buf = io.BytesIO()
+        render_text(layout, lines, dec.get("source", "") if key == "quote" else "", layer, ov).save(buf, "PNG")
+        return buf.getvalue()
+
+    def set_style(self, key: str, values: dict | None) -> dict:
+        """이 영상의 스타일 조정을 저장하고, 그 스타일을 쓰는 인서트를 모두 다시 그린다 (로컬, 비용 없음). values=None이면 기본값으로."""
+        if key not in STYLE_DEFAULTS:
+            raise ValueError("알 수 없는 스타일입니다")
+        with self.lock:
+            styles = dict(self.data.get("styles") or {})
+            if values is None:
+                styles.pop(key, None)
+            else:
+                d = STYLE_DEFAULTS[key]
+                clean = {k: float(values[k]) for k in STYLE_EDITABLE if k in values}
+                clean = {k: v for k, v in clean.items() if v != d[k]}
+                if clean:
+                    styles[key] = clean
+                else:
+                    styles.pop(key, None)
+            self.data["styles"] = styles
+            self._save()
+        n = 0
+        for it in self._style_items(key):
+            dec = it.get("decision") or {}
+            stamp = int(time.time() * 1000)
+            if key == "caption":
+                old = it["files"][1]
+                name = f"{it['id']}_overlay_{stamp}.png"
+                render_text("caption", dec.get("lines") or [], "", None, styles).save(self.dir / name)
+                self._set(it, files=[it["files"][0], name])
+            else:
+                old = it["files"][0]
+                name = f"{it['id']}_text_{stamp}.png"
+                render_text(dec["layout"], dec.get("lines") or [], dec.get("source", ""), dec.get("layer"), styles).save(self.dir / name)
+                self._set(it, files=[name] + it["files"][1:])
+            (self.dir / old).unlink(missing_ok=True)
+            n += 1
+        return {"restyled": n}
 
     def upload_asset(self, iid: str, filename: str, data: bytes) -> dict:
         """실물(책 표지·논문 캡처 등)을 받아 화자 옆 1/3 또는 전체 화면 PNG로 배치한다."""
@@ -1278,7 +1362,10 @@ Duration D = {dur:.2f} seconds.
             items = [it for it in self.data["items"] if it["status"] == "approved" and it["files"]]
         for it in sorted(items, key=lambda x: by_wi[x["wi_start"]]["start"]):
             label = f"{it['form']} {' '.join((it.get('decision') or {}).get('lines', []))[:30] or it['text'][:30]}"
+            s_item = sfx.get(it["sfx"]) if it.get("sfx") else None
             out.append({"id": it["id"], "lane_base": 3 if _is_structure(it.get("decision")) else 1,  # 구조 층은 위 레인 - 다른 인서트와 겹쳐도 됨
+                        "sfx": ({"path": str(sfx.path(it["sfx"]).resolve()), "name": s_item["name"], "duration": s_item["duration"],
+                                 "rate": s_item.get("rate", 48000), "channels": s_item.get("channels", 2)} if s_item else None),
                         "start": by_wi[it["wi_start"]]["start"], "end": by_wi[it["wi_end"]]["end"],
                         "name": label, "role": f"인서트.{ {'text': '텍스트', 'image': '이미지', 'video': '영상', 'asset': '실물'}[it['form']] }",
                         "layers": [str((self.dir / f).resolve()) for f in it["files"]]})
@@ -1313,54 +1400,69 @@ def _fit(draw, lines: list[str], size: int, max_w: int, key: str = "gangwon"):
 _EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D\u2B00-\u2BFF]")
 
 
-def render_text(layout: str, lines: list[str], source: str = "", layer: str | None = None):
-    """투명 1920x1080 PNG. 화자 화면 위에 FCP 연결 클립으로 얹힌다."""
+# 글자 스타일 7종 - 기본값은 항상 이 값, 영상마다 위치·크기만 조정(edit/inserts.json "styles"). 10-12 사용자 요청.
+# x, y = 화면 비율(%). align center = x가 가운데, left = x가 왼쪽 끝. anchor middle = y가 글자 덩어리의 가운데, top = 첫 줄 위.
+STYLE_ORDER = ["section", "summary", "comment", "list", "chapter", "quote", "caption"]
+STYLE_DEFAULTS = {
+    "section": {"name": "섹션 바", "size": 72, "x": 50.0, "y": 3.15, "align": "center", "anchor": "top", "max_w": 92, "font": "gangwon",
+                "color": "white", "dim": False, "one_line": True, "sample": ["상상놀이, 왜 중요한가요?"]},
+    "summary": {"name": "상단 요약", "size": 84, "x": 50.0, "y": 13.9, "align": "center", "anchor": "top", "max_w": 90, "font": "gangwon",
+                "color": "white", "dim": False, "sample": ["척하는 놀이 =", "사물에서 의미를 뽑아내는 연습"]},
+    "comment": {"name": "노란 코멘트", "size": 60, "x": 56.0, "y": 13.9, "align": "left", "anchor": "top", "max_w": 42, "font": "gangwon",
+                "color": "yellow", "dim": False, "stroke_min": 4, "stroke_div": 14, "sample": ["옛날 사람이긴 합니다..ㅎㅎ"]},
+    "list":    {"name": "좌상단 목록", "size": 64, "x": 4.6875, "y": 5.56, "align": "left", "anchor": "top", "max_w": 60, "font": "gangwon",
+                "color": "white", "dim": False, "stroke_min": 5, "stroke_div": 12, "line_gap": 1.35, "sample": ["첫째, 자기조절력", "둘째, 추상적 사고"]},
+    "chapter": {"name": "챕터 카드", "size": 128, "x": 50.0, "y": 50.0, "align": "center", "anchor": "middle", "max_w": 88, "font": "gangwon",
+                "color": "white", "dim": True, "stroke": 0, "sample": ["상상놀이의 힘"]},
+    "quote":   {"name": "인용 카드", "size": 68, "x": 50.0, "y": 50.0, "align": "center", "anchor": "middle", "max_w": 83.334, "font": "jeju",
+                "color": "white", "dim": True, "stroke": 2, "line_gap": 1.5, "sample": ["\"우리가 아이들의 감정을 밀어내려고 애쓰는 대신", "그 감정을 잘 겪어나갈 수 있게 준비시킬 때\""]},
+    "caption": {"name": "이미지 위 노란 글씨", "size": 64, "x": 54.0, "y": 12.037, "align": "left", "anchor": "top", "max_w": 44, "font": "pretendard",
+                "color": "yellow", "dim": False, "stroke_min": 5, "stroke_div": 12, "sample": ["이건 막대기 아니고~ 숟가락이야!"]},
+}
+STYLE_EDITABLE = ("size", "x", "y")
+
+
+def style_key(layout: str, layer: str | None = None) -> str:
+    """인서트의 레이아웃(+역할) → 7종 스타일 키."""
+    if layout == "top":
+        return "section" if layer == "구조" else "summary"
+    return layout if layout in STYLE_DEFAULTS else "summary"
+
+
+def merged_style(key: str, overrides: dict | None) -> dict:
+    st = dict(STYLE_DEFAULTS[key])
+    for k, v in ((overrides or {}).get(key) or {}).items():
+        if k in STYLE_EDITABLE:
+            st[k] = v
+    return st
+
+
+def render_text(layout: str, lines: list[str], source: str = "", layer: str | None = None, overrides: dict | None = None):
+    """투명 1920x1080 PNG. 화자 화면 위에 FCP 연결 클립으로 얹힌다. overrides = 영상별 스타일 조정({key: {size,x,y}})."""
     from PIL import Image, ImageDraw
+    st = merged_style(style_key(layout, layer), overrides)
     # 채널 글꼴에는 이모지가 없어 빈 네모로 찍힌다 (10-09 제안 시험에서 🙏 → □)
     lines = [_EMOJI_RE.sub("", l).strip() for l in lines]
     lines = [l for l in lines if l] or [" "]
-    dim = layout in ("chapter", "quote")
-    im = Image.new("RGBA", (W, H), (0, 0, 0, 190 if dim else 0))
-    d = ImageDraw.Draw(im)
-
-    def center(f, size, y0, color, stroke):
-        for i, l in enumerate(lines):
-            w = d.textlength(l, font=f)
-            d.text(((W - w) / 2, y0 + i * size * 1.3), l, font=f, fill=color, stroke_width=stroke, stroke_fill=OUTLINE)
-
-    if layout == "top" and layer == "구조":  # 섹션 바: 맨 위 한 줄 - 다른 인서트와 같이 떠 있는 층이라 두 줄이면 상단 요약과 포개진다
+    if st.get("one_line"):  # 섹션 바: 두 줄이면 아래 줄 상단 요약과 포개진다
         lines = [" ".join(lines)]
-        f, size = _fit(d, lines, 72, W - 160)
-        center(f, size, 34, WHITE, max(6, size // 11))
-    elif layout == "top":        # 상단 한 줄 요약: 섹션 바 아래 줄 (같이 떠도 안 겹치게), 흰 초굵은 고딕 + 두꺼운 검정 외곽선
-        f, size = _fit(d, lines, 84, W - 200)
-        center(f, size, 150, WHITE, max(6, size // 11))
-    elif layout == "comment":    # 노란 코멘트: 흰 글씨보다 작게, 화자 머리 오른쪽 위
-        f, size = _fit(d, lines, 60, int(W * 0.42))
-        x = int(W * 0.56)
-        for i, l in enumerate(lines):
-            d.text((x, 150 + i * size * 1.3), l, font=f, fill=YELLOW, stroke_width=max(4, size // 14), stroke_fill=OUTLINE)
-    elif layout == "chapter":    # 어둡게 + 가운데 큰 제목 (2~4초)
-        f, size = _fit(d, lines, 128, W - 240)
-        center(f, size, (H - len(lines) * size * 1.3) / 2, WHITE, 0)
-    elif layout == "quote":      # 어둡게 + 제주명조 인용 + 우상단 출처 (가는 획이라 얇은 외곽선으로 또렷하게)
-        f, size = _fit(d, lines, 68, W - 320, key="jeju")
-        center(f, size, (H - len(lines) * size * 1.5) / 2, WHITE, 2)
-        if source.strip():
-            sf = _font(30, key="jeju")
-            d.text((W - 120 - d.textlength(source, font=sf), 90), source, font=sf, fill=(230, 230, 230, 255))
-    elif layout == "caption":    # 삽화·사진 위 노란 글씨 = 프리텐다드
-        f, size = _fit(d, lines, 64, int(W * 0.44), key="pretendard")
-        x = int(W * 0.54)
-        for i, l in enumerate(lines):
-            d.text((x, 130 + i * size * 1.3), l, font=f, fill=YELLOW, stroke_width=max(5, size // 12), stroke_fill=OUTLINE)
-    elif layout == "list":       # 좌상단 누적 목록
-        f, size = _fit(d, lines, 64, int(W * 0.6))
-        for i, l in enumerate(lines):
-            d.text((90, 60 + i * size * 1.35), l, font=f, fill=WHITE, stroke_width=max(5, size // 12), stroke_fill=OUTLINE)
-    else:                        # 알 수 없는 레이아웃은 상단 요약으로
-        f, size = _fit(d, lines, 84, W - 200)
-        center(f, size, 46, WHITE, max(6, size // 11))
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 190 if st["dim"] else 0))
+    d = ImageDraw.Draw(im)
+    f, size = _fit(d, lines, int(st["size"]), int(W * st["max_w"] / 100), key=st["font"])
+    gap = size * st.get("line_gap", 1.3)
+    block_h = len(lines) * gap  # 가운데 맞춤은 줄 간격 포함 높이 기준 (이전 렌더와 같은 위치)
+    y0 = H * st["y"] / 100 - (block_h / 2 if st["anchor"] == "middle" else 0)
+    if abs(y0 - round(y0)) < 0.01:  # 비율→픽셀 변환의 부동소수 오차(129.9999)가 1px 내림되지 않게
+        y0 = round(y0)
+    color = YELLOW if st["color"] == "yellow" else WHITE
+    stroke = st["stroke"] if "stroke" in st else max(st.get("stroke_min", 6), size // st.get("stroke_div", 11))
+    for i, l in enumerate(lines):
+        w = d.textlength(l, font=f)
+        x = W * st["x"] / 100 - w / 2 if st["align"] == "center" else int(W * st["x"] / 100)
+        d.text((x, y0 + i * gap), l, font=f, fill=color, stroke_width=stroke, stroke_fill=OUTLINE)
+    if layout == "quote" and source.strip():  # 출처는 우상단 고정
+        sf = _font(30, key="jeju")
+        d.text((W - 120 - d.textlength(source, font=sf), 90), source, font=sf, fill=(230, 230, 230, 255))
     return im
 
 

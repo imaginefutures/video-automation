@@ -1301,6 +1301,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({**self.session.inserts.payload(), "home_port": home_port(),
                                "confirmed_at": self.session.decisions.get("confirmed_at"),
                                "insert_only": is_insert_only(self.folder)})
+        if path == "/api/sfx/file":  # 공통 효과음 듣기
+            from urllib.parse import urlsplit, parse_qs
+            import sfx
+            f = sfx.path((parse_qs(urlsplit(self.path).query).get("id") or [""])[0])
+            if not f:
+                return self.send_error(404)
+            return self._file(f, mimetypes.guess_type(str(f))[0] or "audio/mpeg")
+        if path == "/api/insert/style_preview":
+            from urllib.parse import urlsplit, parse_qs
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+            try:
+                png = self.session.inserts.style_preview(q.pop("key", ""), q)
+            except (ValueError, KeyError) as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(png)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(png)
+            return
         if path == "/api/insert/file":
             from urllib.parse import urlsplit, parse_qs
             name = (parse_qs(urlsplit(self.path).query).get("f") or [""])[0]
@@ -1421,6 +1442,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("이미 제안하는 중입니다")
                 threading.Thread(target=self.session.inserts.suggest_all, daemon=True).start()
                 return self._json({"ok": True})
+            if self.path == "/api/insert/style":  # 이 영상의 글자 스타일 조정 → 그 스타일 인서트 전부 다시 그림
+                key = str(body.get("key", ""))
+                res = self.session.inserts.set_style(key, None if body.get("reset") else body.get("values") or {})
+                return self._json({"ok": True, **res})
             if self.path == "/api/insert/fonts":
                 import fonts
                 fonts.ensure_all()

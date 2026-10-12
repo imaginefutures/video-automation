@@ -44,6 +44,8 @@ from common import (  # noqa: E402
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, BRAND_OUTRO, VIDEO_EDIT_DIR, SPLIT_DIR,
 )
 
+import sfx  # noqa: E402
+
 BACKUP_RE = RESERVED_PROJECT_NAME_RE  # common.py와 공유 - sanitize_project_name() 참고
 
 
@@ -918,6 +920,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "log_tail": pipeline_log_tail(folder)})
         if path == "/api/setup":
             return self._json({"keys": api_keys_status(), **ffmpeg_status(), "outro": BRAND_OUTRO.exists()})
+        if path == "/api/sfx":  # 효과음 라이브러리 - 모든 영상이 함께 쓴다 (적용은 영상별 인서트 화면에서)
+            return self._json({"items": sfx.items()})
+        if path == "/api/sfx/file":
+            f = sfx.path((parse_qs(urlsplit(self.path).query).get("id") or [""])[0])
+            if not f:
+                return self.send_error(404)
+            return self._file(f, mimetypes.guess_type(str(f))[0] or "audio/mpeg")
         if path == "/api/brand/outro":
             if not BRAND_OUTRO.exists():
                 return self.send_error(404)
@@ -966,9 +975,24 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/brand/outro/delete":
             BRAND_OUTRO.unlink(missing_ok=True)
             return self._json({"ok": True})
+        if path == "/api/sfx/upload":  # 여러 개면 화면이 하나씩 보낸다
+            name = (parse_qs(urlsplit(self.path).query).get("name") or [""])[0]
+            try:
+                return self._json({"ok": True, "item": sfx.add(name, self.rfile.read(int(self.headers.get("Content-Length", 0))))})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
 
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
+        if path in ("/api/sfx/delete", "/api/sfx/rename"):
+            try:
+                if path.endswith("delete"):
+                    sfx.delete(str(body.get("id", "")))
+                else:
+                    sfx.rename(str(body.get("id", "")), str(body.get("name", "")))
+                return self._json({"ok": True, "items": sfx.items()})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/api/open":
             try:
                 result = open_review(str(body.get("name", "")))
