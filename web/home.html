@@ -33,6 +33,7 @@
     background: var(--panel); color: var(--ink); font-size: 12.5px; font-weight: 600; }
   header .toolbar button:hover { border-color: var(--line-strong); }
   header .toolbar button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  header .toolbar button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
 
   /* -------------------------------------------------------------------------- update banner */
   #updateBanner { display: none; align-items: center; justify-content: space-between; gap: 10px;
@@ -82,7 +83,12 @@
   #modal .progress-track { height: 6px; border-radius: var(--r-full); background: var(--surface-2); overflow: hidden; margin-top: 10px; }
   #modal .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 160ms ease; }
 
-  /* 컷편집 / 주제별 분할 탭 - 두 작업은 폴더·처리·화면이 전부 따로라 목록도 섞지 않는다 */
+  /* 탭 = 작업 종류별 영상 목록(컷편집·인서트·주제별 분할). 공통 자산은 그 작업들이 같이 쓰는 재료라
+     탭이 아니라 헤더 버튼 → 탭을 가린 별도 화면(.view-head + 뒤로) */
+  .view-head { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 16px; }
+  .view-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+  .view-head button { border: 0; background: transparent; padding: 4px 6px; margin-left: -6px; font-size: 13px; color: var(--muted); }
+  .view-head button:hover { color: var(--ink); }
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
   .tabs button { border: 0; background: transparent; padding: 8px 12px; font-size: 14px; font-weight: 600; color: var(--muted);
     border-bottom: 2px solid transparent; margin-bottom: -1px; }
@@ -184,6 +190,7 @@
       <span class="sub" id="updateChecked" style="margin-right:0" title="업데이트 확인은 5분 간격으로 백그라운드에서 돈다"></span>
       <div class="toolbar">
         <button id="btnLogs">로그 공유</button>
+        <button id="btnAssets" aria-pressed="false">공통 자산</button>
         <button id="btnSettings">환경설정</button>
         <button id="btnNewVideo" class="primary">+ 새 영상</button>
       </div>
@@ -193,13 +200,17 @@
       <div class="actions">
         <button id="btnUpdateHistory">이력 보기</button>
         <button id="btnUpdateNow">지금 업데이트</button>
+        <button id="btnRestart">다시 켜기</button>
       </div>
     </div>
     <div class="tabs" role="tablist">
       <button role="tab" id="tabCut" aria-selected="true" aria-controls="cutPanel">컷편집</button>
       <button role="tab" id="tabInsert" aria-selected="false" aria-controls="insertPanel">인서트</button>
       <button role="tab" id="tabSplit" aria-selected="false" aria-controls="splitPanel">주제별 분할</button>
-      <button role="tab" id="tabAssets" aria-selected="false" aria-controls="assetsPanel">공통 자산</button>
+    </div>
+    <div class="view-head" id="assetsHead" style="display:none">
+      <button id="btnAssetsBack">← 영상 목록</button>
+      <h2>공통 자산</h2>
     </div>
     <main id="cutPanel" role="tabpanel" aria-label="컷편집 영상 목록">
       <div id="list"></div>
@@ -215,7 +226,7 @@
       <div id="splitList"></div>
       <div id="splitEmpty" style="display:none"></div>
     </main>
-    <main id="assetsPanel" role="tabpanel" aria-label="공통 자산" style="display:none"></main>
+    <main id="assetsPanel" aria-label="공통 자산" style="display:none"></main>
   </div>
 </div>
 
@@ -487,12 +498,21 @@ async function load() {
 
 // --------------------------------------------------------------------------------- 탭
 // 분할 화면의 "홈으로" 링크가 #split으로 돌아오므로 해시를 먼저 보고, 없으면 마지막에 본 탭
+// 'assets'는 탭이 아니라 헤더 버튼으로 여는 별도 화면 - 마지막 작업 탭(workTab)을 기억해 "← 영상 목록"으로 돌아간다.
+// 다른 화면의 "공통 자산" 링크(분할 화면 아웃트로)는 #assets로 바로 연다.
 let currentTab = 'cut';
+let workTab = 'cut';
 const TAB_HASH = { split: '#split', insert: '#insert', assets: '#assets' };
-try { currentTab = Object.keys(TAB_HASH).find((k) => TAB_HASH[k] === location.hash) || (localStorage.getItem('video-cut-home-tab') || 'cut'); } catch (e) { /* private mode */ }
+try { workTab = localStorage.getItem('video-cut-home-tab') || 'cut'; } catch (e) { /* private mode */ }
+if (!['cut', 'insert', 'split'].includes(workTab)) workTab = 'cut';  // 예전에 탭이던 'assets'가 저장돼 있을 수 있음
+currentTab = Object.keys(TAB_HASH).find((k) => TAB_HASH[k] === location.hash) || workTab;
 function setTab(tab) {
   currentTab = tab;
-  try { localStorage.setItem('video-cut-home-tab', tab); } catch (e) { /* 저장 안 돼도 동작 */ }
+  const assets = tab === 'assets';
+  if (!assets) {
+    workTab = tab;
+    try { localStorage.setItem('video-cut-home-tab', tab); } catch (e) { /* 저장 안 돼도 동작 */ }
+  }
   history.replaceState(null, '', TAB_HASH[tab] || location.pathname);
   $('#tabCut').setAttribute('aria-selected', String(tab === 'cut'));
   $('#tabInsert').setAttribute('aria-selected', String(tab === 'insert'));
@@ -500,17 +520,20 @@ function setTab(tab) {
   $('#tabSplit').setAttribute('aria-selected', String(tab === 'split'));
   $('#cutPanel').style.display = tab === 'cut' ? '' : 'none';
   $('#splitPanel').style.display = tab === 'split' ? '' : 'none';
-  $('#tabAssets').setAttribute('aria-selected', String(tab === 'assets'));
-  $('#assetsPanel').style.display = tab === 'assets' ? '' : 'none';
-  $('#btnNewVideo').style.display = tab === 'assets' ? 'none' : '';
+  document.querySelector('.tabs').style.display = assets ? 'none' : '';
+  $('#assetsHead').style.display = assets ? '' : 'none';
+  $('#assetsPanel').style.display = assets ? '' : 'none';
+  $('#btnAssets').setAttribute('aria-pressed', String(assets));
+  $('#btnNewVideo').style.display = assets ? 'none' : '';
   $('#btnHelp').style.display = tab === 'cut' ? '' : 'none';  // 단축키 도움말은 컷편집 검토 화면용
   if (tab === 'split') loadSplits();
-  if (tab === 'assets') loadAssets();
+  if (assets) loadAssets();
 }
 $('#tabCut').addEventListener('click', () => setTab('cut'));
 $('#tabSplit').addEventListener('click', () => setTab('split'));
 $('#tabInsert').addEventListener('click', () => setTab('insert'));
-$('#tabAssets').addEventListener('click', () => setTab('assets'));
+$('#btnAssets').addEventListener('click', () => setTab(currentTab === 'assets' ? workTab : 'assets'));
+$('#btnAssetsBack').addEventListener('click', () => setTab(workTab));
 
 // --------------------------------------------------------------------------------- 공통 자산
 // 모든 영상이 같이 쓰는 파일(docs/백로그/공통-자산.md). 등록·교체·삭제는 여기서만, 각 작업 화면은 골라 쓰기만 한다.
@@ -823,7 +846,7 @@ $('#btnSettings').addEventListener('click', openSettingsModal);
 async function openLogShare(only = '') {
   let res, data;
   try { res = await fetch(`/api/logs/share${only ? '?only=' + encodeURIComponent(only) : ''}`); data = await res.json(); }
-  catch (e) { data = { error: res?.status === 404 ? RESTART_MSG : e.message }; }
+  catch (e) { data = { error: res?.status === 404 ? OLD_SERVER_MSG : e.message }; }
   if (data.error) { toast(`로그를 불러오지 못했습니다 - ${data.error}`); return; }
   const opt = (v, label) => `<option value="${esc(v)}"${v === only ? ' selected' : ''}>${esc(label)}</option>`;
   const kb = Math.ceil(new Blob([data.text]).size / 1024);
@@ -892,7 +915,9 @@ async function checkSetupGate() {
 
 // --------------------------------------------------------------------------------------- 업데이트
 function $$(s, r = document) { return Array.from(r.querySelectorAll(s)); }
-const RESTART_MSG = '업데이트를 적용하려면 홈 서버를 다시 켜주세요 (터미널에서 Ctrl+C 후 다시 실행)';
+const RESTART_MSG = '업데이트를 적용하려면 홈 서버를 다시 켜주세요';
+// "다시 켜기" 버튼(/api/restart)보다 옛 서버 - 화면에서 끌 방법이 없어 띄운 쪽에서 직접 다시 켜야 한다
+const OLD_SERVER_MSG = `${RESTART_MSG} - 터미널에서 띄웠다면 Ctrl+C 후 다시 실행, Claude Code로 띄웠다면 "홈 서버 다시 켜줘"라고 요청`;
 async function checkUpdate() {
   let st;
   try { st = await (await fetch('/api/update/status')).json(); } catch (e) {
@@ -904,12 +929,28 @@ async function checkUpdate() {
   $('#updateChecked').textContent = st.checked_at
     ? `업데이트 확인: ${fmtDate(st.checked_at)}` : '업데이트 확인: 아직 안 됨';
   // 10-12: 업데이트(git pull) 후 재시작 안 한 서버는 옛 코드로 돌아 새 화면의 기능이 원인 모르게 실패한다.
-  // restart_needed가 아예 없으면 그 필드보다 옛 서버 - 역시 재시작 대상.
-  const restart = !st.error && st.restart_needed !== false;
-  $('#updateBanner .actions').style.display = restart ? 'none' : '';
+  // restart_needed가 아예 없으면 그 필드보다 옛 서버 - 역시 재시작 대상이지만 "다시 켜기"도 모른다.
+  const oldServer = !st.error && !('restart_needed' in st);
+  const restart = oldServer || st.restart_needed === true;
+  $('#btnUpdateHistory').style.display = $('#btnUpdateNow').style.display = restart ? 'none' : '';
+  $('#btnRestart').style.display = restart && !oldServer ? '' : 'none';
   if (!restart && (st.error || !st.behind)) { $('#updateBanner').classList.remove('show'); return; }
-  $('#updateBannerText').textContent = restart ? RESTART_MSG : `새 업데이트 ${st.behind}건이 있습니다`;
+  $('#updateBannerText').textContent = oldServer ? OLD_SERVER_MSG : restart ? RESTART_MSG : `새 업데이트 ${st.behind}건이 있습니다`;
   $('#updateBanner').classList.add('show');
+}
+async function restartServer() {
+  if (!await confirmModal('홈 서버를 다시 켤까요? 열려 있는 검토·인서트 화면과 그 안에서 진행 중인 생성은 멈춥니다.')) return;
+  let data;
+  try { data = await (await fetch('/api/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json(); }
+  catch (e) { data = { error: OLD_SERVER_MSG }; }
+  if (!data.ok) { showModal(`<p>${esc(data.error || OLD_SERVER_MSG)}</p><button onclick="hideModal()">닫기</button>`); return; }
+  showModal('<p>다시 켜는 중…</p>');
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try { if ((await (await fetch('/api/update/status')).json()).restart_needed === false) { location.reload(); return; } }
+    catch (e) { /* 다시 켜지는 동안은 연결이 안 된다 */ }
+  }
+  showModal(`<p>다시 켜지 못했습니다 - ${esc(OLD_SERVER_MSG)}</p><button onclick="hideModal()">닫기</button>`);
 }
 async function openUpdateHistory() {
   showModal('<p>불러오는 중…</p>');
@@ -933,11 +974,17 @@ async function runUpdate() {
   const res = await fetch('/api/update/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   const data = await res.json();
   if (!data.ok) { showModal(`<p>${esc(data.error || '업데이트하지 못했습니다')}</p><button onclick="hideModal()">닫기</button>`); return; }
-  showModal(`<h2>업데이트 완료</h2><p class="note">${RESTART_MSG}</p>
-    <button onclick="hideModal()">닫기</button>`);
   checkUpdate();
+  showModal(`<h2>업데이트 완료</h2><p class="note">${RESTART_MSG}</p>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="modalNo">나중에</button>
+      <button id="modalYes" class="primary">다시 켜기</button>
+    </div>`);
+  $('#modalNo').addEventListener('click', hideModal);
+  $('#modalYes').addEventListener('click', () => { hideModal(); restartServer(); });
 }
 $('#btnUpdateNow').addEventListener('click', runUpdate);
+$('#btnRestart').addEventListener('click', restartServer);
 $('#btnUpdateHistory').addEventListener('click', openUpdateHistory);
 
 // --------------------------------------------------------------------------------- 영상 생성

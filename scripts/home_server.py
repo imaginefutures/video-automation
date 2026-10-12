@@ -875,6 +875,27 @@ def update_status() -> dict:
             "restart_needed": git_head() != STARTED_HEAD}
 
 
+def restart_self() -> None:
+    """화면의 "다시 켜기" - 터미널 Ctrl+C를 모르는 사용자(Claude Code가 띄워 준 경우 등)도 새 코드로
+    바꿀 수 있게 같은 PID에서 새 코드로 다시 실행한다(uv·Claude Code가 보는 프로세스가 그대로 남는다).
+    처리 중(run.py·split_run.py)이면 거절 - 끊기면 그 영상 처리를 처음부터 다시 해야 한다. 검토 서버는
+    끈다: 남겨 두면 옛 코드로 돌고, 새 홈 서버는 그걸 몰라 같은 영상에 서버를 하나 더 띄운다."""
+    with _active_lock:
+        busy = [n for n, a in _active.items()
+                if a["proc"].poll() is None and Path(a["proc"].args[1]).name in ("run.py", "split_run.py")]
+    if busy:
+        raise ValueError(f"처리 중인 작업이 끝난 뒤 다시 켜주세요: {', '.join(busy)}")
+
+    def _go():
+        time.sleep(0.5)  # 응답이 화면에 닿을 시간
+        _cleanup_children()
+        print(f"== 홈 서버 다시 켜기 {datetime.now().isoformat(timespec='seconds')}", flush=True)
+        argv = sys.argv[1:] + ([] if "--no-open" in sys.argv else ["--no-open"])
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *argv])
+
+    threading.Thread(target=_go, daemon=True).start()
+
+
 def git_pull() -> dict:
     if not _pull_lock.acquire(blocking=False):
         raise ValueError("이미 업데이트가 진행 중입니다")
@@ -1051,6 +1072,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **start_ffmpeg_install()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/restart":
+            try:
+                restart_self()
+                return self._json({"ok": True})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 409)
         if path == "/api/update/pull":
             try:
                 return self._json({"ok": True, **git_pull()})
