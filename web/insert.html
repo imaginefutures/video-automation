@@ -117,7 +117,7 @@
   .w.ins.sug { text-decoration-thickness: 2px; text-decoration-style: dashed; opacity: 0.85; }
   /* 들어가는 자리 - 편집본 시간축 파형 + 대본. 좌우로 스크롤하며 양 끝을 끌어 정한다 */
   .span-lbl { display: flex; align-items: center; gap: 6px; }
-  .span-lbl .btn { margin-left: auto; padding: 0 10px; font-size: 12px; line-height: 22px; }
+  .span-lbl .btn { padding: 0 10px; font-size: 12px; line-height: 22px; }
   /* overscroll 막기 - 트랙패드로 좌우 스크롤하다 끝에 닿으면 브라우저 '뒤로 가기'가 되지 않게 */
   #spanScroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
   #spanInner { position: relative; }
@@ -234,6 +234,13 @@
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 14px; border-radius: var(--r-md); font-size: 13px; display: none; z-index: 30; }
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 25; }
   #modal .box { background: var(--bg); border-radius: var(--r-lg); padding: 20px 22px; max-width: 520px; width: calc(100% - 32px); box-shadow: 0 12px 40px rgba(0,0,0,0.2); font-size: 14px; line-height: 1.6; }
+  /* 위치 조정 팝업 - 아래쪽에 넓게. 위의 영상·대본이 가려지지 않아 보면서 맞출 수 있다 */
+  #modal.sheet { align-items: flex-end; background: rgba(0,0,0,0.12); }
+  #modal.sheet .box { max-width: min(1280px, calc(100vw - 48px)); margin-bottom: 24px; padding: 14px 16px 16px; }
+  .span-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .span-pop-head b { font-size: 14px; }
+  .span-pop-head .btn { padding: 4px 12px; }
+  .span-pop-head .sp { margin-left: auto; display: flex; gap: 6px; }
   #modal code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; word-break: break-all; }
   @media (max-width: 980px) { #sidebar { display: none; } }
 </style>
@@ -337,8 +344,9 @@ let pollTimer = null;
 const video = $('#video');
 
 function toast(msg, ms = 2200) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => (t.style.display = 'none'), ms); }
-function showModal(html) { $('#modalBox').innerHTML = html; $('#modal').style.display = 'flex'; }
-function hideModal() { $('#modal').style.display = 'none'; }
+function showModal(html, sheet = false) { $('#modalBox').innerHTML = html; $('#modal').classList.toggle('sheet', sheet); $('#modal').style.display = 'flex'; }
+function hideModal() { $('#modal').style.display = 'none'; $('#modal').classList.remove('sheet'); spanTrack = null; spanPopId = null; }
+const modalOpen = () => $('#modal').style.display === 'flex';
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') hideModal(); });
 const fileUrl = (f) => `/api/insert/file?f=${encodeURIComponent(f)}`;
 
@@ -973,13 +981,30 @@ let spanStopAt = null;  // ▶ 듣기 - 원본 시각으로 여기서 멈춤
 const spanHit = (o, s, e) => o.wi_start <= e && s <= o.wi_end;  // 인서트 o가 말 s~e와 겹치나
 const spanLeft = {};    // 인서트 id -> 트랙 왼쪽 끝의 편집본 시각 (자리를 바꿔 다시 그려도 보던 곳 유지)
 
-function spanBox(it) {
-  const iS = S.words.findIndex((w) => w.wi === it.wi_start), iE = S.words.findIndex((w) => w.wi === it.wi_end);
-  if (iS < 0 || iE < 0) return `<div class="sub"><div class="lbl">들어가는 자리</div><div class="quote" style="margin:0">${esc(it.text)}</div></div>`;
+let spanPopId = null;   // 위치 조정 팝업에 열린 인서트
+// 상세에는 길이와 버튼만 - 어느 말에 붙는지는 대본 밑줄로 이미 보이고, 긴 파형은 좁은 상세에서 다루기 어렵다 (10-12 사용자 요청)
+function spanBox(it, busy) {
+  const ok = S.words.some((w) => w.wi === it.wi_start) && S.words.some((w) => w.wi === it.wi_end);
   const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
-  return `<div class="sub"><div class="lbl span-lbl">들어가는 자리 · <span class="mono" id="spanDur">${dur.toFixed(1)}초</span><button class="btn" id="spanPlay">▶ 듣기</button></div>
+  const over = it.form === 'image' && dur > IMAGE_MAX_SEC + 0.05;
+  const edit = ok && !busy && it.form !== 'video';
+  return `<div class="sub"><div class="lbl span-lbl">들어가는 자리 · <span class="mono">${dur.toFixed(1)}초</span>
+      <span style="margin-left:auto;display:flex;gap:6px">${ok ? '<button class="btn" id="dSpanPlay">▶ 듣기</button>' : ''}${edit ? '<button class="btn" id="dSpanEdit">위치 조정</button>' : ''}</span></div>
+    ${over ? `<div class="warn" style="margin-bottom:0">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div>` : ''}</div>`;
+}
+function spanListen(it) {  // 인서트 구간만 듣기 - 끝에서 멈춤
+  video.currentTime = it.src_start; spanStopAt = it.src_end; video.play();
+}
+function openSpanPopup(id) {
+  const it = S.items.find((i) => i.id === id); if (!it) return;
+  const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
+  spanPopId = id;
+  showModal(`<div class="span-pop-head"><b>들어가는 자리</b><span class="mono" id="spanDur">${dur.toFixed(1)}초</span>
+      <span class="sp"><button class="btn" id="spanPlay">▶ 듣기</button><button class="btn" id="spanClose">닫기</button></span></div>
     <div id="spanScroll"><div id="spanInner"><canvas id="spanCv"></canvas><div id="spanHead"></div></div></div>
-    <div class="warn" id="spanOver" style="display:none">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div></div>`;
+    <div class="warn" id="spanOver" style="display:none;margin-bottom:0">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div>`, true);
+  $('#spanClose').addEventListener('click', hideModal);
+  mountSpanTrack(it, BUSY.has(it.status));
 }
 async function spanPeaks(srcA, srcB) {
   const hit = waveCache.find((c) => c.a <= srcA + 0.01 && c.b >= srcB - 0.01);
@@ -1131,6 +1156,7 @@ function spanMouseDown(tr, ev) {
     try {
       await api('/api/insert/update', { id: tr.it.id, action: 'span', wi_start: tr.words[tr.s].wi, wi_end: tr.words[tr.e].wi });
       await refresh();
+      if (spanPopId === tr.it.id) openSpanPopup(tr.it.id);  // 바뀐 자리로 다시 그림 (보던 스크롤 위치는 spanLeft로 유지)
     } catch (err) { toast(err.message); tr.s = s0; tr.e = e0; drawSpan(tr); }
   };
   window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
@@ -1189,7 +1215,7 @@ function renderDetail() {
   h += card(1, '결과', '', r);
 
   // ② 판단 - 왜 이렇게
-  let w = spanBox(it);
+  let w = spanBox(it, busy);
   if (d.reason) w += `<div class="sub"><div class="lbl">왜 이 형태인지</div><div class="reason" style="margin:0">${esc(d.reason)}</div></div>`;
   if (it.form === 'image' && d.point) w += `<div class="sub"><div class="lbl">그림이 보여 줄 것</div><div class="reason" style="margin:0">${esc(d.point)}</div></div>`;
   if (it.motion_refs?.length) {
@@ -1239,7 +1265,8 @@ function renderDetail() {
   box.innerHTML = h;
 
   box.querySelector('#dPlay')?.addEventListener('click', () => { video.currentTime = Math.max(0, it.src_start - 1); video.play(); });
-  mountSpanTrack(it, busy);
+  box.querySelector('#dSpanPlay')?.addEventListener('click', () => spanListen(it));
+  box.querySelector('#dSpanEdit')?.addEventListener('click', () => openSpanPopup(it.id));
   box.querySelectorAll('.cands button').forEach((b) => b.addEventListener('click', () => act(it, 'choose', { index: +b.dataset.k })));
   box.querySelectorAll('[data-form]').forEach((b) => b.addEventListener('click', () => {  // 고르기만 - 만들기는 확인 버튼으로
     pendingForm = { id: it.id, form: b.dataset.form }; renderDetail();
@@ -1324,6 +1351,7 @@ document.addEventListener('keydown', (e) => {
   if (e.target.matches('textarea, input, select')) return;
   if (e.key === ' ') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
   if (e.key === 'Escape') { hideModal(); $('#mkBtn').style.display = 'none'; }
+  if (modalOpen()) return;  // 팝업이 떠 있는 동안 ↑↓·A·X가 뒤의 인서트를 바꾸지 않게
   const cur = S?.items.find((i) => i.id === selId);
   if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
   if (e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
