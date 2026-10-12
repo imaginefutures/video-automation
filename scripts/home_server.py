@@ -1011,6 +1011,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        load_env()  # 여기서 띄우는 run.py·server.py가 지금 .env 상태를 물려받게 (지워진 키 포함)
         path = self.path.split("?")[0]
         if path == "/api/videos/create":
             return self._handle_create_project()

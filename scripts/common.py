@@ -81,23 +81,32 @@ def ensure_project_python() -> None:
                    str(Path(sys.argv[0]).resolve()), *sys.argv[1:]])
 
 
+# 이 프로세스가 .env에서 넣은 키 - .env에서 지워지면 os.environ에서도 뺀다 (셸에서 export한 키는 건드리지 않음)
+_FROM_ENV_FILE: set[str] = set()
+
+
 def load_env() -> None:
-    """PROJECT_ROOT/.env를 os.environ에 넣는다 - .env가 이긴다(이미 있는 값도 덮어씀).
+    """PROJECT_ROOT/.env를 os.environ과 맞춘다 - 웹 환경설정은 .env에 쓰고 .env를 읽어 보여주므로
+    .env가 곧 웹에 보이는 상태다. 있는 키는 덮어쓰고, .env에서 지워진(또는 빈 값이 된) 키는 뺀다.
     10-12 사고(다른 컴퓨터): 검토 서버는 시작할 때 한 번만 읽고 떠 있으면 재사용되는데, 기존 값을
     덮지 않으니 홈 환경설정에서 키를 다시 등록해도(또는 셸에 예전 키가 export돼 있으면) 인서트가
-    계속 옛 키로 "API 키가 맞지 않아요". 키를 고치는 곳은 환경설정(.env) 하나뿐이라 .env를 기준으로 하고,
-    오래 떠 있는 서버는 POST마다 다시 부른다."""
+    계속 옛 키로 "API 키가 맞지 않아요". 그래서 오래 떠 있는 서버는 POST마다 다시 부른다."""
     env_path = PROJECT_ROOT / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        k, v = k.strip(), v.strip().strip('"').strip("'")
-        if k and v:  # 빈 값으로 셸의 키를 지우지는 않는다
-            os.environ[k] = v
+    present: dict[str, str] = {}
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip('"').strip("'")
+            if k and v:
+                present[k] = v
+    for k in _FROM_ENV_FILE - present.keys():
+        os.environ.pop(k, None)
+    os.environ.update(present)
+    _FROM_ENV_FILE.clear()
+    _FROM_ENV_FILE.update(present)
 
 
 def api_keys_status() -> list[dict]:
@@ -135,6 +144,7 @@ def write_env_keys(pairs: dict[str, str]) -> None:
     env_path.write_text("\n".join(out_lines) + "\n")
     for key, value in pairs.items():
         os.environ[key] = value
+        _FROM_ENV_FILE.add(key)
 
 
 def ensure_api_keys() -> None:
