@@ -236,6 +236,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        load_env()  # 이 서버가 뜬 뒤 환경설정에서 키를 바꿨을 수 있다 (common.load_env 참고)
         path = self.path.split("?")[0]
         if path == "/api/client_error":
             print_client_error(self._body())

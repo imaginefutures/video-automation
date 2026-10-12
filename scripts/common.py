@@ -82,7 +82,11 @@ def ensure_project_python() -> None:
 
 
 def load_env() -> None:
-    """Load PROJECT_ROOT/.env into os.environ without overriding existing values."""
+    """PROJECT_ROOT/.env를 os.environ에 넣는다 - .env가 이긴다(이미 있는 값도 덮어씀).
+    10-12 사고(다른 컴퓨터): 검토 서버는 시작할 때 한 번만 읽고 떠 있으면 재사용되는데, 기존 값을
+    덮지 않으니 홈 환경설정에서 키를 다시 등록해도(또는 셸에 예전 키가 export돼 있으면) 인서트가
+    계속 옛 키로 "API 키가 맞지 않아요". 키를 고치는 곳은 환경설정(.env) 하나뿐이라 .env를 기준으로 하고,
+    오래 떠 있는 서버는 POST마다 다시 부른다."""
     env_path = PROJECT_ROOT / ".env"
     if not env_path.exists():
         return
@@ -92,7 +96,7 @@ def load_env() -> None:
             continue
         k, v = line.split("=", 1)
         k, v = k.strip(), v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
+        if k and v:  # 빈 값으로 셸의 키를 지우지는 않는다
             os.environ[k] = v
 
 
