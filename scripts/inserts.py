@@ -70,6 +70,7 @@ Realistic skin, hands and fingers. Ordinary everyday clothes and toys. No text, 
 (blank labels, no brand names). 16:9 frame."""
 
 FORMS = ("text", "image", "video", "asset")
+IMAGE_MAX_SEC = 5.0  # 정적 이미지는 편집본 기준 최대 5초 - 만들 때만 적용, 사용자가 늘리는 건 자유 (10-12 사용자 결정)
 
 
 class InsertDecision(BaseModel):
@@ -87,6 +88,8 @@ class InsertDecision(BaseModel):
                                              "it is clearly NOT a spoon'). 아니면 빈 배열")
     scene: str = Field(description="image: 영어 장면 묘사(주제·구도만, 화풍·글자 지시 금지, 60단어 이내). "
                                    "video: 한국어로 장면별 움직임 구성. asset: 한국어로 사용자에게 받을 실물. text: 빈 문자열")
+    anchor: str = Field(description="image일 때만: 구간 안에서 그림이 가장 직접 보여 주는 핵심 대목을 대본 글자 그대로 옮긴 것 "
+                                    "(이어진 어절, 말하는 데 5초 이내). 이미지는 이 대목부터 최대 5초만 화면에 나온다. 아니면 빈 문자열")
     reason: str = Field(description="이 형태를 고른 이유, 한국어 한두 문장. 가이드의 어느 규칙인지")
     motion_kind: Literal["concept", "steps", "compare", "system", "none"] = Field(
         description="video일 때만: concept(개념이 그림으로 변함) / steps(단계·과정) / compare(시대·두 대상 비교) / system(구조·관계). 아니면 none")
@@ -123,6 +126,7 @@ SUGGEST_SYSTEM_HEAD = """너는 베싸TV(근거 기반 육아 강의 채널)의 
   다른 인서트와 겹쳐도 된다 - 섹션 바가 긴 구간을 덮고 있어도 그 안의 요점·근거·장면·목소리 인서트는 따로 제안한다
 - 글자는 받아쓰기가 아니라 편집자가 다시 쓴 슬로건. 숫자·인명·연구 결과는 대본에 있는 것만
 - image의 scene은 영어로 주제·구도만, 흉내 내는 대상(무엇을 무엇처럼)은 이름으로 쓰지 않는다
+- 정적 이미지는 화면에 최대 5초. 이미지 자리는 대본에서 그 그림이 가장 핵심이 되는 대목에 잡고 anchor에 그 대목을 대본 그대로 옮긴다
 - 화면 글자에 이모지를 쓰지 않는다 (채널 글꼴에 없음). 웃음·감정은 'ㅎㅎ', '..', '!'처럼 글자로
 - 섹션 바(구조·top)는 한 줄, 25자 이내 - 화면 맨 위 한 줄에 그리고 상단 요약은 그 아래 줄에 그린다
 """
@@ -361,6 +365,41 @@ class InsertStore:
                 out.append(w)
         return out
 
+    def _span_text(self, wi_s: int, wi_e: int) -> str:
+        return " ".join(w["text"] for w in self.kept_words(self._kept()) if wi_s <= w["wi"] <= wi_e)
+
+    def fit_image_span(self, wi_s: int, wi_e: int, anchor: str) -> tuple[int, int]:
+        """정적 이미지 자리를 최대 IMAGE_MAX_SEC초로: 구간 안에서 핵심 대목(anchor)을 찾아 그 말부터 뒤로, 남으면 앞으로
+        5초까지 넓힌다. 대목을 못 찾으면 구간 처음부터. 이미 5초 이내면 그대로."""
+        kept = self._kept()
+        ws = [w for w in self.kept_words(kept) if wi_s <= w["wi"] <= wi_e]
+        if not ws:
+            return wi_s, wi_e
+        t0 = [self.to_timeline(kept, w["start"]) for w in ws]
+        t1 = [self.to_timeline(kept, w["end"]) for w in ws]
+        fits = lambda a, b: t1[b] - t0[a] <= IMAGE_MAX_SEC
+        if fits(0, len(ws) - 1):
+            return wi_s, wi_e
+        a, b = _find_anchor(ws, anchor)
+        while b > a and not fits(a, b):
+            b -= 1
+        while True:  # 그림이 핵심 말과 함께 뜨도록 뒤쪽부터 채운다
+            if b + 1 < len(ws) and fits(a, b + 1):
+                b += 1
+            elif a > 0 and fits(a - 1, b):
+                a -= 1
+            else:
+                break
+        return ws[a]["wi"], ws[b]["wi"]
+
+    def _limit_image(self, it: dict, anchor: str) -> None:
+        """이미지로 정해질 때 5초 규칙 적용 - 사용자가 직접 정한 자리(span_user)는 건드리지 않는다."""
+        if it.get("span_user"):
+            return
+        s, e = self.fit_image_span(it["wi_start"], it["wi_end"], anchor)
+        if (s, e) != (it["wi_start"], it["wi_end"]):
+            self._set(it, wi_start=s, wi_end=e, text=self._span_text(s, e))
+
     def maybe_auto_suggest(self) -> None:
         """인서트 화면을 처음 열 때 한 번 - 대본 전체를 읽고 자리를 제안한다 (중간안, 10-09 사용자 결정)."""
         with self.lock:
@@ -470,6 +509,8 @@ class InsertStore:
                 self._set(it, notes=(it.get("notes") or []) + [note])
             self._stage(it, "decide")
             dec = self.decide(it, force_form)
+            if dec["form"] == "image":
+                self._limit_image(it, dec.get("anchor", ""))
             if defer_costly and dec["form"] in ("image", "video"):  # 돈·시간이 드는 형태는 사용자가 '만들기'를 눌러야
                 self._set(it, decision=dec, form=dec["form"], status="suggested", files=[], candidates=[], chosen=None)
                 return
@@ -539,6 +580,9 @@ class InsertStore:
                 pool.update(range(a, b + 1))
                 wi_s, wi_e = sents[a]["wi_start"], sents[b]["wi_end"]
                 text = " ".join(x["text"] for x in sents[a:b + 1])
+                if dec["form"] == "image" and (fit := self.fit_image_span(wi_s, wi_e, dec.get("anchor", ""))) != (wi_s, wi_e):
+                    wi_s, wi_e = fit
+                    text = self._span_text(wi_s, wi_e)
                 it = {"id": uuid.uuid4().hex[:8], "wi_start": wi_s, "wi_end": wi_e, "text": text, "origin": "suggest",
                       "status": "suggested", "created_at": _now(), "updated_at": _now(), "decision": dec, "form": dec["form"],
                       "files": [], "candidates": [], "chosen": None, "error": None}
@@ -578,6 +622,8 @@ class InsertStore:
         def work(it):
             dec = dict(it["decision"])
             self._set(it, status="generating")
+            if dec["form"] == "image":  # 규칙 전에 제안된 것도 만들 때 5초로 (자리 제안 때 이미 맞췄으면 그대로)
+                self._limit_image(it, dec.get("anchor", ""))
             if dec["form"] == "image" and not dec.get("point"):
                 self._stage(it, "image_prompt", "장면을 이해하고 그림을 구상하는 중…")
                 dec.update(self.write_image_prompt(it, dec))
@@ -647,6 +693,7 @@ class InsertStore:
                   "- 숫자·연도·인명·연구 결과는 대본에 있는 것만 쓴다. 지어내지 않는다\n"
                   "- 실존 인물의 얼굴, 책 표지, 논문 화면, 실제 촬영 장면은 만들지 말고 form=asset으로 사용자에게 요청한다\n"
                   "- image의 scene은 영어로, 주제와 구도만 쓴다\n"
+                  "- 정적 이미지는 화면에 최대 5초다. image면 구간에서 그림이 가장 핵심이 되는 대목을 anchor에 대본 그대로 옮긴다\n"
                   "- 화면 글자에 이모지를 쓰지 않는다 (채널 글꼴에 없어 빈 네모로 나온다). 웃음은 'ㅎㅎ', '..'처럼 글자로\n"
                   "- 이미지 모델은 익숙한 물건으로 끌려간다. 장면의 핵심이 '무엇을 무엇처럼'(대체·흉내·비교)이면, scene에서 흉내 내는 대상의 "
                   "이름을 그릴 물건처럼 쓰지 말고(예: 'stick like a spoon' 금지) 실제로 그릴 물건만 구체적으로 묘사하고, must_show에 '무엇이 아닌지'를 적는다\n"
@@ -1202,6 +1249,24 @@ Duration D = {dur:.2f} seconds.
         if action == "dismiss_error":
             self._set(it, error=None, error_info=None, notice=None)
             return it
+        if action == "span":  # 들어가는 자리 늘리기·줄이기 - 직접 정한 길이는 5초 규칙 없이 유지 (다시 만들어도)
+            if it["status"] in ("deciding", "generating"):
+                raise ValueError("만드는 중에는 자리를 바꿀 수 없어요")
+            if it.get("form") == "video":
+                raise ValueError("영상은 길이에 맞춰 만들어져 자리를 바꾸려면 다시 만들어야 해요")
+            s, e = sorted((int(body["wi_start"]), int(body["wi_end"])))
+            kept_wi = {w["wi"] for w in self.kept_words(self._kept())}
+            if s not in kept_wi or e not in kept_wi:
+                raise ValueError("남은 대본 안에서만 고를 수 있어요")
+            struct = _is_structure(it.get("decision"))
+            hit = lambda o, a, b: o["wi_start"] <= b and a <= o["wi_end"]
+            with self.lock:  # 원래 겹쳐 있던 것은 두고, 새로 겹치게 되는 것만 막는다 (구조 층은 다른 층과 겹쳐도 됨)
+                clash = any(o["id"] != iid and o["status"] != "rejected" and _is_structure(o.get("decision")) == struct
+                            and hit(o, s, e) and not hit(o, it["wi_start"], it["wi_end"]) for o in self.data["items"])
+            if clash:
+                raise ValueError("다른 인서트와 겹쳐요")
+            self._set(it, wi_start=s, wi_end=e, text=self._span_text(s, e), span_user=True)
+            return it
         if action == "retry":  # 형태가 정해져 있으면 그대로 만들기만 다시, 아니면 처음부터
             if it["status"] in ("deciding", "generating"):
                 raise ValueError("이미 만드는 중입니다")
@@ -1233,6 +1298,8 @@ Duration D = {dur:.2f} seconds.
             form = body.get("form")
             if form not in FORMS:
                 raise ValueError("알 수 없는 형태입니다")
+            if form != it.get("form"):  # 다른 형태에 맞춰 고친 자리였으니 새 형태 규칙(이미지 5초)을 다시 적용
+                self._set(it, span_user=False)
             threading.Thread(target=self._run, args=(iid, form), daemon=True).start()
         elif action == "choose":
             if it["form"] != "image":
@@ -1478,6 +1545,23 @@ STYLE_DEFAULTS = {
                 "color": "yellow", "dim": False, "stroke_min": 5, "stroke_div": 12, "sample": ["이건 막대기 아니고~ 숟가락이야!"]},
 }
 STYLE_EDITABLE = ("size", "x", "y")
+
+
+def _find_anchor(ws: list[dict], anchor: str) -> tuple[int, int]:
+    """AI가 대본에서 옮겨 쓴 핵심 대목의 단어 위치 (ws 안 순번). 띄어쓰기·문장부호는 무시하고, 통째로 못 찾으면
+    앞 8글자로 시작점만. 그래도 없으면 (0, 0)."""
+    norm = lambda s: re.sub(r"[\W_]+", "", s or "")
+    flat, owner = "", []
+    for k, w in enumerate(ws):
+        n = norm(w["text"])
+        flat += n
+        owner += [k] * len(n)
+    key = norm(anchor)
+    if key and (i := flat.find(key)) >= 0:
+        return owner[i], owner[i + len(key) - 1]
+    if key and (i := flat.find(key[:8])) >= 0:
+        return owner[i], owner[i]
+    return 0, 0
 
 
 def _clamp_pct(v) -> float:

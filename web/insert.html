@@ -115,6 +115,14 @@
   .w.ins.text { text-decoration-color: var(--f-text); } .w.ins.image { text-decoration-color: var(--f-image); } .w.ins.video { text-decoration-color: var(--f-video); } .w.ins.asset { text-decoration-color: var(--f-asset); } .w.ins.none { text-decoration-color: var(--line-strong); }
   .w.ins.sel { background: var(--accent-soft); }
   .w.ins.sug { text-decoration-thickness: 2px; text-decoration-style: dashed; opacity: 0.85; }
+  /* 들어가는 자리 - 앞뒤 자막을 누르면 그 말까지 늘고, 안쪽을 누르면 그 말까지 준다 */
+  .span-ctx { color: var(--muted); }
+  .span-ctx .sw { border-radius: 3px; padding: 1px 0; }
+  .span-ctx.edit .sw { cursor: pointer; }
+  .span-ctx.edit .sw:hover { background: var(--chip-hover); }
+  .span-ctx .sw.in { color: var(--ink); background: var(--accent-soft); font-weight: 600; }
+  .span-ctx.image .sw.in { background: var(--f-image-soft); } .span-ctx.text .sw.in { background: var(--f-text-soft); }
+  .span-ctx.edit .sw.in:hover { background: var(--danger-soft); }
   #mkBtn { position: absolute; z-index: 10; display: none; background: var(--ink); color: #fff; border: 0; border-radius: var(--r-full); padding: 6px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
   #mkBtn:hover { background: #000; }
 
@@ -882,7 +890,7 @@ function renderDecisionBar() {
     $('#dbFirst')?.addEventListener('click', () => { const n = nextPending(); if (n) select(n.id, true); });
   } else {
     const d = it.decision || {};
-    const dur = Math.round((it.t_end ?? 0) - (it.t_start ?? 0));
+    const dur = ((it.t_end ?? 0) - (it.t_start ?? 0)).toFixed(1);
     const list = navItems(); const k = list.findIndex((i) => i.id === it.id);
     const what = it.form === 'image' ? (d.image_kind === 'photo' ? '생성 사진' : '삽화') : it.form === 'video' ? '모션그래픽' : '';
     let actions = '';
@@ -928,6 +936,41 @@ const errInfo = (it) => it.error_info || (it.error ? { title: it.error, hint: '�
 
 function card(num, title, desc, body) {
   return `<section class="card-sec"><h3><span class="num">${num}</span>${title}</h3>${desc ? `<div class="desc">${desc}</div>` : ''}${body}</section>`;
+}
+
+// 들어가는 자리: 인서트 구간 + 앞뒤 한 문장. 영상(모션)은 길이에 맞춰 렌더돼 보기만
+const IMAGE_MAX_SEC = 5;  // scripts/inserts.py IMAGE_MAX_SEC와 같은 값 - 만들 때만 적용, 직접 늘리는 건 자유
+function spanBox(it, busy) {
+  const ws = S.words; const iS = ws.findIndex((w) => w.wi === it.wi_start), iE = ws.findIndex((w) => w.wi === it.wi_end);
+  if (iS < 0 || iE < 0) return `<div class="sub"><div class="lbl">들어가는 자리</div><div class="quote" style="margin:0">${esc(it.text)}</div></div>`;
+  const ends = (k) => /[.?!]$/.test(ws[k].t);
+  let a = iS, b = iE;
+  while (a > 0 && !ends(a - 1)) a--;
+  if (a > 0) { a--; while (a > 0 && !ends(a - 1)) a--; }
+  while (b < ws.length - 1 && !ends(b)) b++;
+  if (b < ws.length - 1) { b++; while (b < ws.length - 1 && !ends(b)) b++; }
+  a = Math.max(a, iS - 40); b = Math.min(b, iE + 40);
+  const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
+  const edit = !busy && it.form !== 'video';
+  const words = ws.slice(a, b + 1).map((w, k) => {
+    const inside = a + k >= iS && a + k <= iE;
+    return `<span class="sw${inside ? ' in' : ''}" data-wi="${w.wi}"${edit ? ` title="${inside ? '여기까지 줄이기' : '여기까지 늘리기'}"` : ''}>${esc(w.t)}</span>`;
+  }).join(' ');
+  const over = it.form === 'image' && dur > IMAGE_MAX_SEC + 0.05;
+  return `<div class="sub"><div class="lbl">들어가는 자리 · <span class="mono">${dur.toFixed(1)}초</span></div>
+    <div style="margin:0" class="quote span-ctx ${it.form || ''}${edit ? ' edit' : ''}">${words}</div>
+    ${over ? `<div class="warn">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div>` : ''}</div>`;
+}
+// 바깥 말 → 그 말까지 늘림. 안쪽 말 → 가까운 끝을 그 말까지 당김 (끝 말을 누르면 그 말 하나 빠짐)
+function spanAfterClick(it, wi) {
+  const ws = S.words; const pos = (x) => ws.findIndex((w) => w.wi === x);
+  const k = pos(wi), iS = pos(it.wi_start), iE = pos(it.wi_end);
+  let s = iS, e = iE;
+  if (k < iS) s = k; else if (k > iE) e = k;
+  else if (iS === iE) return null;
+  else if (k - iS < iE - k) s = k === iS ? iS + 1 : k;
+  else e = k === iE ? iE - 1 : k;
+  return { wi_start: ws[s].wi, wi_end: ws[e].wi };
 }
 
 function renderDetail() {
@@ -977,7 +1020,7 @@ function renderDetail() {
   h += card(1, '결과', '', r);
 
   // ② 판단 - 왜 이렇게
-  let w = `<div class="sub"><div class="lbl">원래 대사</div><div class="quote" style="margin:0">${esc(it.text)}</div></div>`;
+  let w = spanBox(it, busy);
   if (d.reason) w += `<div class="sub"><div class="lbl">왜 이 형태인지</div><div class="reason" style="margin:0">${esc(d.reason)}</div></div>`;
   if (it.form === 'image' && d.point) w += `<div class="sub"><div class="lbl">그림이 보여 줄 것</div><div class="reason" style="margin:0">${esc(d.point)}</div></div>`;
   if (it.motion_refs?.length) {
@@ -1027,6 +1070,9 @@ function renderDetail() {
   box.innerHTML = h;
 
   box.querySelector('#dPlay')?.addEventListener('click', () => { video.currentTime = Math.max(0, it.src_start - 1); video.play(); });
+  box.querySelectorAll('.span-ctx.edit .sw').forEach((el) => el.addEventListener('click', () => {
+    const r = spanAfterClick(it, +el.dataset.wi); if (r) act(it, 'span', r);
+  }));
   box.querySelectorAll('.cands button').forEach((b) => b.addEventListener('click', () => act(it, 'choose', { index: +b.dataset.k })));
   box.querySelectorAll('[data-form]').forEach((b) => b.addEventListener('click', () => {  // 고르기만 - 만들기는 확인 버튼으로
     pendingForm = { id: it.id, form: b.dataset.form }; renderDetail();
