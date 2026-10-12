@@ -27,6 +27,7 @@ import socket
 import subprocess
 import sys
 import threading
+import traceback
 import time
 import webbrowser
 import zlib
@@ -40,10 +41,11 @@ PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
-    api_keys_status, edit_dir, ensure_project_python, is_insert_only, load_env, mark_insert_only, pid_alive, pipeline_log_tail, read_pipeline_status, sanitize_project_name, write_env_keys,
+    api_keys_status, edit_dir, ensure_project_python, is_insert_only, load_env, mark_insert_only, pid_alive, pipeline_log_tail, print_client_error, read_pipeline_status, sanitize_project_name, write_env_keys,
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, BRAND_OUTRO, VIDEO_EDIT_DIR, SPLIT_DIR,
 )
 
+import log_share  # noqa: E402
 import sfx  # noqa: E402
 
 BACKUP_RE = RESERVED_PROJECT_NAME_RE  # common.py와 공유 - sanitize_project_name() 참고
@@ -918,6 +920,15 @@ class Handler(BaseHTTPRequestHandler):
             if not name or not is_project_folder(folder):
                 return self._json({"ok": False, "error": f"알 수 없는 영상: {name}"}, 404)
             return self._json({"ok": True, "log_tail": pipeline_log_tail(folder)})
+        if path == "/api/logs/share":
+            only = (parse_qs(urlsplit(self.path).query).get("only") or [None])[0]
+            root, sroot = videos_root(), splits_root()
+            videos = sorted(p for p in root.iterdir() if is_project_folder(p)) if root.is_dir() else []
+            splits = sorted(p for p in sroot.iterdir() if is_split_folder(p)) if sroot.is_dir() else []
+            versions = read_changelog(1)
+            text = log_share.build(videos, splits, versions[0]["version"] if versions else "?",
+                                   git_current()["sha"], only)
+            return self._json({"text": text, "videos": [p.name for p in videos], "splits": [p.name for p in splits]})
         if path == "/api/setup":
             return self._json({"keys": api_keys_status(), **ffmpeg_status(), "outro": BRAND_OUTRO.exists()})
         if path == "/api/sfx":  # 효과음 라이브러리 - 모든 영상이 함께 쓴다 (적용은 영상별 인서트 화면에서)
@@ -938,6 +949,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 return self._json(update_status())
             except Exception as e:
+                traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 return self._json({"error": str(e)}, 500)
         if path == "/api/update/changelog":
             q = parse_qs(urlsplit(self.path).query)
@@ -984,6 +996,9 @@ class Handler(BaseHTTPRequestHandler):
 
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
+        if path == "/api/client_error":
+            print_client_error(body)
+            return self._json({"ok": True})
         if path in ("/api/sfx/delete", "/api/sfx/rename"):
             try:
                 if path.endswith("delete"):
@@ -998,18 +1013,21 @@ class Handler(BaseHTTPRequestHandler):
                 result = open_review(str(body.get("name", "")))
                 return self._json({"ok": True, **result})
             except Exception as e:  # surface to the UI instead of a silent 500
+                traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 return self._json({"ok": False, "error": str(e), "detail": getattr(e, "detail", None)}, 400)
         if path == "/api/process":
             try:
                 result = resume_processing(str(body.get("name", "")))
                 return self._json({"ok": True, **result})
             except Exception as e:
+                traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 return self._json({"ok": False, "error": str(e), "detail": getattr(e, "detail", None)}, 400)
         if path in ("/api/splits/open", "/api/splits/process"):
             try:
                 fn = open_split if path.endswith("open") else resume_split
                 return self._json({"ok": True, **fn(str(body.get("name", "")))})
             except Exception as e:
+                traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 return self._json({"ok": False, "error": str(e), "detail": getattr(e, "detail", None)}, 400)
         if path == "/api/setup/keys":
             valid_keys = {key for key, _, _ in REQUIRED_API_KEYS + OPTIONAL_API_KEYS}
@@ -1042,6 +1060,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self._json({"ok": False, "error": str(e)}, 400)
         except Exception as e:
+            traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
             return self._json({"ok": False, "error": str(e)}, 500)
 
     def _handle_split_upload(self, path: str):
@@ -1058,6 +1077,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self._json({"ok": False, "error": str(e)}, 400)
         except Exception as e:
+            traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
             return self._json({"ok": False, "error": str(e)}, 500)
 
     def _json(self, data, status: int = 200):
@@ -1107,7 +1127,39 @@ def save_outro(content_length: int, rfile) -> None:
         out.unlink(missing_ok=True)
 
 
+class _Tee:
+    """터미널 출력은 그대로 두고 같은 내용을 파일에도 쓴다."""
+    def __init__(self, stream, f):
+        self.stream, self.f = stream, f
+
+    def write(self, s):
+        self.stream.write(s)
+        self.f.write(s)
+        self.f.flush()
+        return len(s)
+
+    def flush(self):
+        self.stream.flush()
+        self.f.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+def _start_home_log() -> None:
+    """홈 서버 출력(요청 처리 중 오류 traceback 포함)을 ~/.video-cut/logs/home_server.log에도 남긴다 -
+    예전엔 터미널에만 찍혀 창을 닫으면 사라졌고, 로그 공유로도 받을 수 없었다."""
+    log = log_share.HOME_LOG
+    log.parent.mkdir(parents=True, exist_ok=True)
+    if log.exists() and log.stat().st_size > 2 * 1024 * 1024:  # 커지면 최근 절반만 남긴다
+        log.write_bytes(log.read_bytes()[-1024 * 1024:])
+    f = open(log, "a", encoding="utf-8")
+    sys.stdout, sys.stderr = _Tee(sys.stdout, f), _Tee(sys.stderr, f)
+    print(f"\n== 홈 서버 시작 {datetime.now().isoformat(timespec='seconds')}")
+
+
 def serve(port: int, open_browser: bool) -> None:
+    _start_home_log()
     # 10-01 추가: 검토 화면(web/index.html)의 "홈으로" 링크가 8764로 고정돼 있어서 홈 서버를
     # --port로 다른 포트에 띄우면 깨졌다. os.environ에 심어두면 이후 create_project()/
     # open_review()가 subprocess.Popen(env=...없이)으로 띄우는 run.py/server.py가 그대로

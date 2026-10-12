@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import threading
+import traceback
 import webbrowser
 import zipfile
 from urllib.parse import parse_qs, quote, urlsplit
@@ -24,7 +25,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import BRAND_OUTRO, PROJECT_ROOT, edit_dir, load_env, source_media, write_json
+from common import BRAND_OUTRO, PROJECT_ROOT, edit_dir, load_env, print_client_error, source_media, write_json
 from audio_map import load_audio_map
 from propose_segments import retitle, segments_from_ends, valid_ends
 from split_export import INTRO_SEC, OUTRO_SEC, export as run_export
@@ -79,6 +80,7 @@ class Project:
                 run_export(self.folder, progress)
                 self.log("export")
             except Exception as e:  # noqa: BLE001 - 실패 원인을 화면에 보여준다
+                traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 err = getattr(e, "stderr", None)
                 self.export_job["error"] = (err.decode(errors="replace")[-400:] if isinstance(err, bytes) and err else str(e))
             finally:
@@ -238,6 +240,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+        if path == "/api/client_error":
+            print_client_error(self._body())
+            return self._json({"ok": True})
         try:
             if path == "/api/save":
                 dec = self.project.save(self._body())
@@ -248,6 +253,7 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     raise
                 except Exception as e:  # noqa: BLE001 - LLM·네트워크 실패는 화면에 그대로 알린다
+                    traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                     return self._json({"error": f"제목을 짓지 못했습니다: {e}"}, 502)
             if path == "/api/intro/generate":
                 try:
@@ -255,6 +261,7 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     raise
                 except Exception as e:  # noqa: BLE001 - LLM·이미지 API 실패는 화면에 그대로 알린다
+                    traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                     return self._json({"error": f"인트로를 만들지 못했습니다: {e}"}, 502)
             if path == "/api/export":
                 self.project.start_export()

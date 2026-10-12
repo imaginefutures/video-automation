@@ -524,6 +524,20 @@
 </div>
 
 <script>
+// 화면 오류를 서버 로그에 남긴다 - 홈 화면 "로그 공유"로 받았을 때 화면 버그 원인을 찾을 수 있게.
+// 본 스크립트에 문법 오류가 있어도 잡히도록 따로 먼저 둔다.
+(() => {
+  let sent = 0;
+  const report = (kind, message, stack, src) => {
+    if (sent++ >= 20) return;  // 같은 오류가 반복돼도 로그를 덮지 않게
+    fetch('/api/client_error', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, message: String(message), stack: String(stack || ''), src: src || '', page: location.pathname }) }).catch(() => {});
+  };
+  window.addEventListener('error', (e) => report('error', e.message, e.error && e.error.stack, e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : ''));
+  window.addEventListener('unhandledrejection', (e) => { const r = e.reason; report('promise', (r && r.message) || r, r && r.stack); });
+})();
+</script>
+<script>
 let S = null;
 let toks = [];        // {type:'w', wi, s, e} | {type:'g', gid, g, s, e}
 let gv = new Map();   // gap id -> {usable, rec, keep, user}

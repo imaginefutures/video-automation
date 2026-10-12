@@ -52,6 +52,12 @@
     box-shadow: 0 24px 60px -14px rgba(0,0,0,0.25); }
   #modal .box .drag-handle { height: 12px; margin: -8px -12px 10px; cursor: move; user-select: none; }
   #modal .box h2, #setupGate h2 { margin: 0 0 4px; font-size: 16px; }
+  /* 설정 모달은 길어서 스크롤되므로 닫기(×)를 상단에 붙여 둔다 */
+  #modal .box .modal-head { position: sticky; top: -22px; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin: -22px -26px 0; padding: 14px 18px 4px 26px; background: var(--bg); }
+  #modal .box .modal-head h2 { margin: 0; }
+  #modal .box button.modal-x { padding: 2px 9px; border: none; background: none; color: var(--muted); font-size: 20px; line-height: 1; }
+  #modal .box button.modal-x:hover { color: var(--ink); background: var(--surface-2); }
   #modal .box p.note, #setupGate p.note { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
   #modal .box button, #setupGate button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 13px; }
   #modal .box button.primary, #setupGate button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -161,6 +167,7 @@
       <span class="sub" id="rootPath"></span>
       <span class="sub" id="updateChecked" style="margin-right:0" title="업데이트 확인은 5분 간격으로 백그라운드에서 돈다"></span>
       <div class="toolbar">
+        <button id="btnLogs">로그 공유</button>
         <button id="btnSettings">환경설정</button>
         <button id="btnNewVideo" class="primary">+ 새 영상</button>
       </div>
@@ -226,6 +233,20 @@
 
 <div id="toast"></div>
 
+<script>
+// 화면 오류를 서버 로그에 남긴다 - 홈 화면 "로그 공유"로 받았을 때 화면 버그 원인을 찾을 수 있게.
+// 본 스크립트에 문법 오류가 있어도 잡히도록 따로 먼저 둔다.
+(() => {
+  let sent = 0;
+  const report = (kind, message, stack, src) => {
+    if (sent++ >= 20) return;  // 같은 오류가 반복돼도 로그를 덮지 않게
+    fetch('/api/client_error', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, message: String(message), stack: String(stack || ''), src: src || '', page: location.pathname }) }).catch(() => {});
+  };
+  window.addEventListener('error', (e) => report('error', e.message, e.error && e.error.stack, e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : ''));
+  window.addEventListener('unhandledrejection', (e) => { const r = e.reason; report('promise', (r && r.message) || r, r && r.stack); });
+})();
+</script>
 <script>
 const $ = (s, r = document) => r.querySelector(s);
 let toastTimer = null;
@@ -635,7 +656,7 @@ function wireSetupButtons(data, onSave) {
 }
 
 function renderSetupModal(data) {
-  showModal(`<h2>환경설정</h2>
+  showModal(`<div class="modal-head"><h2>환경설정</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
     <p class="note">API 키와 ffmpeg는 컷편집 파이프라인을 돌리는 데 필요합니다</p>
     ${setupBodyHtml(data)}
     ${outroHtml(data)}
@@ -648,6 +669,8 @@ function renderSetupModal(data) {
   wireOutro();
   wireSfx();
   $('#modalNo').addEventListener('click', hideModal);
+  $('#modalX').addEventListener('click', hideModal);
+  makeDraggable($('#modalPanel'), $('#modalPanel .modal-head'));  // 머리줄이 드래그 손잡이를 덮으므로
 }
 // 분할 내보내기가 모든 편 끝에 붙이는 공통 아웃트로 (brand/outro.png, 서버가 1920x1080으로 맞춤)
 function outroHtml(data) {
@@ -778,6 +801,47 @@ async function refreshSetupView() {
   else if ($('#modal').style.display === 'flex') renderSetupModal(data);
 }
 $('#btnSettings').addEventListener('click', openSettingsModal);
+
+// ------------------------------------------------------------------------------- 로그 공유
+// 다른 컴퓨터에서 난 문제를 원인까지 찾으려면 로그가 필요하다 - 영상별·분할·전역 로그와 실행 환경을
+// 홈 서버가 한 덩어리 텍스트로 모아 주고(scripts/log_share.py), 여기서 보고 복사하거나 파일로 저장한다.
+async function openLogShare(only = '') {
+  let data;
+  try { data = await (await fetch(`/api/logs/share${only ? '?only=' + encodeURIComponent(only) : ''}`)).json(); }
+  catch (e) { toast('로그를 불러오지 못했습니다'); return; }
+  const opt = (v, label) => `<option value="${esc(v)}"${v === only ? ' selected' : ''}>${esc(label)}</option>`;
+  const kb = Math.ceil(new Blob([data.text]).size / 1024);
+  showModal(`<div class="modal-head"><h2>로그 공유</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
+    <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px">
+      <select id="logOnly" style="padding:6px 8px;border-radius:8px;border:1px solid var(--line);font:inherit;font-size:13px;max-width:70%">
+        ${opt('', '전체')}${data.videos.map((n) => opt('video:' + n, '영상: ' + n)).join('')}${data.splits.map((n) => opt('split:' + n, '분할: ' + n)).join('')}
+      </select>
+      <span style="font-size:12px;color:var(--muted)">${kb.toLocaleString()} KB</span>
+    </div>
+    <pre style="user-select:text;-webkit-user-select:text;height:55vh;overflow:auto;margin:0;padding:10px 12px;background:var(--chip);border-radius:6px;
+                font-family:var(--mono);font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-all">${esc(data.text)}</pre>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="modalNo">닫기</button>
+      <button id="logSave" style="margin-left:auto">파일로 저장</button>
+      <button id="logCopy" class="primary">복사</button>
+    </div>`);
+  $('#modalPanel').style.width = 'min(900px, 94vw)';
+  $('#modalPanel').style.maxWidth = 'none';
+  $('#modalNo').addEventListener('click', hideModal);
+  $('#modalX').addEventListener('click', hideModal);
+  makeDraggable($('#modalPanel'), $('#modalPanel .modal-head'));
+  $('#logOnly').addEventListener('change', (ev) => openLogShare(ev.target.value));
+  $('#logCopy').addEventListener('click', (ev) => copyText(data.text, ev.currentTarget));
+  $('#logSave').addEventListener('click', () => {
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    a.href = URL.createObjectURL(new Blob([data.text], { type: 'text/plain;charset=utf-8' }));
+    a.download = `video-cut-log-${stamp}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+}
+$('#btnLogs').addEventListener('click', () => openLogShare());
 
 // --------------------------------------------------------------------------- 설정 게이트 (최초 화면)
 // 키/ffmpeg 중 하나라도 안 끝났으면 프로젝트 목록 대신 이 화면만 보여준다 - "업로드 버튼이

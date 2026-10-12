@@ -16,6 +16,7 @@ import json
 import os
 import re
 import threading
+import traceback
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -448,6 +449,7 @@ class InsertStore:
         except Exception as e:  # 화면에 설명과 함께 보여 준다 - 조용히 실패하지 않게
             info = explain_error(e, STAGE_KO.get(it.get("stage") or "", it.get("stage")))
             print(f"[inserts] {iid} 실패 ({info['stage']}): {info['raw'][:300]}")
+            traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
             if had_result:  # 이전 결과는 두고 실패만 알린다
                 self._set(it, **prev, error=info["title"], error_info={**info, "kept_previous": True}, progress=None, stage=None, cancel=False)
             else:
@@ -556,6 +558,7 @@ class InsertStore:
                 self._save()
         except Exception as e:
             info = explain_error(e, "자리 제안")
+            traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
             with self.lock:
                 self.data["suggest"] = {"state": "error", "error": info["title"], "error_info": info}
                 self._save()

@@ -403,6 +403,21 @@ LLM_PRICING_USD_PER_MTOK: dict[str, dict[str, float]] = {
 }
 
 
+CLIENT_ERROR_FIELDS = ("kind", "message", "src", "page", "stack")
+CLIENT_ERROR_TAG = "[브라우저 오류]"  # log_share.py가 server.log에서 이 줄을 찾는다
+
+
+def client_error_fields(body: dict) -> dict:
+    """브라우저가 POST /api/client_error로 보낸 오류 보고에서 아는 필드만, 길이를 잘라 받는다."""
+    return {k: str(body[k])[:2000] for k in CLIENT_ERROR_FIELDS if body.get(k)}
+
+
+def print_client_error(body: dict) -> None:
+    """세션 로그(actions.log)가 없는 서버(홈·분할·처리 중 화면)는 stderr로 남긴다 - 각자 server.log로 간다."""
+    print(f"{CLIENT_ERROR_TAG} {datetime.now().isoformat(timespec='seconds')} "
+          f"{json.dumps(client_error_fields(body), ensure_ascii=False)}", file=sys.stderr, flush=True)
+
+
 def log_llm_usage(folder: Path, step_label: str, model: str, usage) -> None:
     """Anthropic API 호출 하나의 토큰 사용량을 <folder>/edit/llm_usage.jsonl에 한 줄 추가한다
     (R8 영수증의 "영상당 처리 비용 추정"이 이 파일을 합산해서 보여줌, server.py Session.receipt()).

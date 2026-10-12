@@ -21,13 +21,14 @@ import re
 import subprocess
 import sys
 import threading
+import traceback
 import time
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python, pid_alive, is_insert_only
+from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python, pid_alive, is_insert_only, client_error_fields, print_client_error
 if __name__ == "__main__":
     ensure_project_python()  # 아래 audio_map 등이 numpy를 import하므로 그 전에 - common.py 참고
 from build_edl import compute_kept_segments, BOUNDARY_PAD_SEC
@@ -1340,6 +1341,7 @@ class Handler(BaseHTTPRequestHandler):
                 end = min(self.session.duration, float(q["end"][0]))
                 return self._json(self.session.waveform(start, end))
             except Exception as e:
+                traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 return self._json({"error": str(e)}, 400)
         self.send_error(404)
 
@@ -1353,8 +1355,15 @@ class Handler(BaseHTTPRequestHandler):
                                                        self.rfile.read(length))
                 return self._json({"ok": True, "item": it})
             except Exception as e:
+                traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 return self._json({"ok": False, "error": str(e)}, 400)
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.path == "/api/client_error":  # 화면 오류를 조작 기록 사이에 남겨 직전에 뭘 눌렀는지 같이 보이게
+            if self.session is not None:
+                self.session.log("client_error", **client_error_fields(body))
+            else:
+                print_client_error(body)
+            return self._json({"ok": True})
         if self.path in ("/api/pipeline/pause", "/api/pipeline/resume", "/api/pipeline/stop") and self.session is None:
             try:
                 return self._json({"ok": True, **_control_pipeline(self.folder, self.path.rsplit("/", 1)[1])})
@@ -1426,6 +1435,7 @@ class Handler(BaseHTTPRequestHandler):
                     with self.session.lock:
                         out = self.session.export_fcpxml(edl_path)
                 except Exception as e:  # 내보내기 실패도 원인과 해결 방법을 같이 보여 준다
+                    traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                     from inserts import explain_error
                     info = explain_error(e, "FCP 내보내기")
                     if isinstance(e, subprocess.CalledProcessError):
@@ -1458,6 +1468,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.session.log(action, **body)
                 return self._json({"ok": True})
         except Exception as e:  # surface to the UI instead of a silent 500
+            traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
             return self._json({"ok": False, "error": str(e)}, 400)
         self.send_error(404)
 
