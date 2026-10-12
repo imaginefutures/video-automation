@@ -115,14 +115,14 @@
   .w.ins.text { text-decoration-color: var(--f-text); } .w.ins.image { text-decoration-color: var(--f-image); } .w.ins.video { text-decoration-color: var(--f-video); } .w.ins.asset { text-decoration-color: var(--f-asset); } .w.ins.none { text-decoration-color: var(--line-strong); }
   .w.ins.sel { background: var(--accent-soft); }
   .w.ins.sug { text-decoration-thickness: 2px; text-decoration-style: dashed; opacity: 0.85; }
-  /* 들어가는 자리 - 앞뒤 자막을 누르면 그 말까지 늘고, 안쪽을 누르면 그 말까지 준다 */
-  .span-ctx { color: var(--muted); }
-  .span-ctx .sw { border-radius: 3px; padding: 1px 0; }
-  .span-ctx.edit .sw { cursor: pointer; }
-  .span-ctx.edit .sw:hover { background: var(--chip-hover); }
-  .span-ctx .sw.in { color: var(--ink); background: var(--accent-soft); font-weight: 600; }
-  .span-ctx.image .sw.in { background: var(--f-image-soft); } .span-ctx.text .sw.in { background: var(--f-text-soft); }
-  .span-ctx.edit .sw.in:hover { background: var(--danger-soft); }
+  /* 들어가는 자리 - 편집본 시간축 파형 + 대본. 좌우로 스크롤하며 양 끝을 끌어 정한다 */
+  .span-lbl { display: flex; align-items: center; gap: 6px; }
+  .span-lbl .btn { margin-left: auto; padding: 0 10px; font-size: 12px; line-height: 22px; }
+  /* overscroll 막기 - 트랙패드로 좌우 스크롤하다 끝에 닿으면 브라우저 '뒤로 가기'가 되지 않게 */
+  #spanScroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
+  #spanInner { position: relative; }
+  #spanCv { display: block; cursor: pointer; }
+  #spanHead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); pointer-events: none; display: none; }
   #mkBtn { position: absolute; z-index: 10; display: none; background: var(--ink); color: #fff; border: 0; border-radius: var(--r-full); padding: 6px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
   #mkBtn:hover { background: #000; }
 
@@ -401,7 +401,7 @@ function renderAll() {
   }
   const it = S.items.find((i) => i.id === selId);
   const key = JSON.stringify([selId, it, pendingForm]);
-  if (key !== lastDetailKey) { lastDetailKey = key; renderDetail(); } else renderDecisionBar();
+  if (key !== lastDetailKey && !spanDrag) { lastDetailKey = key; renderDetail(); } else renderDecisionBar();
 }
 function renderSugBar() {
   const bar = $('#sugBar'); const sg = S.suggest || { state: 'none' };
@@ -586,6 +586,7 @@ function movePlayhead() {
   const o = toOut(video.currentTime || 0);
   $('#playhead').style.left = `${(o / (S.duration_out || 1)) * 100}%`;
   $('#tlNow').textContent = fmt(o); $('#vTime').textContent = `${fmt(o)} / ${fmt(S.duration_out)}`;
+  moveSpanHead();
 }
 let cutSkipSeek = false;  // 아래 이동이 잘린 구간 건너뛰기임을 seeking 핸들러에 알림
 function skipCuts() {
@@ -612,6 +613,8 @@ function sfxCross(i) {
 }
 function tick() {
   if (!S) return;
+  // ▶ 듣기의 끝 - 그사이 다른 곳으로 크게 옮겼으면 멈추지 않는다
+  if (spanStopAt != null && !video.paused && video.currentTime >= spanStopAt && video.currentTime < spanStopAt + 1) video.pause();
   if (!video.paused) skipCuts();
   // 재생 중 인서트 시작 지점을 지나면 연결된 효과음을 파일 길이 그대로 재생
   const nowT = video.currentTime;
@@ -657,7 +660,7 @@ video.addEventListener('play', () => {
   sfxLastT = video.currentTime - 0.15;
   document.querySelectorAll('#detail video').forEach((v) => v.pause());  // 본 영상과 동시에 디코딩하지 않게
 });
-video.addEventListener('pause', () => { $('#btnPlay').textContent = '▶ 재생'; sfxStopAll(); });
+video.addEventListener('pause', () => { $('#btnPlay').textContent = '▶ 재생'; sfxStopAll(); spanStopAt = null; });
 $('#btnPlay').addEventListener('click', () => (video.paused ? video.play() : video.pause()));
 
 // ---------------------------------------------------------------- 드래그로 구간 선택 -> 인서트 만들기
@@ -957,39 +960,186 @@ function card(num, title, desc, body) {
   return `<section class="card-sec"><h3><span class="num">${num}</span>${title}</h3>${desc ? `<div class="desc">${desc}</div>` : ''}${body}</section>`;
 }
 
-// 들어가는 자리: 인서트 구간 + 앞뒤 한 문장. 영상(모션)은 길이에 맞춰 렌더돼 보기만
+// 들어가는 자리: 편집본 시간축(잘린 곳은 이어 붙임)에 파형 + 대본을 깔고, 인서트 구간의 양 끝을 끌어 정한다.
+// 컷편집 정밀 조정과 같은 방식 - 다만 인서트는 말 단위로 붙으니 끝은 말 경계에 붙는다. 영상(모션)은 길이에 맞춰 렌더돼 보기만
 const IMAGE_MAX_SEC = 5;  // scripts/inserts.py IMAGE_MAX_SEC와 같은 값 - 만들 때만 적용, 직접 늘리는 건 자유
-function spanBox(it, busy) {
-  const ws = S.words; const iS = ws.findIndex((w) => w.wi === it.wi_start), iE = ws.findIndex((w) => w.wi === it.wi_end);
+const SPAN_PPS = 150, SPAN_PAD = 15, SPAN_MAX_W = 8000;  // 1초당 px, 구간 앞뒤로 보여 줄 초, 캔버스 최대 폭
+const SPAN_LABEL_H = 36, SPAN_H = 100;  // 글자는 두 줄로 엇갈려 - 짧은 말도 잘리지 않게 옆 말 자리까지 쓴다
+const FORMS = ['text', 'image', 'video', 'asset'];
+const waveCache = [];   // [{a, b, peaks}] 원본 시각 - 자리를 조금 옮겨도 다시 받지 않게 앞뒤로 넉넉히 받아 둔다
+let spanTrack = null;   // 지금 상세에 그려진 자리 트랙
+let spanDrag = false;   // 끝을 끄는 중 - 그동안 폴링이 상세를 다시 그리지 않게
+let spanStopAt = null;  // ▶ 듣기 - 원본 시각으로 여기서 멈춤
+const spanHit = (o, s, e) => o.wi_start <= e && s <= o.wi_end;  // 인서트 o가 말 s~e와 겹치나
+const spanLeft = {};    // 인서트 id -> 트랙 왼쪽 끝의 편집본 시각 (자리를 바꿔 다시 그려도 보던 곳 유지)
+
+function spanBox(it) {
+  const iS = S.words.findIndex((w) => w.wi === it.wi_start), iE = S.words.findIndex((w) => w.wi === it.wi_end);
   if (iS < 0 || iE < 0) return `<div class="sub"><div class="lbl">들어가는 자리</div><div class="quote" style="margin:0">${esc(it.text)}</div></div>`;
-  const ends = (k) => /[.?!]$/.test(ws[k].t);
-  let a = iS, b = iE;
-  while (a > 0 && !ends(a - 1)) a--;
-  if (a > 0) { a--; while (a > 0 && !ends(a - 1)) a--; }
-  while (b < ws.length - 1 && !ends(b)) b++;
-  if (b < ws.length - 1) { b++; while (b < ws.length - 1 && !ends(b)) b++; }
-  a = Math.max(a, iS - 40); b = Math.min(b, iE + 40);
   const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
-  const edit = !busy && it.form !== 'video';
-  const words = ws.slice(a, b + 1).map((w, k) => {
-    const inside = a + k >= iS && a + k <= iE;
-    return `<span class="sw${inside ? ' in' : ''}" data-wi="${w.wi}"${edit ? ` title="${inside ? '여기까지 줄이기' : '여기까지 늘리기'}"` : ''}>${esc(w.t)}</span>`;
-  }).join(' ');
-  const over = it.form === 'image' && dur > IMAGE_MAX_SEC + 0.05;
-  return `<div class="sub"><div class="lbl">들어가는 자리 · <span class="mono">${dur.toFixed(1)}초</span></div>
-    <div style="margin:0" class="quote span-ctx ${it.form || ''}${edit ? ' edit' : ''}">${words}</div>
-    ${over ? `<div class="warn">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div>` : ''}</div>`;
+  return `<div class="sub"><div class="lbl span-lbl">들어가는 자리 · <span class="mono" id="spanDur">${dur.toFixed(1)}초</span><button class="btn" id="spanPlay">▶ 듣기</button></div>
+    <div id="spanScroll"><div id="spanInner"><canvas id="spanCv"></canvas><div id="spanHead"></div></div></div>
+    <div class="warn" id="spanOver" style="display:none">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div></div>`;
 }
-// 바깥 말 → 그 말까지 늘림. 안쪽 말 → 가까운 끝을 그 말까지 당김 (끝 말을 누르면 그 말 하나 빠짐)
-function spanAfterClick(it, wi) {
-  const ws = S.words; const pos = (x) => ws.findIndex((w) => w.wi === x);
-  const k = pos(wi), iS = pos(it.wi_start), iE = pos(it.wi_end);
-  let s = iS, e = iE;
-  if (k < iS) s = k; else if (k > iE) e = k;
-  else if (iS === iE) return null;
-  else if (k - iS < iE - k) s = k === iS ? iS + 1 : k;
-  else e = k === iE ? iE - 1 : k;
-  return { wi_start: ws[s].wi, wi_end: ws[e].wi };
+async function spanPeaks(srcA, srcB) {
+  const hit = waveCache.find((c) => c.a <= srcA + 0.01 && c.b >= srcB - 0.01);
+  if (hit) return hit;
+  const a = Math.max(0, srcA - 10), b = Math.min(S.duration_src, srcB + 10);
+  try {
+    const r = await (await fetch(`/api/waveform?start=${a}&end=${b}&buckets=${Math.ceil((b - a) * 100)}`)).json();
+    if (!r.peaks?.length) return null;
+    const c = { a: r.start, b: r.end, peaks: r.peaks };
+    waveCache.push(c); if (waveCache.length > 8) waveCache.shift();
+    return c;
+  } catch (e) { return null; }  // 파형 없이도 대본으로 자리는 정할 수 있다
+}
+function mountSpanTrack(it, busy) {
+  spanTrack = null;
+  const sc = $('#spanScroll'); if (!sc) return;
+  const ws = S.words, iS = ws.findIndex((w) => w.wi === it.wi_start), iE = ws.findIndex((w) => w.wi === it.wi_end);
+  const o0 = ws[iS].o, o1 = toOut(ws[iE].e);
+  const a = Math.max(0, o0 - SPAN_PAD), b = Math.min(S.duration_out, o1 + SPAN_PAD);
+  const pps = Math.min(SPAN_PPS, SPAN_MAX_W / Math.max(1, b - a));
+  const words = ws.filter((w) => w.o < b && toOut(w.e) > a)
+    .map((w) => ({ wi: w.wi, t: w.t, s: w.s, e: w.e, x0: (w.o - a) * pps, x1: (toOut(w.e) - a) * pps }));
+  const pos = (wi) => words.findIndex((w) => w.wi === wi);
+  // 같은 층(구조 층끼리 / 나머지끼리)인데 지금 안 겹친 인서트는 넘지 못한다 - scripts/inserts.py update('span')과 같은 규칙
+  const isStruct = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
+  const others = S.items.filter((o) => o.id !== it.id && o.status !== 'rejected' && o.t_end > a && o.t_start < b)
+    .map((o) => ({ form: o.form, x0: (o.t_start - a) * pps, x1: (o.t_end - a) * pps, wi_start: o.wi_start, wi_end: o.wi_end,
+      block: isStruct(o) === isStruct(it) && !spanHit(o, it.wi_start, it.wi_end) }));
+  const tr = { it, a, b, pps, words, others, s: pos(it.wi_start), e: pos(it.wi_end), edit: !busy && it.form !== 'video',
+    w: Math.ceil((b - a) * pps), cv: $('#spanCv'), sc, cols: null };
+  spanTrack = tr;
+  drawSpan(tr);
+  sc.scrollLeft = ((spanLeft[it.id] ?? Math.max(a, o0 - 1.5)) - a) * pps;
+  sc.addEventListener('scroll', () => { spanLeft[it.id] = a + sc.scrollLeft / pps; });
+  // 마우스 휠(세로)도 좌우 스크롤로 - 트랙패드는 원래 좌우로 된다
+  sc.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { sc.scrollLeft += e.deltaY; e.preventDefault(); }
+  }, { passive: false });
+  tr.cv.addEventListener('mousemove', (e) => { if (!spanDrag) tr.cv.style.cursor = spanEdgeAt(tr, e.offsetX) ? 'ew-resize' : 'pointer'; });
+  tr.cv.addEventListener('mousedown', (e) => spanMouseDown(tr, e));
+  $('#spanPlay').addEventListener('click', () => {
+    video.currentTime = tr.words[tr.s].s; spanStopAt = tr.words[tr.e].e; video.play();
+  });
+  spanPeaks(toSrc(a), toSrc(b)).then((c) => {
+    if (!c || spanTrack !== tr) return;
+    // 원본 파형 칸을 편집본 시각으로 옮긴다 - 잘린 구간의 칸은 버림 (칸과 kept 둘 다 시간순이라 한 번에 훑음)
+    const bs = (c.b - c.a) / c.peaks.length; const cols = []; let k = 0, peak = 0.05;
+    c.peaks.forEach(([mn, mx], i) => {
+      const t = c.a + (i + 0.5) * bs;
+      while (k < kept.length && kept[k].e <= t) k++;
+      if (k >= kept.length || t < kept[k].s) return;
+      const o = kept[k].o + t - kept[k].s; if (o < a || o > b) return;
+      cols.push([(o - a) * pps, mn, mx]); peak = Math.max(peak, -mn, mx);
+    });
+    tr.cols = { list: cols, bw: Math.max(1, bs * pps), scale: 0.95 / peak };
+    drawSpan(tr);
+  });
+}
+function drawSpan(tr) {
+  const { cv, w, words } = tr; const H = SPAN_H, dpr = window.devicePixelRatio || 1;
+  cv.style.width = `${w}px`; cv.style.height = `${H}px`; cv.width = w * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, H);
+  // 캔버스는 CSS 변수를 바로 못 쓴다 - 형태 색을 읽어 온다
+  const css = getComputedStyle(document.documentElement); const v = (n) => css.getPropertyValue(n).trim();
+  const fc = (f, soft = '') => (FORMS.includes(f) ? v(`--f-${f}${soft}`) : v(soft ? '--accent-soft' : '--accent'));
+  const form = tr.it.form, main = fc(form);
+  const x0 = words[tr.s].x0, x1 = words[tr.e].x1;
+  ctx.fillStyle = fc(form, '-soft'); ctx.fillRect(x0, 0, x1 - x0, H);
+  // 다른 인서트 - 바닥에 옅은 띠 (새로 겹치게 끌면 서버가 막는다)
+  ctx.globalAlpha = 0.45;
+  for (const o of tr.others) { ctx.fillStyle = fc(o.form); ctx.fillRect(o.x0, H - 4, o.x1 - o.x0, 4); }
+  ctx.globalAlpha = 1;
+  const waveTop = SPAN_LABEL_H, waveH = H - SPAN_LABEL_H - 6, mid = waveTop + waveH / 2;
+  if (tr.cols) {
+    const { list, bw, scale } = tr.cols, ink = v('--ink'), dim = v('--line-strong');
+    for (const [x, mn, mx] of list) {
+      ctx.fillStyle = x >= x0 && x <= x1 ? ink : dim;
+      const y1 = mid - mx * scale * (waveH / 2), y2 = mid - mn * scale * (waveH / 2);
+      ctx.fillRect(x, y1, Math.max(1, bw - 0.3), Math.max(1, y2 - y1));
+    }
+  }
+  ctx.textBaseline = 'middle'; ctx.strokeStyle = 'rgba(0,0,0,0.10)'; ctx.lineWidth = 1;
+  words.forEach((wd, k) => {
+    const inSel = k >= tr.s && k <= tr.e, row = k % 2, rowH = SPAN_LABEL_H / 2;
+    const colW = (words[k + 2]?.x0 ?? w) - wd.x0;  // 같은 줄의 다음 말까지
+    ctx.beginPath(); ctx.moveTo(wd.x0 + 0.5, row * rowH); ctx.lineTo(wd.x0 + 0.5, H); ctx.stroke();
+    ctx.font = `${inSel ? '600 ' : ''}12px -apple-system, "Apple SD Gothic Neo", sans-serif`;
+    ctx.fillStyle = inSel ? v('--ink') : v('--muted');
+    let label = wd.t;
+    while (label.length > 1 && ctx.measureText(label).width > colW - 3) label = label.slice(0, -1);
+    if (label !== wd.t) label = label.slice(0, -1) + '…';
+    ctx.save(); ctx.beginPath(); ctx.rect(wd.x0, row * rowH, Math.max(0, colW), rowH); ctx.clip();
+    ctx.fillText(label, wd.x0 + 3, row * rowH + rowH / 2 + 1); ctx.restore();
+  });
+  const dur = (x1 - x0) / tr.pps;
+  if (form === 'image') {  // 만들 때 기준 5초 - 넘겨도 되지만 어디까지인지 보이게
+    const g = x0 + IMAGE_MAX_SEC * tr.pps;
+    if (g < w) { ctx.strokeStyle = main; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(g + 0.5, 0); ctx.lineTo(g + 0.5, H); ctx.stroke(); ctx.setLineDash([]); }
+  }
+  ctx.fillStyle = main;
+  for (const x of [x0, x1]) {
+    ctx.fillRect(x - 1, 0, 2, H);
+    if (tr.edit) ctx.fillRect(x - 3, mid - 9, 6, 18);  // 손잡이
+  }
+  $('#spanDur').textContent = `${dur.toFixed(1)}초`;
+  $('#spanOver').style.display = form === 'image' && dur > IMAGE_MAX_SEC + 0.05 ? '' : 'none';
+  moveSpanHead();
+}
+function spanEdgeAt(tr, x) {
+  if (!tr.edit) return null;
+  const ds = Math.abs(x - tr.words[tr.s].x0), de = Math.abs(x - tr.words[tr.e].x1);
+  if (Math.min(ds, de) > 10) return null;
+  return ds < de ? 's' : 'e';
+}
+function spanMouseDown(tr, ev) {
+  const edge = spanEdgeAt(tr, ev.offsetX);
+  if (!edge) {  // 끝이 아닌 곳을 누르면 그 시각으로 이동
+    video.currentTime = toSrc(tr.a + ev.offsetX / tr.pps); tick();
+    return;
+  }
+  ev.preventDefault();
+  const s0 = tr.s, e0 = tr.e; let lastX = ev.clientX, raf = 0;
+  spanDrag = true;
+  const apply = () => {  // 끝은 가장 가까운 말 경계로 - 시작은 말의 앞, 끝은 말의 뒤
+    const x = lastX - tr.cv.getBoundingClientRect().left;
+    let best = edge === 's' ? tr.s : tr.e, bd = Infinity;
+    const blocked = (k) => tr.others.some((o) => o.block && (edge === 's' ? spanHit(o, tr.words[k].wi, tr.words[tr.e].wi) : spanHit(o, tr.words[tr.s].wi, tr.words[k].wi)));
+    tr.words.forEach((wd, k) => {
+      if (edge === 's' ? k > tr.e : k < tr.s) return;
+      if (blocked(k)) return;
+      const d = Math.abs((edge === 's' ? wd.x0 : wd.x1) - x);
+      if (d < bd) { bd = d; best = k; }
+    });
+    if (best !== tr[edge]) { tr[edge] = best; drawSpan(tr); }
+  };
+  // 끝을 들고 트랙 가장자리로 가면 그쪽으로 저절로 스크롤
+  const edgeScroll = () => {
+    const r = tr.sc.getBoundingClientRect();
+    const dx = lastX < r.left + 28 ? lastX - (r.left + 28) : lastX > r.right - 28 ? lastX - (r.right - 28) : 0;
+    if (dx) { tr.sc.scrollLeft += Math.max(-24, Math.min(24, dx / 2)); apply(); }
+    raf = requestAnimationFrame(edgeScroll);
+  };
+  raf = requestAnimationFrame(edgeScroll);
+  const move = (e) => { lastX = e.clientX; apply(); };
+  const up = async () => {
+    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+    cancelAnimationFrame(raf); spanDrag = false;
+    if (tr.s === s0 && tr.e === e0) return;
+    try {
+      await api('/api/insert/update', { id: tr.it.id, action: 'span', wi_start: tr.words[tr.s].wi, wi_end: tr.words[tr.e].wi });
+      await refresh();
+    } catch (err) { toast(err.message); tr.s = s0; tr.e = e0; drawSpan(tr); }
+  };
+  window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+}
+function moveSpanHead() {
+  const tr = spanTrack; const h = $('#spanHead');
+  if (!tr || !h) return;
+  const x = (toOut(video.currentTime || 0) - tr.a) * tr.pps;
+  h.style.display = x >= 0 && x <= tr.w ? 'block' : 'none'; h.style.left = `${x - 1}px`;
 }
 
 function renderDetail() {
@@ -1039,7 +1189,7 @@ function renderDetail() {
   h += card(1, '결과', '', r);
 
   // ② 판단 - 왜 이렇게
-  let w = spanBox(it, busy);
+  let w = spanBox(it);
   if (d.reason) w += `<div class="sub"><div class="lbl">왜 이 형태인지</div><div class="reason" style="margin:0">${esc(d.reason)}</div></div>`;
   if (it.form === 'image' && d.point) w += `<div class="sub"><div class="lbl">그림이 보여 줄 것</div><div class="reason" style="margin:0">${esc(d.point)}</div></div>`;
   if (it.motion_refs?.length) {
@@ -1089,9 +1239,7 @@ function renderDetail() {
   box.innerHTML = h;
 
   box.querySelector('#dPlay')?.addEventListener('click', () => { video.currentTime = Math.max(0, it.src_start - 1); video.play(); });
-  box.querySelectorAll('.span-ctx.edit .sw').forEach((el) => el.addEventListener('click', () => {
-    const r = spanAfterClick(it, +el.dataset.wi); if (r) act(it, 'span', r);
-  }));
+  mountSpanTrack(it, busy);
   box.querySelectorAll('.cands button').forEach((b) => b.addEventListener('click', () => act(it, 'choose', { index: +b.dataset.k })));
   box.querySelectorAll('[data-form]').forEach((b) => b.addEventListener('click', () => {  // 고르기만 - 만들기는 확인 버튼으로
     pendingForm = { id: it.id, form: b.dataset.form }; renderDetail();

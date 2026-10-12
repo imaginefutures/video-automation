@@ -1343,7 +1343,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 start = max(0.0, float(q["start"][0]))
                 end = min(self.session.duration, float(q["end"][0]))
-                return self._json(self.session.waveform(start, end))
+                # 인서트 "들어가는 자리"는 수십 초를 좌우 스크롤로 보여 줘 기본 320칸이면 뭉개진다
+                buckets = max(32, min(20000, int(q.get("buckets", ["320"])[0])))
+                return self._json(self.session.waveform(start, end, buckets))
             except Exception as e:
                 traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 return self._json({"error": str(e)}, 400)
