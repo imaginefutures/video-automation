@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from build_edl import compute_kept_segments
 from common import log_llm_usage, thinking_kwargs, write_json
 import fonts
-import sfx
+import assets_lib
 from split_intro import BRAND_CONTEXT  # 채널 소개 + "Never" 목록 - 인트로 이미지와 같은 규칙
 
 DECIDE_MODEL = "claude-opus-5-5"
@@ -390,7 +390,7 @@ class InsertStore:
             "items": items,
             "fonts_missing": fonts.missing_labels(),
             "styles": self.styles_view(),
-            "sfx_lib": sfx.items(),
+            "sfx_lib": assets_lib.items("sfx"),
             "suggest": self.data.get("suggest") or {"state": "none"},
         }
 
@@ -1189,7 +1189,7 @@ Duration D = {dur:.2f} seconds.
             return it
         if action == "sfx":  # 효과음 연결/해제 - 인서트가 시작하는 순간 파일 전체를 재생
             sid = body.get("sfx") or None
-            if sid and not sfx.get(sid):
+            if sid and not assets_lib.get("sfx", sid):
                 raise ValueError("없는 효과음입니다")
             self._set(it, sfx=sid)
             return it
@@ -1365,9 +1365,9 @@ Duration D = {dur:.2f} seconds.
             items = [it for it in self.data["items"] if it["status"] == "approved" and it["files"]]
         for it in sorted(items, key=lambda x: by_wi[x["wi_start"]]["start"]):
             label = f"{it['form']} {' '.join((it.get('decision') or {}).get('lines', []))[:30] or it['text'][:30]}"
-            s_item = sfx.get(it["sfx"]) if it.get("sfx") else None
+            s_item = assets_lib.get("sfx", it["sfx"]) if it.get("sfx") else None
             out.append({"id": it["id"], "lane_base": 3 if _is_structure(it.get("decision")) else 1,  # 구조 층은 위 레인 - 다른 인서트와 겹쳐도 됨
-                        "sfx": ({"path": str(sfx.path(it["sfx"]).resolve()), "name": s_item["name"], "duration": s_item["duration"],
+                        "sfx": ({"path": str(assets_lib.path("sfx", it["sfx"]).resolve()), "name": s_item["name"], "duration": s_item["duration"],
                                  "rate": s_item.get("rate", 48000), "channels": s_item.get("channels", 2)} if s_item else None),
                         "start": by_wi[it["wi_start"]]["start"], "end": by_wi[it["wi_end"]]["end"],
                         "name": label, "role": f"인서트.{ {'text': '텍스트', 'image': '이미지', 'video': '영상', 'asset': '실물'}[it['form']] }",

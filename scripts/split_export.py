@@ -8,7 +8,7 @@
 - 대본은 같은 경계에서 끊기고, 사용자가 화면에서 고친 글자(text_edits)가 반영된다
 - 자막(NN_<제목>.srt)은 내보낸 영상 시간에 맞춘다 - 인트로가 붙은 편은 그만큼 뒤로 민다. 긴 문장은
   SRT_MAX_CHARS 안쪽으로 띄어쓰기에서 나누고 글자 수에 비례해 시간을 나눈다
-- 편마다 고른 인트로 이미지(split_intro.py)를 앞에 INTRO_SEC, 공통 아웃트로(brand/outro.png)를 뒤에
+- 편마다 고른 인트로 이미지(split_intro.py)를 앞에 INTRO_SEC, 공통 아웃트로(공통 자산, assets_lib.outro_path())를 뒤에
   OUTRO_SEC 붙인다. 둘 다 검은 화면에서 FADE_IMG_SEC 동안 페이드 인·아웃, 그동안 소리는 무음. 인트로가 끝나며
   본편으로 넘어가는 페이드 아웃만 INTRO_FADE_OUT_SEC로 길게 - 0.2초는 너무 갑작스럽다(10-08 사용자)
 
@@ -27,7 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from common import BRAND_OUTRO, edit_dir, source_media, write_json
+import assets_lib
+from common import edit_dir, source_media, write_json
 from audio_map import load_audio_map
 from propose_segments import segments_from_ends
 from split_sentences import load_sentences
@@ -219,7 +220,7 @@ def export(folder: Path, progress: Callable[[int, int, str], None] | None = None
     from split_refine import video_fps
     vbit, hw, fps, shape = video_bitrate(media), has_videotoolbox(), video_fps(media), video_shape(media)
     intros = intro_paths(folder, dec, len(segs))
-    outro = BRAND_OUTRO if BRAND_OUTRO.exists() else None
+    outro = assets_lib.outro_path()
     files, items, lines = [], [], [f"{folder.name} - {len(segs)}편", ""]
     for k, seg in enumerate(segs):
         title = dec["titles"][k] if k < len(dec["titles"]) and dec["titles"][k] else f"{k + 1}편"

@@ -643,7 +643,7 @@ function renderExportNote() {
   note.textContent = !ex ? ''
     : ex.stale ? `${fmtAt(ex.at)}에 내보낸 뒤 편집했습니다 - 다시 내보내세요` : `${fmtAt(ex.at)}에 ${ex.count}편 내보냄`;
   const chosen = segs.filter((g, k) => dec.intros[k]).length;
-  $('#brandNote').innerHTML = `인트로 ${chosen}/${n}편 · 아웃트로 ${S.outro ? `${S.outro_sec}초` : `없음 (<a href="http://127.0.0.1:${S.home_port || 8764}/" target="_blank">홈 환경설정</a>에서 올리기)`}`;
+  $('#brandNote').innerHTML = `인트로 ${chosen}/${n}편 · 아웃트로 ${S.outro ? `${S.outro_sec}초` : `없음 (<a href="http://127.0.0.1:${S.home_port || 8764}/#assets" target="_blank">홈 공통 자산</a>에서 올리기)`}`;
 }
 function showModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.add('show'); }
 function hideModal() { $('#modal').classList.remove('show'); }

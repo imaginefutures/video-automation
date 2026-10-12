@@ -25,9 +25,10 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import BRAND_OUTRO, PROJECT_ROOT, edit_dir, load_env, print_client_error, source_media, write_json
+from common import PROJECT_ROOT, edit_dir, load_env, print_client_error, source_media, write_json
 from audio_map import load_audio_map
 from propose_segments import retitle, segments_from_ends, valid_ends
+import assets_lib
 from split_export import INTRO_SEC, OUTRO_SEC, export as run_export
 from split_intro import generate as generate_intro, image_file as intro_file, load_candidates as intro_candidates
 from split_refine import load_cache as load_refined, refine_all
@@ -133,7 +134,7 @@ class Project:
             "method": self.proposal.get("method"), "sentences": self.sents, "issues": issues,
             "edited": self.decisions_path.exists(), "decisions": dec, "segments": self.computed(dec),
             "export": self.export_info(), "exporting": self.export_job["running"],
-            "intro_candidates": intro_candidates(self.folder), "outro": BRAND_OUTRO.exists(),
+            "intro_candidates": intro_candidates(self.folder), "outro": assets_lib.outro_path() is not None,
             "intro_sec": INTRO_SEC, "outro_sec": OUTRO_SEC,
             # 홈 서버가 띄웠으면 그 포트를 물려받는다 (컷편집 server.py와 같은 방식)
             "home_port": int(os.environ.get("VIDEO_CUT_HOME_PORT") or 8764),
@@ -232,10 +233,6 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 return self.send_error(404)
             return self._file(f, "image/jpeg" if f.suffix == ".jpg" else "image/png")
-        if path == "/api/brand/outro":
-            if not BRAND_OUTRO.exists():
-                return self.send_error(404)
-            return self._file(BRAND_OUTRO, "image/png")
         self.send_error(404)
 
     def do_POST(self):

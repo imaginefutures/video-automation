@@ -766,11 +766,11 @@ function renderStyles() {
     });
   });
 }
-// ---------------------------------------------------------------- 효과음 (라이브러리는 홈 설정에서 관리)
+// ---------------------------------------------------------------- 효과음 (라이브러리는 홈 "공통 자산" 탭에서 관리)
 const sfxAudio = {};
 function sfxPlay(id) {
   if (!id) return;
-  const a = sfxAudio[id] || (sfxAudio[id] = new Audio(`/api/sfx/file?id=${id}`));
+  const a = sfxAudio[id] || (sfxAudio[id] = new Audio(`/api/assets/file?kind=sfx&id=${id}`));
   a.currentTime = 0; a.play().catch(() => {});
 }
 function toggleStyles(on) {
@@ -917,7 +917,7 @@ function renderDetail() {
     const lib = S.sfx_lib || [];
     f += `<div class="sub"><div class="lbl">효과음</div>${lib.length ? `<div class="row"><select id="dSfx" style="flex:1"><option value="">없음</option>${lib.map((x) =>
       `<option value="${x.id}"${x.id === it.sfx ? ' selected' : ''}>${esc(x.name)} (${x.duration.toFixed(1)}s)</option>`).join('')}</select>
-      <button class="btn" id="dSfxPlay" ${it.sfx ? '' : 'disabled'}>▶</button></div>` : `<div class="note">홈 설정에서 효과음 등록</div>`}
+      <button class="btn" id="dSfxPlay" ${it.sfx ? '' : 'disabled'}>▶</button></div>` : `<div class="note">홈 공통 자산에서 효과음 등록</div>`}
       ${it.sfx && !lib.some((x) => x.id === it.sfx) ? '<div class="warn">연결된 효과음이 삭제됐어요</div>' : ''}</div>`;
     f += `<div class="sub"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
       `<button data-form="${k}" class="${k === (pf || it.form) ? 'on' : ''}">${v}</button>`).join('')}</div>

@@ -42,11 +42,11 @@ WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
     api_keys_status, edit_dir, ensure_project_python, is_insert_only, load_env, mark_insert_only, pid_alive, pipeline_log_tail, print_client_error, read_pipeline_status, sanitize_project_name, write_env_keys,
-    RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, BRAND_OUTRO, VIDEO_EDIT_DIR, SPLIT_DIR,
+    RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, VIDEO_EDIT_DIR, SPLIT_DIR,
 )
 
 import log_share  # noqa: E402
-import sfx  # noqa: E402
+import assets_lib  # noqa: E402
 
 BACKUP_RE = RESERVED_PROJECT_NAME_RE  # common.py와 공유 - sanitize_project_name() 참고
 
@@ -930,18 +930,18 @@ class Handler(BaseHTTPRequestHandler):
                                    git_current()["sha"], only)
             return self._json({"text": text, "videos": [p.name for p in videos], "splits": [p.name for p in splits]})
         if path == "/api/setup":
-            return self._json({"keys": api_keys_status(), **ffmpeg_status(), "outro": BRAND_OUTRO.exists()})
-        if path == "/api/sfx":  # 효과음 라이브러리 - 모든 영상이 함께 쓴다 (적용은 영상별 인서트 화면에서)
-            return self._json({"items": sfx.items()})
-        if path == "/api/sfx/file":
-            f = sfx.path((parse_qs(urlsplit(self.path).query).get("id") or [""])[0])
+            return self._json({"keys": api_keys_status(), **ffmpeg_status()})
+        if path == "/api/assets":  # 공통 자산 - 모든 영상이 같이 쓰는 파일 (docs/백로그/공통-자산.md)
+            return self._json({"kinds": assets_view()})
+        if path == "/api/assets/file":
+            q = parse_qs(urlsplit(self.path).query)
+            try:
+                f = assets_lib.path((q.get("kind") or [""])[0], (q.get("id") or [""])[0])
+            except ValueError:
+                f = None
             if not f:
                 return self.send_error(404)
-            return self._file(f, mimetypes.guess_type(str(f))[0] or "audio/mpeg")
-        if path == "/api/brand/outro":
-            if not BRAND_OUTRO.exists():
-                return self.send_error(404)
-            return self._file(BRAND_OUTRO, "image/png")
+            return self._file(f, mimetypes.guess_type(str(f))[0] or "application/octet-stream")
         if path == "/api/setup/ffmpeg/status":
             with _ffmpeg_install_lock:
                 return self._json(dict(_ffmpeg_install_state))
@@ -978,19 +978,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_create_project()
         if path in ("/api/splits/srt", "/api/splits/create"):
             return self._handle_split_upload(path)
-        if path == "/api/brand/outro":
+        if path == "/api/assets/upload":  # 여러 개면 화면이 하나씩 보낸다
+            q = parse_qs(urlsplit(self.path).query)
             try:
-                save_outro(int(self.headers.get("Content-Length", 0)), self.rfile)
-                return self._json({"ok": True})
-            except (ValueError, ConnectionError) as e:
-                return self._json({"ok": False, "error": str(e)}, 400)
-        if path == "/api/brand/outro/delete":
-            BRAND_OUTRO.unlink(missing_ok=True)
-            return self._json({"ok": True})
-        if path == "/api/sfx/upload":  # 여러 개면 화면이 하나씩 보낸다
-            name = (parse_qs(urlsplit(self.path).query).get("name") or [""])[0]
-            try:
-                return self._json({"ok": True, "item": sfx.add(name, self.rfile.read(int(self.headers.get("Content-Length", 0))))})
+                item = assets_lib.add((q.get("kind") or [""])[0], (q.get("name") or [""])[0],
+                                      self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                return self._json({"ok": True, "item": item})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
 
@@ -999,13 +992,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/client_error":
             print_client_error(body)
             return self._json({"ok": True})
-        if path in ("/api/sfx/delete", "/api/sfx/rename"):
+        if path in ("/api/assets/delete", "/api/assets/rename"):
             try:
+                kind, sid = str(body.get("kind", "")), str(body.get("id", ""))
                 if path.endswith("delete"):
-                    sfx.delete(str(body.get("id", "")))
+                    assets_lib.delete(kind, sid)
                 else:
-                    sfx.rename(str(body.get("id", "")), str(body.get("name", "")))
-                return self._json({"ok": True, "items": sfx.items()})
+                    assets_lib.rename(kind, sid, str(body.get("name", "")))
+                return self._json({"ok": True})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/api/open":
@@ -1099,32 +1093,26 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-# ------------------------------------------------------------------------------ 설정: 아웃트로 이미지
-OUTRO_MAX_BYTES = 30 * 1024 * 1024
-OUTRO_W, OUTRO_H = 1920, 1080
+# ------------------------------------------------------------------------------ 공통 자산
+def assets_usage() -> dict[str, dict[str, int]]:
+    """효과음 id → 그 효과음을 단 인서트 수 (취소한 인서트 제외). 지울 때 몇 곳에서 빠지는지 보여 주려고."""
+    out: dict[str, int] = {}
+    root = videos_root()
+    for folder in (sorted(p for p in root.iterdir() if is_project_folder(p)) if root.is_dir() else []):
+        try:
+            data = json.loads((folder / "edit" / "inserts.json").read_text())
+        except (OSError, ValueError):
+            continue
+        for it in data.get("items", []):
+            if it.get("sfx") and it.get("status") != "rejected":
+                out[it["sfx"]] = out.get(it["sfx"], 0) + 1
+    return {"sfx": out}
 
 
-def save_outro(content_length: int, rfile) -> None:
-    """올린 이미지를 1920x1080 PNG로 맞춰 brand/outro.png에 둔다 - 비율이 다르면 잘라내지 않고 검은
-    여백을 둔다(로고·글자가 잘리면 안 되니까). 분할 내보내기가 편마다 본편 해상도로 다시 맞춘다."""
-    if not 0 < content_length <= OUTRO_MAX_BYTES:
-        raise ValueError("이미지가 비었거나 너무 큽니다 (30MB 이하)")
-    BRAND_OUTRO.parent.mkdir(exist_ok=True)
-    tmp = BRAND_OUTRO.with_name("upload.tmp")
-    _stream_to_file(rfile, tmp, content_length)
-    out = BRAND_OUTRO.with_name("outro.part.png")
-    try:
-        r = subprocess.run(
-            ["ffmpeg", "-y", "-v", "error", "-i", str(tmp), "-frames:v", "1", "-vf",
-             f"scale={OUTRO_W}:{OUTRO_H}:force_original_aspect_ratio=decrease,"
-             f"pad={OUTRO_W}:{OUTRO_H}:(ow-iw)/2:(oh-ih)/2,setsar=1", str(out)],
-            capture_output=True, text=True)
-        if r.returncode != 0:
-            raise ValueError("이미지로 읽을 수 없는 파일입니다 (PNG·JPG를 올려주세요)")
-        out.replace(BRAND_OUTRO)
-    finally:
-        tmp.unlink(missing_ok=True)
-        out.unlink(missing_ok=True)
+def assets_view() -> list[dict]:
+    used = assets_usage()
+    return [{"kind": k, **meta, "items": [{**it, "used": used.get(k, {}).get(it["id"], 0)} for it in assets_lib.items(k)]}
+            for k, meta in assets_lib.KINDS.items()]
 
 
 class _Tee:

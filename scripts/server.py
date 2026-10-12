@@ -1302,10 +1302,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({**self.session.inserts.payload(), "home_port": home_port(),
                                "confirmed_at": self.session.decisions.get("confirmed_at"),
                                "insert_only": is_insert_only(self.folder)})
-        if path == "/api/sfx/file":  # 공통 효과음 듣기
+        if path == "/api/assets/file":  # 공통 자산(효과음) 듣기 - 관리는 홈 "공통 자산" 탭
             from urllib.parse import urlsplit, parse_qs
-            import sfx
-            f = sfx.path((parse_qs(urlsplit(self.path).query).get("id") or [""])[0])
+            import assets_lib
+            q = parse_qs(urlsplit(self.path).query)
+            try:
+                f = assets_lib.path((q.get("kind") or [""])[0], (q.get("id") or [""])[0])
+            except ValueError:
+                f = None
             if not f:
                 return self.send_error(404)
             return self._file(f, mimetypes.guess_type(str(f))[0] or "audio/mpeg")

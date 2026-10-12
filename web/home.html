@@ -89,6 +89,22 @@
   .tabs button:hover { color: var(--ink); }
   .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
   .tab-note { font-size: 12.5px; color: var(--muted); margin: -6px 0 14px; }
+  .asset-sec { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; background: var(--bg); }
+  .asset-sec.drop { border-color: var(--accent); background: var(--accent-soft); }
+  .asset-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .asset-head h3 { margin: 0; font-size: 14px; }
+  .asset-head .cnt { font-size: 12.5px; color: var(--muted); }
+  .asset-head .sp { flex: 1; }
+  .asset-row { display: grid; grid-template-columns: 30px minmax(0,1fr) auto auto auto auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+  .asset-row:first-child { border-top: 0; }
+  .asset-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .asset-row .dim { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .asset-row button.play { width: 28px; height: 28px; padding: 0; border-radius: 50%; }
+  .asset-sec button { padding: 5px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 13px; }
+  .asset-sec button.link { border: 0; background: none; padding: 4px 6px; color: var(--muted); }
+  .asset-sec button.link:hover { color: var(--ink); }
+  .asset-sec .empty { font-size: 13px; color: var(--muted); padding: 4px 0; }
+  .asset-img { width: 320px; max-width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
   #modal .field input[type=number] { width: 72px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); font: inherit; font-size: 13px; }
   #modal .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
@@ -183,6 +199,7 @@
       <button role="tab" id="tabCut" aria-selected="true" aria-controls="cutPanel">컷편집</button>
       <button role="tab" id="tabInsert" aria-selected="false" aria-controls="insertPanel">인서트</button>
       <button role="tab" id="tabSplit" aria-selected="false" aria-controls="splitPanel">주제별 분할</button>
+      <button role="tab" id="tabAssets" aria-selected="false" aria-controls="assetsPanel">공통 자산</button>
     </div>
     <main id="cutPanel" role="tabpanel" aria-label="컷편집 영상 목록">
       <div id="list"></div>
@@ -198,6 +215,7 @@
       <div id="splitList"></div>
       <div id="splitEmpty" style="display:none"></div>
     </main>
+    <main id="assetsPanel" role="tabpanel" aria-label="공통 자산" style="display:none"></main>
   </div>
 </div>
 
@@ -470,23 +488,107 @@ async function load() {
 // --------------------------------------------------------------------------------- 탭
 // 분할 화면의 "홈으로" 링크가 #split으로 돌아오므로 해시를 먼저 보고, 없으면 마지막에 본 탭
 let currentTab = 'cut';
-try { currentTab = location.hash === '#split' ? 'split' : location.hash === '#insert' ? 'insert' : (localStorage.getItem('video-cut-home-tab') || 'cut'); } catch (e) { /* private mode */ }
+const TAB_HASH = { split: '#split', insert: '#insert', assets: '#assets' };
+try { currentTab = Object.keys(TAB_HASH).find((k) => TAB_HASH[k] === location.hash) || (localStorage.getItem('video-cut-home-tab') || 'cut'); } catch (e) { /* private mode */ }
 function setTab(tab) {
   currentTab = tab;
   try { localStorage.setItem('video-cut-home-tab', tab); } catch (e) { /* 저장 안 돼도 동작 */ }
-  history.replaceState(null, '', tab === 'split' ? '#split' : tab === 'insert' ? '#insert' : location.pathname);
+  history.replaceState(null, '', TAB_HASH[tab] || location.pathname);
   $('#tabCut').setAttribute('aria-selected', String(tab === 'cut'));
   $('#tabInsert').setAttribute('aria-selected', String(tab === 'insert'));
   $('#insertPanel').style.display = tab === 'insert' ? '' : 'none';
   $('#tabSplit').setAttribute('aria-selected', String(tab === 'split'));
   $('#cutPanel').style.display = tab === 'cut' ? '' : 'none';
   $('#splitPanel').style.display = tab === 'split' ? '' : 'none';
+  $('#tabAssets').setAttribute('aria-selected', String(tab === 'assets'));
+  $('#assetsPanel').style.display = tab === 'assets' ? '' : 'none';
+  $('#btnNewVideo').style.display = tab === 'assets' ? 'none' : '';
   $('#btnHelp').style.display = tab === 'cut' ? '' : 'none';  // 단축키 도움말은 컷편집 검토 화면용
   if (tab === 'split') loadSplits();
+  if (tab === 'assets') loadAssets();
 }
 $('#tabCut').addEventListener('click', () => setTab('cut'));
 $('#tabSplit').addEventListener('click', () => setTab('split'));
 $('#tabInsert').addEventListener('click', () => setTab('insert'));
+$('#tabAssets').addEventListener('click', () => setTab('assets'));
+
+// --------------------------------------------------------------------------------- 공통 자산
+// 모든 영상이 같이 쓰는 파일(docs/백로그/공통-자산.md). 등록·교체·삭제는 여기서만, 각 작업 화면은 골라 쓰기만 한다.
+const ASSET_ACCEPT = { audio: 'audio/*,video/*,.mov,.mp4,.mp3,.wav,.m4a,.aif,.aiff,.caf,.flac,.ogg', image: 'image/png,image/jpeg,image/webp' };
+let assetAudio = null;
+async function loadAssets() {
+  let kinds;
+  try { kinds = (await (await fetch('/api/assets')).json()).kinds; } catch (e) { toast('서버에 연결할 수 없습니다'); return; }
+  $('#assetsPanel').innerHTML = kinds.map(assetSecHtml).join('');
+  kinds.forEach(wireAssetSec);
+}
+function assetSecHtml(k) {
+  const single = k.mode === 'single'; const it = k.items[0];
+  const body = single
+    ? (it ? `<img class="asset-img" src="/api/assets/file?kind=${k.kind}&t=${Date.now()}" alt="${esc(k.label)}">` : '<div class="empty">없음</div>')
+    : (k.items.length ? k.items.map((x) => `<div class="asset-row" data-id="${x.id}">
+        <button class="play" data-play title="듣기">▶</button>
+        <span class="nm" title="${esc(x.name)}">${esc(x.name)}</span>
+        <span class="dim">${x.duration.toFixed(1)}s</span>
+        <span class="dim">${x.used ? `인서트 ${x.used}곳` : ''}</span>
+        <button class="link" data-ren>이름</button>
+        <button class="link" data-del>삭제</button></div>`).join('') : '<div class="empty">없음</div>');
+  return `<section class="asset-sec" data-kind="${k.kind}">
+    <div class="asset-head"><h3>${esc(k.label)}</h3><span class="cnt">${single ? '' : `${k.items.length}개`}</span><span class="sp"></span>
+      ${single && it ? '<button class="link" data-del>지우기</button>' : ''}
+      <button data-add>${single ? (it ? '바꾸기' : '올리기') : '＋ 추가'}</button>
+      <input type="file" hidden accept="${ASSET_ACCEPT[k.media]}" ${single ? '' : 'multiple'}></div>
+    <div>${body}</div></section>`;
+}
+async function uploadAssets(kind, files, btn) {
+  if (!files.length) return;
+  btn.disabled = true; btn.textContent = '올리는 중…';
+  let ok = 0;
+  for (const f of files) {
+    try {
+      const r = await (await fetch(`/api/assets/upload?kind=${kind}&name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f })).json();
+      if (r.ok) ok++; else toast(`${f.name}: ${r.error}`);
+    } catch (err) { toast('서버에 연결할 수 없습니다'); break; }
+  }
+  if (ok) toast(`${ok}개 저장`);
+  loadAssets();
+}
+async function assetPost(path, body) {
+  const r = await (await fetch(path, { method: 'POST', body: JSON.stringify(body) })).json();
+  if (!r.ok) toast(r.error || '실패했습니다');
+  loadAssets();
+}
+function wireAssetSec(k) {
+  const sec = document.querySelector(`.asset-sec[data-kind="${k.kind}"]`);
+  const input = sec.querySelector('input[type=file]'); const addBtn = sec.querySelector('[data-add]');
+  const files = (list) => (k.mode === 'single' ? [...list].slice(0, 1) : [...list]);
+  addBtn.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => uploadAssets(k.kind, files(input.files), addBtn));
+  sec.addEventListener('dragover', (e) => { e.preventDefault(); sec.classList.add('drop'); });
+  sec.addEventListener('dragleave', () => sec.classList.remove('drop'));
+  sec.addEventListener('drop', (e) => { e.preventDefault(); sec.classList.remove('drop'); uploadAssets(k.kind, files(e.dataTransfer.files), addBtn); });
+  if (k.mode === 'single') {
+    sec.querySelector('.asset-head [data-del]')?.addEventListener('click', () => {
+      if (confirm(`${k.label}를 지울까요?`)) assetPost('/api/assets/delete', { kind: k.kind });
+    });
+    return;
+  }
+  sec.querySelectorAll('.asset-row').forEach((r) => {
+    const x = k.items.find((i) => i.id === r.dataset.id);
+    r.querySelector('[data-play]').addEventListener('click', () => {
+      if (assetAudio) assetAudio.pause();
+      assetAudio = new Audio(`/api/assets/file?kind=${k.kind}&id=${x.id}`); assetAudio.play().catch(() => {});
+    });
+    r.querySelector('[data-ren]').addEventListener('click', () => {
+      const name = prompt('이름', x.name);
+      if (name && name.trim() && name.trim() !== x.name) assetPost('/api/assets/rename', { kind: k.kind, id: x.id, name: name.trim() });
+    });
+    r.querySelector('[data-del]').addEventListener('click', () => {
+      const where = x.used ? `인서트 ${x.used}곳에서 빠지고, ` : '';
+      if (confirm(`"${x.name}"을 지울까요? ${where}이미 내보낸 FCP 프로젝트에서도 파일을 찾을 수 없게 됩니다.`)) assetPost('/api/assets/delete', { kind: k.kind, id: x.id });
+    });
+  });
+}
 
 // --------------------------------------------------------------------------------- 주제별 분할 목록
 const fmtClock = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
@@ -659,101 +761,14 @@ function renderSetupModal(data) {
   showModal(`<div class="modal-head"><h2>환경설정</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
     <p class="note">API 키와 ffmpeg는 컷편집 파이프라인을 돌리는 데 필요합니다</p>
     ${setupBodyHtml(data)}
-    ${outroHtml(data)}
-    ${sfxHtml()}
     <div style="display:flex;gap:8px;margin-top:16px">
       <button id="modalNo">닫기</button>
       <button id="btnSaveKeys" class="primary">저장</button>
     </div>`);
   wireSetupButtons(data, saveApiKeysFromModal);
-  wireOutro();
-  wireSfx();
   $('#modalNo').addEventListener('click', hideModal);
   $('#modalX').addEventListener('click', hideModal);
   makeDraggable($('#modalPanel'), $('#modalPanel .modal-head'));  // 머리줄이 드래그 손잡이를 덮으므로
-}
-// 분할 내보내기가 모든 편 끝에 붙이는 공통 아웃트로 (brand/outro.png, 서버가 1920x1080으로 맞춤)
-function outroHtml(data) {
-  const img = data.outro ? `<img src="/api/brand/outro?t=${Date.now()}" alt="아웃트로" style="width:240px;max-width:100%;border-radius:8px;border:1px solid var(--line);display:block;margin-bottom:8px">` : '';
-  return `<div class="field" style="border-top:1px solid var(--line);padding-top:12px">
-      <div class="field-top">
-        <span class="field-label">아웃트로 이미지</span>
-        <span class="field-chip ${data.outro ? 'ok' : ''}">${data.outro ? '설정됨' : '선택'}</span>
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">주제별 분할로 내보낼 때 모든 편 끝에 붙습니다 · 16:9 이미지 권장</div>
-      ${img}
-      <div style="display:flex;gap:8px">
-        <button id="btnOutroPick">${data.outro ? '바꾸기' : '이미지 올리기'}</button>
-        ${data.outro ? '<button id="btnOutroDel">지우기</button>' : ''}
-        <input type="file" id="outroFile" accept="image/png,image/jpeg,image/webp" hidden>
-      </div>
-    </div>`;
-}
-function wireOutro() {
-  $('#btnOutroPick').addEventListener('click', () => $('#outroFile').click());
-  $('#outroFile').addEventListener('change', async (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    $('#btnOutroPick').disabled = true; $('#btnOutroPick').textContent = '올리는 중…';
-    try {
-      const data = await (await fetch('/api/brand/outro', { method: 'POST', body: f })).json();
-      toast(data.ok ? '아웃트로를 저장했습니다' : (data.error || '올리지 못했습니다'));
-    } catch (err) { toast('서버에 연결할 수 없습니다'); }
-    openSettingsModal();
-  });
-  $('#btnOutroDel')?.addEventListener('click', async () => {
-    await fetch('/api/brand/outro/delete', { method: 'POST', body: '{}' });
-    toast('아웃트로를 지웠습니다'); openSettingsModal();
-  });
-}
-// 효과음 라이브러리 - 모든 영상이 불러 쓴다. 인서트에 붙이는 건 영상별 인서트 화면에서
-let sfxAudio = null;
-function sfxHtml() {
-  return `<div class="field" style="border-top:1px solid var(--line);padding-top:12px">
-      <div class="field-top"><span class="field-label">효과음</span><span class="field-chip" id="sfxCount"></span></div>
-      <div id="sfxList" style="font-size:13px"></div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button id="btnSfxPick">＋ 추가</button>
-        <input type="file" id="sfxFile" accept="audio/*,video/*,.mov,.mp4,.mp3,.wav,.m4a,.aif,.aiff,.caf,.flac,.ogg" multiple hidden>
-      </div>
-    </div>`;
-}
-async function loadSfx() {
-  const items = (await (await fetch('/api/sfx')).json()).items || [];
-  $('#sfxCount').textContent = items.length ? `${items.length}개` : '없음';
-  $('#sfxList').innerHTML = items.map((x) => `<div class="sfx-row" data-id="${x.id}" style="display:grid;grid-template-columns:30px 1fr auto auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)">
-      <button data-play title="듣기" style="width:28px;height:28px;padding:0;border-radius:50%">▶</button>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.name)}">${esc(x.name)}</span>
-      <span style="color:var(--muted);font-variant-numeric:tabular-nums">${x.duration.toFixed(1)}s</span>
-      <button data-del>삭제</button></div>`).join('');
-  $$('#sfxList .sfx-row').forEach((r) => {
-    r.querySelector('[data-play]').addEventListener('click', () => {
-      if (sfxAudio) sfxAudio.pause();
-      sfxAudio = new Audio(`/api/sfx/file?id=${r.dataset.id}`); sfxAudio.play().catch(() => {});
-    });
-    r.querySelector('[data-del]').addEventListener('click', async () => {
-      if (!confirm('이 효과음을 지울까요? 연결된 모든 영상의 인서트에서 빠집니다.')) return;
-      await fetch('/api/sfx/delete', { method: 'POST', body: JSON.stringify({ id: r.dataset.id }) });
-      loadSfx();
-    });
-  });
-}
-function wireSfx() {
-  $('#btnSfxPick').addEventListener('click', () => $('#sfxFile').click());
-  $('#sfxFile').addEventListener('change', async (e) => {
-    const files = [...e.target.files]; if (!files.length) return;
-    $('#btnSfxPick').disabled = true; $('#btnSfxPick').textContent = '올리는 중…';
-    let ok = 0;
-    for (const f of files) {
-      try {
-        const r = await (await fetch(`/api/sfx/upload?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f })).json();
-        if (r.ok) ok++; else toast(`${f.name}: ${r.error}`);
-      } catch (err) { toast('서버에 연결할 수 없습니다'); break; }
-    }
-    if (ok) toast(`효과음 ${ok}개 추가`);
-    e.target.value = ''; $('#btnSfxPick').disabled = false; $('#btnSfxPick').textContent = '＋ 추가';
-    loadSfx();
-  });
-  loadSfx();
 }
 async function openSettingsModal() {
   showModal('<p>불러오는 중…</p>');

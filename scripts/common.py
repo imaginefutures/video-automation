@@ -22,10 +22,6 @@ OPTIONAL_API_KEYS = [
     ("GEMINI_API_KEY", "Gemini API 키 (선택) - 분할 편마다 인트로 이미지 생성에 씀", "https://aistudio.google.com/apikey"),
 ]
 
-# 채널 공통 이미지 - 사용자 브랜드 자산이라 git에서 뺀다(.gitignore의 brand/). 홈 환경설정에서 올린다.
-BRAND_DIR = PROJECT_ROOT / "brand"
-BRAND_OUTRO = BRAND_DIR / "outro.png"
-
 # 10-01 (홈 화면 영상 생성): *_final_gold/*.backup-*는 평가용/과거 스냅샷 접미사라 실제
 # 프로젝트로 취급하지 않는다 - scripts/home_server.py의 is_project_folder()와 여기
 # sanitize_project_name()이 같은 규칙을 공유해야, 웹에서 만든 이름이 우연히 이 패턴과 겹쳐
