@@ -885,7 +885,7 @@ function renderSfxMix() {
           <span class="nm" title="${esc(itemLabel(i))}">${esc(s ? s.name : '삭제된 효과음')}</span>
           <span>${i.sfx_pct != null ? `<span class="tag ch">개별 ${Math.round(i.sfx_pct)}%</span>` : ''} <span class="mono" style="font-size:11px;color:var(--muted)">${dbTxt(i.sfx_db)}</span></span>
           <button class="btn" data-play title="영상과 같이 듣기">▶</button></div>`;
-      }).join('') : `<div class="note" style="margin-top:6px">${lib.length ? '인서트 상세 ③에서 효과음 연결' : '홈 공통 자산에서 효과음 등록'}</div>`}
+      }).join('') : `<div class="note" style="margin-top:6px">${lib.length ? '인서트를 고르고 효과음 연결' : '홈 공통 자산에서 효과음 등록'}</div>`}
     </section>`;
   $('#pnClose').addEventListener('click', () => openPanel(null));
   const save = async (body) => {
@@ -923,14 +923,15 @@ function renderDecisionBar() {
     else if (BUSY.has(it.status)) actions = `<span class="busy" style="padding:4px 0;flex:1"><span class="spin"></span>${esc(it.progress) || (it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</span>
       <button class="btn" data-act="cancel" ${it.cancel ? 'disabled' : ''}>${it.cancel ? '중단하는 중' : '중단'}</button>`;
     else {  // 오류 - 원인과 해결 방법, 다시 시도 / 삭제
-      const info = errInfo(it) || { title: '만들지 못했어요', hint: '다시 시도해 보세요', retryable: true };
+      const info = errInfo(it) || (it.status === 'unsupported' ? { title: '영상 렌더러가 아직 준비되지 않았어요', hint: '다시 시도하면 렌더러를 받아서 만들어요 (처음 한 번 약 150MB)', retryable: true }
+        : { title: '만들지 못했어요', hint: '다시 시도하거나, 아래에 요청을 적고 다시 만들어 보세요', retryable: true });
       actions = `<div style="flex:1 1 100%">${errorBlock(info, `<button class="primary" data-act="retry" style="flex:1">${info.retryable === false ? '설정을 고친 뒤 다시 시도' : '다시 시도'}</button><button class="btn" data-act="delete">삭제</button>`)}</div>`;
     }
     // 다시 만들기가 실패했지만 이전 결과는 남아 있을 때 / 중단 알림
     let strip = '';
     if (it.error_info && it.error_info.kept_previous && ['ready', 'approved', 'rejected'].includes(it.status)) {
       strip = errorBlock({ ...it.error_info, title: `다시 만들기 실패 - ${it.error_info.title}`, hint: `${it.error_info.hint} (이전 결과는 그대로 있어요)` },
-        `<button class="btn" data-act="retry">다시 시도</button><button class="btn" data-act="dismiss_error">닫기</button>`);
+        `<button class="btn" data-act="retry">${it.error_info.retryable === false ? '설정을 고친 뒤 다시 시도' : '다시 시도'}</button><button class="btn" data-act="dismiss_error">닫기</button>`);
     } else if (it.notice) strip = `<div class="notice">${esc(it.notice)}<button class="btn" data-act="dismiss_error" style="padding:2px 8px">닫기</button></div>`;
     bar.innerHTML = `<div class="db-top">${formChip(it)}${statusChip(it)}<span class="db-time mono">${fmt(it.t_start)} · ${dur}초</span>
         <span class="db-nav"><button id="dbPrev" title="이전 (↑)" ${k <= 0 ? 'disabled' : ''}>▲</button><button id="dbNext" title="다음 (↓)" ${k >= list.length - 1 ? 'disabled' : ''}>▼</button></span></div>
@@ -1027,16 +1028,18 @@ function renderDetail() {
   // 결과는 영상 위에 보이니 여기서 다시 보여 주지 않는다. 위: 고르자마자 하는 일(글자·효과음), 아래: 다시 만들기·형태·삭제 (10-12 사용자 요청)
   const sec = (label, body) => `<section class="dsec">${label ? `<div class="dl">${label}</div>` : ''}${body}</section>`;
   let top = '';
-  if (it.status === 'suggested' && it.form !== 'asset') {  // 아직 안 만든 제안 - 무엇을 만들지 (영상에 아직 없으니)
-    const q = (d.lines?.length ? `<div class="quote">${d.lines.map(esc).join('<br>')}</div>` : '') + (d.scene ? `<div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div>` : '');
-    if (q) top += sec(it.form === 'text' ? '화면 글자' : `${what} 구상`, q);
+  // 결과가 아직 없으면(제안·오류·영상 준비 중) 무엇을 만들려던 건지 - 영상 위에 아무것도 안 보이니 여기서라도 (10-12 사용자 요청: 오류 대비)
+  const editLines = !busy && ['text', 'image', 'asset'].includes(it.form) && d.lines && it.status !== 'suggested';
+  if (!it.files?.length && ['suggested', 'error', 'unsupported'].includes(it.status) && it.form !== 'asset') {
+    if (d.lines?.length && !editLines) top += sec(it.form === 'image' ? '얹을 노란 글자' : '화면 글자', `<div class="quote" style="margin:0">${d.lines.map(esc).join('<br>')}</div>`);
+    if (d.scene && it.form !== 'text') top += sec(it.form === 'video' ? '영상 구성안' : `${what} 구상`, `<div class="quote" style="margin:0;white-space:pre-wrap">${esc(d.scene)}</div>`);
   }
   if (it.form === 'image' && it.candidates?.length > 1 && !busy && it.status !== 'suggested') {
     const ck = it.checks || [];
     top += sec('후보', `<div class="cands" style="margin:0">${it.candidates.map((c, k) => {
       const v = ck[k]; const badge = v ? `<span class="vd ${v.ok ? 'ok' : 'no'}">${v.ok ? '✓' : '✗'}</span>` : '';
       return `<button data-k="${k}" class="${k === it.chosen ? 'on' : ''}" aria-label="후보 ${k + 1}" title="${esc(v && !v.ok ? v.note : '')}">${badge}<img src="${fileUrl(c)}" alt=""></button>`;
-    }).join('')}</div>`);
+    }).join('')}</div>${ck[it.chosen] && !ck[it.chosen].ok ? `<div class="warn" style="margin-bottom:0">고른 후보: ${esc(ck[it.chosen].note)}</div>` : ''}`);
   }
   if (it.form === 'asset' && !busy && it.status !== 'rejected') {
     top += sec('실물 자료', `<div class="note">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div><input type="file" id="dUpload" accept="image/*" style="margin-top:6px">`);
@@ -1044,7 +1047,7 @@ function renderDetail() {
   if (it.font_fallback?.length) top += `<div class="warn">대체 글꼴로 그려졌어요 (${it.font_fallback.map(esc).join(', ')}) - 글꼴을 받은 뒤 반영을 누르면 다시 그려요</div>`;
   let more = '';
   if (!busy) {
-    if (['text', 'image', 'asset'].includes(it.form) && d.lines && it.status !== 'suggested') {
+    if (editLines) {
       const isText = it.form === 'text';
       top += sec(isText ? '글자' : '노란 글자', `<textarea id="dLines" placeholder="${isText ? '한 줄에 한 줄씩' : '없으면 비워 두기'}">${esc((d.lines || []).join('\n'))}</textarea>
         ${isText ? `<input type="text" id="dSource" placeholder="출처 (예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}

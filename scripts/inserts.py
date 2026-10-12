@@ -290,11 +290,11 @@ def explain_error(e: Exception, stage: str | None) -> dict:
     if "timeout" in low or "timed out" in low or "connection" in low or "network" in low or "temporarily unavailable" in low:
         return out("네트워크 연결이 끊겼어요", "인터넷 연결을 확인하고 다시 시도하세요")
     if "안전 필터" in raw or "safety" in low or "blocked" in low:
-        return out("이미지 AI의 안전 필터에 걸렸어요", "③ 고치기에서 '요청 적고 다시 만들기'로 장면을 조금 바꿔 보세요")
+        return out("이미지 AI의 안전 필터에 걸렸어요", "아래 '요청'에 장면을 조금 바꿔 적고 다시 만들어 보세요")
     if "gemini_api_key" in low:
         return out("이미지 AI 키(Gemini)가 없어요", "홈 화면 환경설정에서 Gemini API 키를 등록하세요", retryable=False)
     if "모션 html" in low or "seek" in low:
-        return out("AI가 만든 애니메이션 코드가 제대로 실행되지 않았어요", "다시 시도하면 새로 만들어요. 반복되면 '요청 적고 다시 만들기'로 더 단순하게 요청해 보세요")
+        return out("AI가 만든 애니메이션 코드가 제대로 실행되지 않았어요", "다시 시도하면 새로 만들어요. 반복되면 아래 '요청'에 더 단순하게 적고 다시 만들어 보세요")
     if "렌더러" in raw or "playwright" in low or "chromium" in low:
         return out("영상 렌더러를 준비하지 못했어요", "인터넷 연결을 확인하고 다시 시도하세요. 처음 한 번은 약 150MB를 받아요")
     if "인코딩" in raw or "ffmpeg" in low:
@@ -1321,7 +1321,7 @@ Duration D = {dur:.2f} seconds.
                 name = f"{it['id']}_text_{int(time.time())}.png"
                 render_text(dec["layout"], lines, dec.get("source", ""), dec.get("layer"), self.data.get("styles")).save(self.dir / name)
                 self._set(it, files=[name], status="ready" if it["status"] != "approved" else "approved",
-                          font_fallback=_fallback_labels(dec["layout"]))
+                          font_fallback=_fallback_labels(dec["layout"]), error=None, error_info=None)  # 오류였던 글자도 반영으로 복구
             elif it["form"] == "image" and it["files"]:
                 overlay = self._render_overlay(it)
                 self._set(it, files=[it["files"][0]] + ([overlay] if overlay else []))
