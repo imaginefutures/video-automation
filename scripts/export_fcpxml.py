@@ -202,7 +202,8 @@ def build_inserts_xml(inserts: list[dict], clock: RationalClock, kept_segments: 
                              f'<media-rep kind="original-media" src="{escape(src)}"/></asset>')
         by_seg.setdefault(i, []).append(
             f'<asset-clip ref="{ref}" lane="{-(k + 1)}" offset="{clock.time_str_frames(child_off)}" duration="{clock.time_str_frames(dur)}" '
-            f'audioRole="effects" name="{escape("효과음 " + sx["name"])}"/>')
+            f'audioRole="effects" name="{escape("효과음 " + sx["name"])}">'
+            f'<adjust-volume amount="{float(sx.get("gain_db", 0)):.1f}dB"/></asset-clip>')  # 말소리에 맞춘 크기 (inserts.py)
     return (resources if len(resources) > 1 else []), by_seg
 
 

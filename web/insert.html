@@ -178,15 +178,29 @@
   .cands button.on { border-color: var(--accent); }
   .style-card { cursor: pointer; }
   .style-card.focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-  .style-card .sl { display: grid; grid-template-columns: 52px 1fr 58px; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
-  .style-card input[type=range] { width: 100%; accent-color: var(--accent); }
-  .style-card .val { font-family: var(--mono); font-size: 12px; text-align: right; color: var(--ink); }
-  .style-card .tag { font-size: 11px; border-radius: var(--r-full); padding: 0 7px; line-height: 18px; background: var(--chip); color: var(--muted); font-weight: 400; }
-  .style-card .tag.ch { background: var(--accent-soft); color: var(--accent-strong); }
-  .side-tools { display: flex; gap: 6px; margin-top: 10px; }
-  .side-tools .btn { flex: 1; }
-  .side-tools .btn.on { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+  .sl { display: grid; grid-template-columns: 52px 1fr 58px; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .sl input[type=range] { width: 100%; accent-color: var(--accent); }
+  .sl .val { font-family: var(--mono); font-size: 12px; text-align: right; color: var(--ink); }
+  .tag { font-size: 11px; border-radius: var(--r-full); padding: 0 7px; line-height: 18px; background: var(--chip); color: var(--muted); font-weight: 400; white-space: nowrap; }
+  .tag.ch { background: var(--accent-soft); color: var(--accent-strong); }
+  /* 영상 설정 - 이 영상의 인서트 전체에 걸리는 값. 누르면 오른쪽 패널이 그 설정으로 바뀐다 */
+  #vset { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); overflow: hidden; }
+  #vset .vh { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); padding: 7px 10px 3px; }
+  .vrow { display: grid; grid-template-columns: 22px 1fr auto 10px; gap: 6px; align-items: center; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 10px; font-size: 13px; }
+  .vrow + .vrow { border-top: 1px solid var(--line); }
+  .vrow:hover { background: var(--chip); }
+  .vrow.on { background: var(--accent-soft); color: var(--accent-strong); }
+  .vrow .ic { font: 700 12px/1 var(--mono); color: var(--muted); text-align: center; }
+  .vrow.on .ic { color: var(--accent-strong); }
+  .vrow .vv { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .vrow.on .vv { color: var(--accent-strong); }
+  .vrow .chev { color: var(--line-strong); font-size: 12px; }
   .sfx-mark { font-size: 11px; color: var(--muted); }
+  .sfx-row { display: grid; grid-template-columns: 40px 1fr auto 30px; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .sfx-row:first-of-type { border-top: 0; }
+  .sfx-row .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .sfx-row .nm:hover { color: var(--accent-strong); }
+  .sfx-row .btn { padding: 3px 0; }
   .confirm-row { margin-top: 8px; padding: 9px 11px; border: 1px solid var(--accent-soft); background: #f5f9ff; border-radius: var(--r-md); font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .confirm-row .primary { padding: 7px 14px; font-size: 13px; }
   .cands button { position: relative; }
@@ -226,7 +240,11 @@
       </div>
       <div class="sub"><a href="#" id="backCut">컷편집으로</a></div>
       <div id="counts"></div>
-      <div class="side-tools"><button class="btn" id="btnStyles">글자 스타일</button></div>
+      <div id="vset">
+        <div class="vh">영상 설정</div>
+        <button class="vrow" data-panel="styles"><span class="ic">Aa</span><span>글자 스타일</span><span class="vv" id="vsStyles"></span><span class="chev">›</span></button>
+        <button class="vrow" data-panel="sfx"><span class="ic">♪</span><span>효과음 크기</span><span class="vv" id="vsSfx"></span><span class="chev">›</span></button>
+      </div>
     </div>
     <div id="sideScroll">
       <div class="label">인서트 목록</div>
@@ -366,11 +384,11 @@ async function load() {
 }
 let lastDetailKey = '';
 function renderAll() {
-  renderCounts(); renderList(); renderTimeline(); paintInserts(); renderFontWarn(); renderSugBar();
+  renderCounts(); renderList(); renderTimeline(); paintInserts(); renderFontWarn(); renderSugBar(); renderVset(); sfxPreload();
   // 상세는 바뀌었을 때만 다시 그린다 - 매번 그리면 미리보기 영상이 새로 만들어져 본 영상 재생이 끊기고 싱크가 밀린다
-  if (styleMode) {  // 슬라이더를 끄는 중에 폴링이 패널을 다시 그리지 않게 - 스타일 값이 바뀌었을 때만
-    const sk = JSON.stringify(S.styles);
-    if (sk !== lastDetailKey) { lastDetailKey = sk; renderStyles(); }
+  if (panel) {  // 슬라이더를 끄는 중에 폴링이 패널을 다시 그리지 않게 - 그 설정 값이 바뀌었을 때만
+    const sk = panelKey();
+    if (sk !== lastDetailKey) { lastDetailKey = sk; renderPanel(); }
     return;
   }
   const it = S.items.find((i) => i.id === selId);
@@ -422,7 +440,7 @@ async function refresh() {
   if (cutsChanged) { buildKept(); renderDoc(); }
   selId = S.items.some((i) => i.id === prevSel) ? prevSel : null;
   // 다른 인서트를 만드는 동안의 폴링이 입력 중인 글자를 지우지 않게 - 선택한 인서트 상태가 그대로면 상세 패널은 두고
-  const typing = $('#detail').contains(document.activeElement) && document.activeElement.matches('textarea, input, select');
+  const typing = $('#detail').contains(document.activeElement) && document.activeElement.matches('textarea, input:not([type=range]), select');
   if (typing && S.items.find((i) => i.id === selId)?.status === prevStatus) {
     renderCounts(); renderList(); renderTimeline(); paintInserts(); renderDecisionBar();
   } else renderAll();
@@ -430,7 +448,7 @@ async function refresh() {
 }
 function schedulePoll() {
   clearTimeout(pollTimer);
-  if (S.items.some((i) => BUSY.has(i.status)) || S.suggest?.state === 'running') pollTimer = setTimeout(refresh, 1500);
+  if (S.items.some((i) => BUSY.has(i.status)) || S.suggest?.state === 'running' || S.sfx_mix?.measuring) pollTimer = setTimeout(refresh, 1500);
 }
 
 // ---------------------------------------------------------------- 대본 (잘린 말은 안 보임)
@@ -584,11 +602,11 @@ function tick() {
   // 재생 중 인서트 시작 지점을 지나면 연결된 효과음을 파일 길이 그대로 재생
   const nowT = video.currentTime;
   if (!video.paused && sfxLastT != null && nowT > sfxLastT && nowT - sfxLastT < 1) {
-    for (const i of S.items) if (i.sfx && i.status !== 'rejected' && i.src_start > sfxLastT && i.src_start <= nowT) sfxPlay(i.sfx);
+    for (const i of S.items) if (i.sfx && i.status !== 'rejected' && i.src_start > sfxLastT && i.src_start <= nowT) sfxPlay(i.sfx, i.sfx_db);
   }
   sfxLastT = nowT;
   movePlayhead();
-  if (styleMode && styleFocus) return;  // 스타일 미리보기 중에는 인서트 겹쳐 보기를 멈춘다
+  if (panel === 'styles' && styleFocus) return;  // 스타일 미리보기 중에는 인서트 겹쳐 보기를 멈춘다
   const it = overlayAt(video.currentTime);
   const st = overlayStruct(video.currentTime, it);
   const key = (it ? it.id + it.files.join() : '') + (st ? '|' + st.id + st.files.join() : '');
@@ -694,8 +712,35 @@ function nextPending() {
   return list.find((i) => i.status === 'ready' && (!cur || (i.t_start ?? 0) > (cur.t_start ?? 0))) || list.find((i) => i.status === 'ready');
 }
 
+// ---------------------------------------------------------------- 영상 설정 (사이드바) - 열면 오른쪽 상세 자리가 그 설정 패널로 바뀐다
+let panel = null;  // null | 'styles' | 'sfx'
+function panelKey() {
+  return JSON.stringify(panel === 'styles' ? S.styles
+    : [S.sfx_mix, S.items.filter((i) => i.sfx).map((i) => [i.id, i.sfx, i.sfx_pct, i.sfx_db, i.status, i.t_start])]);
+}
+function renderPanel() { $('#decisionBar').style.display = 'none'; panel === 'styles' ? renderStyles() : renderSfxMix(); }
+function openPanel(name) {
+  const prev = panel; panel = name;
+  if (prev === 'styles' && name !== 'styles') { styleFocus = null; lastOv = ''; }
+  renderVset();
+  if (!name) { $('#decisionBar').style.display = ''; lastDetailKey = ''; renderDetail(); tick(); return; }
+  lastDetailKey = panelKey(); renderPanel();
+  if (name === 'styles' && S.styles?.length) focusStyle(styleFocus || S.styles[0].key);
+  if (name === 'sfx') tick();
+}
+function renderVset() {
+  const nSt = (S.styles || []).filter((s) => s.changed).length;
+  $('#vsStyles').textContent = nSt ? `${nSt}종 조정` : '기본값';
+  $('#vsSfx').textContent = `${Math.round(S.sfx_mix?.pct ?? 50)}%`;
+  document.querySelectorAll('#vset .vrow').forEach((b) => b.classList.toggle('on', b.dataset.panel === panel));
+}
+document.querySelectorAll('#vset .vrow').forEach((b) => b.addEventListener('click', () => openPanel(panel === b.dataset.panel ? null : b.dataset.panel)));
+function panelHead(title) {
+  return `<div class="row" style="justify-content:space-between;margin:10px 0 0"><b style="font-size:14px">${title}</b><button class="btn" id="pnClose">닫기</button></div>`;
+}
+
 // ---------------------------------------------------------------- 글자 스타일 (7종, 영상마다 위치·크기 조정)
-let styleMode = false, styleFocus = null;
+let styleFocus = null;
 const styleEdit = {};  // key -> {size,x,y} 아직 적용 안 한 값
 const SL = [['size', '크기', 24, 160, 1, 'px'], ['x', '가로', 0, 100, 0.5, '%'], ['y', '세로', 0, 100, 0.5, '%']];
 function styleVals(st) { return { ...{ size: st.size, x: st.x, y: st.y }, ...(styleEdit[st.key] || {}) }; }
@@ -727,7 +772,7 @@ function styleKeyOf(it) {
 function renderStyles() {
   $('#decisionBar').style.display = 'none';
   const box = $('#detail');
-  box.innerHTML = `<div class="row" style="justify-content:space-between;margin:10px 0 0"><b style="font-size:14px">글자 스타일</b><button class="btn" id="stClose">닫기</button></div>` +
+  box.innerHTML = panelHead('글자 스타일') +
     S.styles.map((st) => {
       const v = styleVals(st); const dirty = !!styleEdit[st.key];
       return `<section class="card-sec style-card${styleFocus === st.key ? ' focus' : ''}" data-key="${st.key}">
@@ -738,7 +783,7 @@ function renderStyles() {
           <button class="primary" data-st="apply" style="padding:7px 14px;font-size:13px" ${dirty ? '' : 'disabled'}>이 영상에 적용${st.count ? ` (${st.count}개)` : ''}</button></div>
       </section>`;
     }).join('');
-  $('#stClose').addEventListener('click', () => toggleStyles(false));
+  $('#pnClose').addEventListener('click', () => openPanel(null));
   box.querySelectorAll('.style-card').forEach((card) => {
     const key = card.dataset.key; const st = S.styles.find((x) => x.key === key);
     card.addEventListener('pointerdown', () => { if (styleFocus !== key) focusStyle(key); });
@@ -767,18 +812,65 @@ function renderStyles() {
   });
 }
 // ---------------------------------------------------------------- 효과음 (라이브러리는 홈 "공통 자산" 탭에서 관리)
-const sfxAudio = {};
-function sfxPlay(id) {
+// 크기(dB)를 그대로 들려주려고 Web Audio로 재생 - <audio>의 volume은 1(0dB)보다 키울 수 없다.
+// 서버가 원본 말소리 크기에 맞춰 계산한 sfx_db를 쓰니 미리보기 밸런스 = 내보낸 FCP 밸런스
+let actx = null; const sfxBuf = {};
+function sfxLoad(id) {
+  actx = actx || new AudioContext();
+  return sfxBuf[id] || (sfxBuf[id] = fetch(`/api/assets/file?kind=sfx&id=${id}`).then((r) => r.arrayBuffer()).then((b) => actx.decodeAudioData(b))
+    .catch((e) => { delete sfxBuf[id]; throw e; }));
+}
+function sfxPreload() { if (actx) for (const i of S.items) if (i.sfx) sfxLoad(i.sfx).catch(() => {}); }
+async function sfxPlay(id, db) {
   if (!id) return;
-  const a = sfxAudio[id] || (sfxAudio[id] = new Audio(`/api/assets/file?kind=sfx&id=${id}`));
-  a.currentTime = 0; a.play().catch(() => {});
+  try {
+    const buf = await sfxLoad(id);
+    if (actx.state === 'suspended') await actx.resume();
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const g = actx.createGain(); g.gain.value = Math.pow(10, (db ?? 0) / 20);
+    src.connect(g).connect(actx.destination); src.start();
+  } catch (e) { /* 재생 실패는 조용히 - 편집은 계속 */ }
 }
-function toggleStyles(on) {
-  styleMode = on; $('#btnStyles').classList.toggle('on', on);
-  if (!on) { styleFocus = null; $('#decisionBar').style.display = ''; lastOv = ''; lastDetailKey = ''; renderDetail(); tick(); }
-  else { renderStyles(); if (S.styles?.length) focusStyle(styleFocus || S.styles[0].key); }
+// 첫 클릭 때 오디오를 깨우고 쓰는 효과음을 미리 받아 둔다 - 재생 중 인서트 시작 지점에서 늦게 나지 않게
+document.addEventListener('pointerdown', () => { if (!actx) { actx = new AudioContext(); sfxPreload(); } }, { once: true, capture: true });
+function playSfxOf(id) { const i = S.items.find((x) => x.id === id); if (i?.sfx) sfxPlay(i.sfx, i.sfx_db); }
+const pctOf = (it) => it.sfx_pct ?? S.sfx_mix?.pct ?? 50;
+const dbTxt = (db) => db == null ? '' : `${db > 0 ? '+' : ''}${db.toFixed(1)}dB`;
+
+function renderSfxMix() {
+  const box = $('#detail'); const m = S.sfx_mix || { pct: 50, default: 50 };
+  const lib = S.sfx_lib || [];
+  const used = sortedItems().filter((i) => i.sfx && i.status !== 'rejected');
+  const speech = m.speech ? `원본 ${m.speech.lufs.toFixed(1)} LUFS` : m.measuring ? '원본 소리 재는 중…' : '';
+  box.innerHTML = panelHead('효과음 크기') + `
+    <section class="card-sec">
+      <h3>이 영상 ${speech ? `<span class="tag">${speech}</span>` : ''}${m.pct !== m.default ? '<span class="tag ch">조정됨</span>' : ''}</h3>
+      <div class="sl"><span>원본 대비</span><input type="range" id="mxPct" min="5" max="200" step="5" value="${m.pct}"><span class="val" id="mxVal">${Math.round(m.pct)}%</span></div>
+      <div class="row" style="margin-top:8px;justify-content:flex-end"><button class="btn" id="mxReset" ${m.pct !== m.default ? '' : 'disabled'}>기본값 ${m.default}%</button></div>
+    </section>
+    <section class="card-sec">
+      <h3>효과음 쓴 인서트 <span class="tag">${used.length}개</span></h3>
+      ${used.length ? used.map((i) => {
+        const s = lib.find((x) => x.id === i.sfx);
+        return `<div class="sfx-row" data-id="${i.id}"><span class="mono" style="font-size:12px;color:var(--muted)">${fmt(i.t_start)}</span>
+          <span class="nm" title="${esc(itemLabel(i))}">${esc(s ? s.name : '삭제된 효과음')}</span>
+          <span>${i.sfx_pct != null ? `<span class="tag ch">개별 ${Math.round(i.sfx_pct)}%</span>` : ''} <span class="mono" style="font-size:11px;color:var(--muted)">${dbTxt(i.sfx_db)}</span></span>
+          <button class="btn" data-play title="영상과 같이 듣기">▶</button></div>`;
+      }).join('') : `<div class="note" style="margin-top:6px">${lib.length ? '인서트 상세 ③에서 효과음 연결' : '홈 공통 자산에서 효과음 등록'}</div>`}
+    </section>`;
+  $('#pnClose').addEventListener('click', () => openPanel(null));
+  const save = async (body) => {
+    try { await api('/api/insert/sfx_mix', body); await refresh(); } catch (err) { toast(err.message); }
+  };
+  $('#mxPct').addEventListener('input', (e) => { $('#mxVal').textContent = `${e.target.value}%`; });
+  $('#mxPct').addEventListener('change', (e) => save({ pct: +e.target.value }));
+  $('#mxReset').addEventListener('click', () => save({ reset: true }));
+  box.querySelectorAll('.sfx-row').forEach((r) => {
+    const it = S.items.find((i) => i.id === r.dataset.id);
+    r.querySelector('[data-play]').addEventListener('click', () => { video.currentTime = Math.max(0, it.src_start - 1.5); video.play(); });
+    r.querySelector('.nm').addEventListener('click', () => { openPanel(null); select(it.id, true); });
+  });
 }
-$('#btnStyles').addEventListener('click', () => toggleStyles(!styleMode));
 
 function renderDecisionBar() {
   const bar = $('#decisionBar'); const it = S.items.find((i) => i.id === selId);
@@ -839,7 +931,7 @@ function card(num, title, desc, body) {
 }
 
 function renderDetail() {
-  if (styleMode) { renderStyles(); return; }
+  if (panel) { renderPanel(); return; }
   renderDecisionBar();
   const box = $('#detail'); const it = S.items.find((i) => i.id === selId);
   lastDetailKey = JSON.stringify([selId, it, pendingForm]);
@@ -917,7 +1009,10 @@ function renderDetail() {
     const lib = S.sfx_lib || [];
     f += `<div class="sub"><div class="lbl">효과음</div>${lib.length ? `<div class="row"><select id="dSfx" style="flex:1"><option value="">없음</option>${lib.map((x) =>
       `<option value="${x.id}"${x.id === it.sfx ? ' selected' : ''}>${esc(x.name)} (${x.duration.toFixed(1)}s)</option>`).join('')}</select>
-      <button class="btn" id="dSfxPlay" ${it.sfx ? '' : 'disabled'}>▶</button></div>` : `<div class="note">홈 공통 자산에서 효과음 등록</div>`}
+      <button class="btn" id="dSfxPlay" ${it.sfx ? '' : 'disabled'}>▶</button></div>
+      ${it.sfx ? `<div class="sl"><span>크기</span><input type="range" id="dSfxVol" min="5" max="200" step="5" value="${pctOf(it)}"><span class="val" id="dSfxVal">${Math.round(pctOf(it))}%</span></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="note">${it.sfx_pct != null ? '개별 조정' : '영상 설정 따름'} ${dbTxt(it.sfx_db)}</span>
+        ${it.sfx_pct != null ? `<button class="btn" id="dSfxAuto" style="padding:2px 10px;font-size:12px">영상 설정으로</button>` : ''}</div>` : ''}` : `<div class="note">홈 공통 자산에서 효과음 등록</div>`}
       ${it.sfx && !lib.some((x) => x.id === it.sfx) ? '<div class="warn">연결된 효과음이 삭제됐어요</div>' : ''}</div>`;
     f += `<div class="sub"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
       `<button data-form="${k}" class="${k === (pf || it.form) ? 'on' : ''}">${v}</button>`).join('')}</div>
@@ -949,10 +1044,16 @@ function renderDetail() {
     act(it, 'regenerate', { note });
   });
   box.querySelector('#dSfx')?.addEventListener('change', async (e) => {
-    const id = e.target.value || null;
-    try { await api('/api/insert/update', { id: it.id, action: 'sfx', sfx: id }); if (id) sfxPlay(id); await refresh(); } catch (err) { toast(err.message); }
+    const id = e.target.value || null; e.target.blur();  // 포커스가 남으면 refresh가 상세를 다시 안 그려 크기 슬라이더가 안 나온다
+    try { await api('/api/insert/update', { id: it.id, action: 'sfx', sfx: id }); await refresh(); if (id) playSfxOf(it.id); } catch (err) { toast(err.message); }
   });
-  box.querySelector('#dSfxPlay')?.addEventListener('click', () => sfxPlay(it.sfx));
+  box.querySelector('#dSfxPlay')?.addEventListener('click', () => sfxPlay(it.sfx, it.sfx_db));
+  const setVol = async (pct) => {
+    try { await api('/api/insert/update', { id: it.id, action: 'sfx_vol', pct }); await refresh(); playSfxOf(it.id); } catch (err) { toast(err.message); }
+  };
+  box.querySelector('#dSfxVol')?.addEventListener('input', (e) => { $('#dSfxVal').textContent = `${e.target.value}%`; });
+  box.querySelector('#dSfxVol')?.addEventListener('change', (e) => setVol(+e.target.value));
+  box.querySelector('#dSfxAuto')?.addEventListener('click', () => setVol(null));
   box.querySelector('#dLayout')?.addEventListener('change', (e) => { $('#dSource').style.display = e.target.value === 'quote' ? '' : 'none'; });
   box.querySelector('#dApplyText')?.addEventListener('click', () => act(it, 'edit_text', {
     lines: $('#dLines').value.split('\n').map((s) => s.trim()).filter(Boolean),

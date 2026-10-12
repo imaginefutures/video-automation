@@ -1460,6 +1460,8 @@ class Handler(BaseHTTPRequestHandler):
                 key = str(body.get("key", ""))
                 res = self.session.inserts.set_style(key, None if body.get("reset") else body.get("values") or {})
                 return self._json({"ok": True, **res})
+            if self.path == "/api/insert/sfx_mix":  # 이 영상의 효과음 크기 (원본 말소리 대비 %)
+                return self._json({"ok": True, **self.session.inserts.set_sfx_mix(None if body.get("reset") else body.get("pct", 50))})
             if self.path == "/api/insert/fonts":
                 import fonts
                 fonts.ensure_all()

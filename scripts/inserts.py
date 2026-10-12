@@ -30,6 +30,7 @@ from build_edl import compute_kept_segments
 from common import log_llm_usage, thinking_kwargs, write_json
 import fonts
 import assets_lib
+import audio_level
 from split_intro import BRAND_CONTEXT  # 채널 소개 + "Never" 목록 - 인트로 이미지와 같은 규칙
 
 DECIDE_MODEL = "claude-opus-5-5"
@@ -391,6 +392,7 @@ class InsertStore:
             "fonts_missing": fonts.missing_labels(),
             "styles": self.styles_view(),
             "sfx_lib": assets_lib.items("sfx"),
+            "sfx_mix": self.sfx_mix_view(items),
             "suggest": self.data.get("suggest") or {"state": "none"},
         }
 
@@ -1193,6 +1195,10 @@ Duration D = {dur:.2f} seconds.
                 raise ValueError("없는 효과음입니다")
             self._set(it, sfx=sid)
             return it
+        if action == "sfx_vol":  # 이 인서트만 효과음 크기 따로 (원본 말소리 대비 %). None이면 영상 설정을 따른다
+            pct = body.get("pct")
+            self._set(it, sfx_pct=None if pct is None else _clamp_pct(pct))
+            return it
         if action == "dismiss_error":
             self._set(it, error=None, error_info=None, notice=None)
             return it
@@ -1330,6 +1336,53 @@ Duration D = {dur:.2f} seconds.
             n += 1
         return {"restyled": n}
 
+    # ---- 효과음 크기: 영상 말소리 크기를 재서 "원본 대비 N%"로 자동 맞춤, 영상별 N + 인서트별 따로 (10-12 사용자 요청)
+
+    def sfx_pct(self) -> float:
+        return float(self.data.get("sfx_pct", audio_level.DEFAULT_PCT))
+
+    def _speech_level(self, wait: bool = False) -> dict | None:
+        """원본 말소리 크기. wait=False면 캐시에 없을 때 뒤에서 재기 시작하고 None (긴 영상은 수십 초)."""
+        media = self.s.media
+        if wait:
+            return audio_level.level(media)
+        lv = audio_level.cached(media)
+        if lv is None and not getattr(self, "_measuring", False):
+            self._measuring = True
+
+            def run():
+                try:
+                    audio_level.level(media)
+                finally:
+                    self._measuring = False
+            threading.Thread(target=run, daemon=True).start()
+        return lv
+
+    def _sfx_gain(self, it: dict, speech: dict | None) -> float | None:
+        f = assets_lib.path("sfx", it["sfx"]) if it.get("sfx") else None
+        if not f or not speech:
+            return None
+        pct = it["sfx_pct"] if it.get("sfx_pct") is not None else self.sfx_pct()
+        return audio_level.gain_db(speech, audio_level.level(f, hit=True), pct)
+
+    def sfx_mix_view(self, items: list[dict]) -> dict:
+        """화면용: 영상 설정 + 인서트마다 계산된 증감(sfx_db). items는 payload용 복사본이라 여기서 채운다."""
+        speech = self._speech_level() if any(i.get("sfx") for i in items) else audio_level.cached(self.s.media)
+        for i in items:
+            if i.get("sfx"):
+                i["sfx_db"] = self._sfx_gain(i, speech)
+        return {"pct": self.sfx_pct(), "default": audio_level.DEFAULT_PCT, "speech": speech,
+                "measuring": bool(getattr(self, "_measuring", False))}
+
+    def set_sfx_mix(self, pct: float | None) -> dict:
+        with self.lock:
+            if pct is None:
+                self.data.pop("sfx_pct", None)
+            else:
+                self.data["sfx_pct"] = _clamp_pct(pct)
+            self._save()
+        return {"pct": self.sfx_pct()}
+
     def upload_asset(self, iid: str, filename: str, data: bytes) -> dict:
         """실물(책 표지·논문 캡처 등)을 받아 화자 옆 1/3 또는 전체 화면 PNG로 배치한다."""
         from PIL import Image
@@ -1363,12 +1416,14 @@ Duration D = {dur:.2f} seconds.
         out = []
         with self.lock:
             items = [it for it in self.data["items"] if it["status"] == "approved" and it["files"]]
+        speech = self._speech_level(wait=True) if any(it.get("sfx") for it in items) else None  # 효과음 크기를 말소리에 맞추려면 필요
         for it in sorted(items, key=lambda x: by_wi[x["wi_start"]]["start"]):
             label = f"{it['form']} {' '.join((it.get('decision') or {}).get('lines', []))[:30] or it['text'][:30]}"
             s_item = assets_lib.get("sfx", it["sfx"]) if it.get("sfx") else None
             out.append({"id": it["id"], "lane_base": 3 if _is_structure(it.get("decision")) else 1,  # 구조 층은 위 레인 - 다른 인서트와 겹쳐도 됨
                         "sfx": ({"path": str(assets_lib.path("sfx", it["sfx"]).resolve()), "name": s_item["name"], "duration": s_item["duration"],
-                                 "rate": s_item.get("rate", 48000), "channels": s_item.get("channels", 2)} if s_item else None),
+                                 "rate": s_item.get("rate", 48000), "channels": s_item.get("channels", 2),
+                                 "gain_db": self._sfx_gain(it, speech) or 0.0} if s_item else None),
                         "start": by_wi[it["wi_start"]]["start"], "end": by_wi[it["wi_end"]]["end"],
                         "name": label, "role": f"인서트.{ {'text': '텍스트', 'image': '이미지', 'video': '영상', 'asset': '실물'}[it['form']] }",
                         "layers": [str((self.dir / f).resolve()) for f in it["files"]]})
@@ -1423,6 +1478,11 @@ STYLE_DEFAULTS = {
                 "color": "yellow", "dim": False, "stroke_min": 5, "stroke_div": 12, "sample": ["이건 막대기 아니고~ 숟가락이야!"]},
 }
 STYLE_EDITABLE = ("size", "x", "y")
+
+
+def _clamp_pct(v) -> float:
+    """효과음 크기(원본 말소리 대비 %) - 5~200. 0이면 효과음을 빼는 게 맞다."""
+    return round(max(5.0, min(200.0, float(v))), 1)
 
 
 def style_key(layout: str, layer: str | None = None) -> str:
