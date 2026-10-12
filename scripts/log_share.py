@@ -105,7 +105,7 @@ def _insert_errors(path: Path) -> str | None:
     if sg.get("state") == "error":
         out.append(json.dumps({"suggest": sg}, ensure_ascii=False))
     for it in data.get("items") or []:
-        if it.get("status") == "error":
+        if it.get("status") == "error" or it.get("error_info"):  # 이전 결과를 지킨 실패는 status가 그대로라 error_info로도 본다
             out.append(json.dumps({k: it.get(k) for k in ("id", "form", "status", "error", "error_info")},
                                   ensure_ascii=False))
     return "\n".join(out) or None
@@ -157,20 +157,32 @@ def _client_errors(edit: Path) -> str | None:
     return "\n".join(ln for ln in text.splitlines() if '"event": "client_error"' in ln) or None
 
 
+FFMPEG_NOISE_RE = re.compile(r"^(frame=|size=|  (lib\w+|configuration:|built with) )")
+
+
+def _run_log(path: Path) -> str | None:
+    """ffmpeg 진행 줄(frame=...)과 빌드 정보는 원인 찾기에 쓸모가 없는데 수백 줄이라 뺀다."""
+    text = _read(path)
+    if not text:
+        return None
+    return "\n".join(ln for ln in text.replace("\r", "\n").splitlines() if not FFMPEG_NOISE_RE.match(ln)) or None
+
+
 def _block(title: str, body: str | None) -> str:
     return f"### {title}\n{body}\n" if body else ""
 
 
 def _video_section(folder: Path) -> str:
     edit = folder / "edit"
+    # 오류가 앞, 긴 로그가 뒤 - 사용자가 채팅에 붙이면 뒤가 잘린다(10-12: 50K 제한에 run.log가 다 먹어 인서트 오류가 두 번 빠짐)
     parts = [
         _block("처리 상태 (pipeline_status.json)", _compact_json(edit / "pipeline_status.json")),
-        _block("처리 로그 (run.log)", _read(edit / "run.log")),
-        _block("화면 서버 로그 (server.log, 정상 접속 줄 제외)", _server_log(edit / "server.log")),
-        _block("브라우저 오류 (actions.log의 client_error)", _client_errors(edit)),
         _block("인서트 오류 (inserts.json)", _insert_errors(edit / "inserts.json")),
-        _block("AI 판단 vs 최종 결정 (ng.json + decisions.json)", _cut_review(edit)),
+        _block("브라우저 오류 (actions.log의 client_error)", _client_errors(edit)),
+        _block("화면 서버 로그 (server.log, 정상 접속 줄 제외)", _server_log(edit / "server.log")),
         _block("AI 사용량 (llm_usage.jsonl 단계별 합계)", _usage_summary(edit / "llm_usage.jsonl")),
+        _block("처리 로그 (run.log, ffmpeg 진행 줄 제외)", _run_log(edit / "run.log")),
+        _block("AI 판단 vs 최종 결정 (ng.json + decisions.json)", _cut_review(edit)),
         _block("검토 화면 조작 기록 (actions.log)", _read(edit / "actions.log")),
     ]
     body = "".join(parts) or "(로그 없음)\n"
@@ -179,7 +191,7 @@ def _video_section(folder: Path) -> str:
 
 def _split_section(folder: Path) -> str:
     work = folder / "work"
-    body = (_block("처리 로그 (run.log)", _read(work / "run.log"))
+    body = (_block("처리 로그 (run.log, ffmpeg 진행 줄 제외)", _run_log(work / "run.log"))
             + _block("화면 서버 로그 (server.log, 정상 접속 줄 제외)", _server_log(work / "server.log")))
     return f"## 분할: {folder.name}\n" + (body or "(로그 없음)\n")
 
