@@ -1302,7 +1302,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({**self.session.inserts.payload(), "home_port": home_port(),
                                "confirmed_at": self.session.decisions.get("confirmed_at"),
                                "insert_only": is_insert_only(self.folder)})
-        if path == "/api/assets/file":  # 공통 자산(효과음) 듣기 - 관리는 홈 "공통 자산" 탭
+        if path == "/api/assets/file":  # 공통 자산(효과음) 듣기 - 관리는 홈 헤더 "공통 자산"
             from urllib.parse import urlsplit, parse_qs
             import assets_lib
             q = parse_qs(urlsplit(self.path).query)
