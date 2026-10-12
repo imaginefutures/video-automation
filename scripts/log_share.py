@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import traceback
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -195,12 +196,15 @@ def build(videos: list[Path], splits: list[Path], version: str, sha: str, only: 
     """only: None=전체, "video:<이름>" 또는 "split:<이름>"=그것만."""
     sections = [f"# video-cut 로그 ({datetime.now().isoformat(timespec='seconds')})\n",
                 f"## 환경\n{_env_section(version, sha)}\n"]
-    for f in videos:
-        if only in (None, f"video:{f.name}"):
-            sections.append(_video_section(f))
-    for f in splits:
-        if only in (None, f"split:{f.name}"):
-            sections.append(_split_section(f))
+    # 영상 하나의 로그 파일이 깨져 있어도(옛 버전 형식 등) 나머지 로그는 받아야 원인을 찾는다 -
+    # 실패한 섹션 자리에 traceback을 대신 싣는다.
+    for kind, folders, make in (("video", videos, _video_section), ("split", splits, _split_section)):
+        for f in folders:
+            if only in (None, f"{kind}:{f.name}"):
+                try:
+                    sections.append(make(f))
+                except Exception:
+                    sections.append(f"## {kind}: {f.name}\n### 로그 모으기 실패\n{traceback.format_exc()}")
     if only is None:
         home = _read(HOME_LOG)
         if home:

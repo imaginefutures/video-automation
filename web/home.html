@@ -821,9 +821,10 @@ $('#btnSettings').addEventListener('click', openSettingsModal);
 // 다른 컴퓨터에서 난 문제를 원인까지 찾으려면 로그가 필요하다 - 영상별·분할·전역 로그와 실행 환경을
 // 홈 서버가 한 덩어리 텍스트로 모아 주고(scripts/log_share.py), 여기서 보고 복사하거나 파일로 저장한다.
 async function openLogShare(only = '') {
-  let data;
-  try { data = await (await fetch(`/api/logs/share${only ? '?only=' + encodeURIComponent(only) : ''}`)).json(); }
-  catch (e) { toast('로그를 불러오지 못했습니다'); return; }
+  let res, data;
+  try { res = await fetch(`/api/logs/share${only ? '?only=' + encodeURIComponent(only) : ''}`); data = await res.json(); }
+  catch (e) { data = { error: res?.status === 404 ? RESTART_MSG : e.message }; }
+  if (data.error) { toast(`로그를 불러오지 못했습니다 - ${data.error}`); return; }
   const opt = (v, label) => `<option value="${esc(v)}"${v === only ? ' selected' : ''}>${esc(label)}</option>`;
   const kb = Math.ceil(new Blob([data.text]).size / 1024);
   showModal(`<div class="modal-head"><h2>로그 공유</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
@@ -891,6 +892,7 @@ async function checkSetupGate() {
 
 // --------------------------------------------------------------------------------------- 업데이트
 function $$(s, r = document) { return Array.from(r.querySelectorAll(s)); }
+const RESTART_MSG = '업데이트를 적용하려면 홈 서버를 다시 켜주세요 (터미널에서 Ctrl+C 후 다시 실행)';
 async function checkUpdate() {
   let st;
   try { st = await (await fetch('/api/update/status')).json(); } catch (e) {
@@ -901,8 +903,12 @@ async function checkUpdate() {
   // 없었다 - 백그라운드 확인 스레드(5분 간격)가 마지막으로 성공한 시각을 항상 보여준다.
   $('#updateChecked').textContent = st.checked_at
     ? `업데이트 확인: ${fmtDate(st.checked_at)}` : '업데이트 확인: 아직 안 됨';
-  if (st.error || !st.behind) { $('#updateBanner').classList.remove('show'); return; }
-  $('#updateBannerText').textContent = `새 업데이트 ${st.behind}건이 있습니다`;
+  // 10-12: 업데이트(git pull) 후 재시작 안 한 서버는 옛 코드로 돌아 새 화면의 기능이 원인 모르게 실패한다.
+  // restart_needed가 아예 없으면 그 필드보다 옛 서버 - 역시 재시작 대상.
+  const restart = !st.error && st.restart_needed !== false;
+  $('#updateBanner .actions').style.display = restart ? 'none' : '';
+  if (!restart && (st.error || !st.behind)) { $('#updateBanner').classList.remove('show'); return; }
+  $('#updateBannerText').textContent = restart ? RESTART_MSG : `새 업데이트 ${st.behind}건이 있습니다`;
   $('#updateBanner').classList.add('show');
 }
 async function openUpdateHistory() {
@@ -927,9 +933,9 @@ async function runUpdate() {
   const res = await fetch('/api/update/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   const data = await res.json();
   if (!data.ok) { showModal(`<p>${esc(data.error || '업데이트하지 못했습니다')}</p><button onclick="hideModal()">닫기</button>`); return; }
-  showModal(`<h2>업데이트 완료</h2><p class="note">변경사항을 쓰려면 홈 서버를 재시작해주세요 (터미널에서 Ctrl+C 후 다시 실행)</p>
+  showModal(`<h2>업데이트 완료</h2><p class="note">${RESTART_MSG}</p>
     <button onclick="hideModal()">닫기</button>`);
-  $('#updateBanner').classList.remove('show');
+  checkUpdate();
 }
 $('#btnUpdateNow').addEventListener('click', runUpdate);
 $('#btnUpdateHistory').addEventListener('click', openUpdateHistory);

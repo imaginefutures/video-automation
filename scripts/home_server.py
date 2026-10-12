@@ -856,12 +856,23 @@ def _update_refresh_loop() -> None:
         time.sleep(300)
 
 
+def git_head() -> str:
+    return _run_git(["rev-parse", "HEAD"]).stdout.strip()
+
+
+# 10-12: "지금 업데이트"는 git pull만 하고 이 프로세스는 옛 코드로 계속 돈다 - home.html은 요청마다
+# 디스크에서 읽어 새 화면이 옛 서버에 없는 API를 부르고, 다른 컴퓨터 사용자는 원인 모를 실패만 겪었다
+# (로그 공유·이미지 생성). 시작 시점 커밋을 기억해 두고 디스크 커밋과 다르면 화면이 재시작 배너를 띄운다.
+STARTED_HEAD = ""
+
+
 def update_status() -> dict:
     with _update_cache_lock:
         cached = dict(_update_cache)
     cur = git_current()
     return {"dirty": git_is_dirty(), "behind": cached["behind"], "checked_at": cached["checked_at"],
-            "current_sha": cur["sha"], "current_subject": cur["subject"]}
+            "current_sha": cur["sha"], "current_subject": cur["subject"],
+            "restart_needed": git_head() != STARTED_HEAD}
 
 
 def git_pull() -> dict:
@@ -922,12 +933,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "log_tail": pipeline_log_tail(folder)})
         if path == "/api/logs/share":
             only = (parse_qs(urlsplit(self.path).query).get("only") or [None])[0]
-            root, sroot = videos_root(), splits_root()
-            videos = sorted(p for p in root.iterdir() if is_project_folder(p)) if root.is_dir() else []
-            splits = sorted(p for p in sroot.iterdir() if is_split_folder(p)) if sroot.is_dir() else []
-            versions = read_changelog(1)
-            text = log_share.build(videos, splits, versions[0]["version"] if versions else "?",
-                                   git_current()["sha"], only)
+            try:
+                root, sroot = videos_root(), splits_root()
+                videos = sorted(p for p in root.iterdir() if is_project_folder(p)) if root.is_dir() else []
+                splits = sorted(p for p in sroot.iterdir() if is_split_folder(p)) if sroot.is_dir() else []
+                versions = read_changelog(1)
+                text = log_share.build(videos, splits, versions[0]["version"] if versions else "?",
+                                       git_current()["sha"], only)
+            except Exception as e:  # 예전엔 응답 없이 끊겨 화면엔 "불러오지 못했습니다"만 떴다
+                traceback.print_exc()
+                return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
             return self._json({"text": text, "videos": [p.name for p in videos], "splits": [p.name for p in splits]})
         if path == "/api/setup":
             return self._json({"keys": api_keys_status(), **ffmpeg_status()})
@@ -1147,7 +1162,9 @@ def _start_home_log() -> None:
 
 
 def serve(port: int, open_browser: bool) -> None:
+    global STARTED_HEAD
     _start_home_log()
+    STARTED_HEAD = git_head()
     # 10-01 추가: 검토 화면(web/index.html)의 "홈으로" 링크가 8764로 고정돼 있어서 홈 서버를
     # --port로 다른 포트에 띄우면 깨졌다. os.environ에 심어두면 이후 create_project()/
     # open_review()가 subprocess.Popen(env=...없이)으로 띄우는 run.py/server.py가 그대로
