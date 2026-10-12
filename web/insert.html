@@ -115,15 +115,14 @@
   .w.ins.text { text-decoration-color: var(--f-text); } .w.ins.image { text-decoration-color: var(--f-image); } .w.ins.video { text-decoration-color: var(--f-video); } .w.ins.asset { text-decoration-color: var(--f-asset); } .w.ins.none { text-decoration-color: var(--line-strong); }
   .w.ins.sel { background: var(--accent-soft); }
   .w.ins.sug { text-decoration-thickness: 2px; text-decoration-style: dashed; opacity: 0.85; }
-  /* 들어가는 자리 - 편집본 시간축 파형 + 대본. 좌우로 스크롤하며 양 끝을 끌어 정한다 */
-  .span-lbl { display: flex; align-items: center; gap: 6px; }
-  .span-lbl .btn { padding: 0 10px; font-size: 12px; line-height: 22px; }
-  /* overscroll 막기 - 트랙패드로 좌우 스크롤하다 끝에 닿으면 브라우저 '뒤로 가기'가 되지 않게 */
-  /* 여러 줄로 접어 스크롤 없이 한 번에 - 한 줄 가로 스크롤은 길어서 조정이 어려웠다 (10-12 사용자 요청). 넘칠 때만 세로 스크롤 */
-  #spanScroll { overflow-x: hidden; overflow-y: auto; max-height: calc(100vh - 150px); overscroll-behavior: contain; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); padding: 6px; }
-  #spanInner { position: relative; }
-  #spanCv { display: block; cursor: pointer; }
-  #spanHead { position: absolute; top: 0; width: 2px; background: var(--danger); pointer-events: none; display: none; }
+  /* 들어가는 자리 - 고른 인서트의 대본 양 끝 손잡이. 다른 말로 끌면 그 말까지 (폭 0이라 글자 배치는 그대로) */
+  .hd { position: relative; display: inline-block; width: 0; height: 1.1em; vertical-align: -0.2em; cursor: ew-resize; touch-action: none; }
+  .hd::before { content: ''; position: absolute; top: -2px; bottom: -4px; left: -7.5px; width: 3px; border: solid transparent; border-width: 0 6px; background: var(--hc); background-clip: content-box; }
+  .hd::after { content: ''; position: absolute; left: -5.5px; width: 11px; height: 11px; border-radius: 50%; background: var(--hc); box-shadow: 0 0 0 2px var(--bg); }
+  .hd.s::after { top: -10px; } .hd.e::after { bottom: -12px; }
+  .hd .dur { position: absolute; left: 9px; top: -19px; font: 600 11px/16px var(--mono); padding: 0 5px; border-radius: 4px; background: var(--ink); color: #fff; white-space: nowrap; pointer-events: none; }
+  .hd .dur.over { background: var(--proposal-line); }
+  body.span-dragging, body.span-dragging * { cursor: ew-resize !important; user-select: none; -webkit-user-select: none; }
   #mkBtn { position: absolute; z-index: 10; display: none; background: var(--ink); color: #fff; border: 0; border-radius: var(--r-full); padding: 6px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
   #mkBtn:hover { background: #000; }
 
@@ -178,9 +177,6 @@
   .busy { font-size: 14px; color: var(--accent-strong); padding: 14px 0; display: flex; gap: 8px; align-items: center; }
   .spin { width: 14px; height: 14px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite; }
   @keyframes sp { to { transform: rotate(360deg); } }
-  .pv { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: var(--r-md); overflow: hidden; margin: 10px 0 4px;
-    background: #2b2b2b repeating-conic-gradient(#333 0 25%, #2b2b2b 0 50%) 0 0 / 20px 20px; }
-  .pv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   .cands { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
   .cands button { padding: 0; border: 2px solid transparent; border-radius: var(--r-sm); overflow: hidden; background: #000; aspect-ratio: 16/9; }
   .cands button img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -236,12 +232,12 @@
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 25; }
   #modal .box { background: var(--bg); border-radius: var(--r-lg); padding: 20px 22px; max-width: 520px; width: calc(100% - 32px); box-shadow: 0 12px 40px rgba(0,0,0,0.2); font-size: 14px; line-height: 1.6; }
   /* 위치 조정 팝업 - 아래쪽에 넓게. 위의 영상·대본이 가려지지 않아 보면서 맞출 수 있다 */
-  #modal.sheet { align-items: flex-end; background: rgba(0,0,0,0.12); }
-  #modal.sheet .box { max-width: min(1280px, calc(100vw - 48px)); margin-bottom: 24px; padding: 14px 16px 16px; }
-  .span-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .span-pop-head b { font-size: 14px; }
-  .span-pop-head .btn { padding: 4px 12px; }
-  .span-pop-head .sp { margin-left: auto; display: flex; gap: 6px; }
+  /* 상세 - 위: 바로 하는 일(글자·효과음), 아래: 다시 만들기·형태·삭제 */
+  .dcard { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 2px 14px; margin-top: 10px; }
+  .dcard.more { background: transparent; }
+  .dsec { padding: 12px 0; }
+  .dsec + .dsec { border-top: 1px solid var(--line); }
+  .dl { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
   #modal code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; word-break: break-all; }
   @media (max-width: 980px) { #sidebar { display: none; } }
 </style>
@@ -280,14 +276,12 @@
           <span><i style="background:var(--f-image)"></i>이미지</span>
           <span><i style="background:var(--f-video)"></i>영상</span>
           <span><i style="background:var(--f-asset)"></i>실물</span>
-          <span><i class="pending"></i>확인 전</span>
-          <span><i style="background:none;border:1px dashed var(--line-strong)"></i>제안</span>
         </span>
       </div>
       <div id="sugBar"></div>
       <div id="fontWarn" class="warn" style="display:none;margin:0 0 8px"></div>
       <div id="tl" role="slider" aria-label="편집본 재생 위치" tabindex="0"><div id="playhead"></div></div>
-      <div id="tlFoot"><span id="tlNow" class="mono">0:00</span><span id="tlGap"></span><span id="tlDur" class="mono"></span></div>
+      <div id="tlFoot"><span id="tlNow" class="mono">0:00</span><span id="tlDur" class="mono"></span></div>
     </div>
     <div id="doc"></div>
     <button id="mkBtn">＋ 인서트 만들기</button>
@@ -345,8 +339,8 @@ let pollTimer = null;
 const video = $('#video');
 
 function toast(msg, ms = 2200) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => (t.style.display = 'none'), ms); }
-function showModal(html, sheet = false) { $('#modalBox').innerHTML = html; $('#modal').classList.toggle('sheet', sheet); $('#modal').style.display = 'flex'; }
-function hideModal() { $('#modal').style.display = 'none'; $('#modal').classList.remove('sheet'); spanTrack = null; spanPopId = null; }
+function showModal(html) { $('#modalBox').innerHTML = html; $('#modal').style.display = 'flex'; }
+function hideModal() { $('#modal').style.display = 'none'; }
 const modalOpen = () => $('#modal').style.display === 'flex';
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') hideModal(); });
 const fileUrl = (f) => `/api/insert/file?f=${encodeURIComponent(f)}`;
@@ -410,7 +404,7 @@ function renderAll() {
   }
   const it = S.items.find((i) => i.id === selId);
   const key = JSON.stringify([selId, it, pendingForm]);
-  if (key !== lastDetailKey && !spanDrag) { lastDetailKey = key; renderDetail(); } else renderDecisionBar();
+  if (key !== lastDetailKey && !spanEdit) { lastDetailKey = key; renderDetail(); } else renderDecisionBar();
 }
 function renderSugBar() {
   const bar = $('#sugBar'); const sg = S.suggest || { state: 'none' };
@@ -497,20 +491,23 @@ function paintInserts() {
   const isStruct = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
   for (const it of [...S.items].sort((a, b) => isStruct(b) - isStruct(a))) {
     if (it.status === 'rejected') continue;
-    for (let wi = it.wi_start; wi <= it.wi_end; wi++) {
+    const r = spanEdit?.id === it.id ? spanEdit : it;
+    for (let wi = r.wi_start; wi <= r.wi_end; wi++) {
       const el = wordEl(wi); if (!el) continue;
       el.className = `w ins ${it.form || 'none'}${it.status === 'approved' ? ' ok' : ''}${it.status === 'suggested' ? ' sug' : ''}${it.id === selId ? ' sel' : ''}`;
       el.dataset.ins = it.id;
     }
   }
+  mountScriptHandles();
 }
 
 // ---------------------------------------------------------------- 목록 + 숫자
 function sortedItems() { return [...S.items].sort((a, b) => (a.t_start ?? 0) - (b.t_start ?? 0)); }
 function renderCounts() {
   const n = (st) => S.items.filter((i) => st.includes(i.status)).length;
-  const c = [['전체', S.items.length], ['승인', n(['approved'])], ['확인 전', n(['ready'])], ['제안', n(['suggested'])], ['진행 중', n(['deciding', 'generating'])],
-    ['확인 필요', n(['error', 'unsupported', 'needs_asset'])]].filter(([k, v]) => v || k === '전체');
+  const live = S.items.filter((i) => i.status !== 'rejected').length;
+  const c = [['승인', `${n(['approved'])}/${live}`], ['확인 전', n(['ready'])], ['진행 중', n(['deciding', 'generating'])],
+    ['확인 필요', n(['error', 'unsupported', 'needs_asset'])]].filter(([k, v]) => v || k === '승인');
   $('#counts').innerHTML = c.map(([k, v]) => `<span class="count">${k} <b>${v}</b></span>`).join('');
 }
 function statusChip(it) {
@@ -562,12 +559,6 @@ function renderTimeline() {
     tl.appendChild(b);
   }
   $('#tlDur').textContent = fmt(D);
-  // 가장 긴 빈 구간 - 가이드 4장: 12초 넘게 비는 곳은 "넣지 않는 곳"일 때만
-  const live = sortedItems().filter((i) => i.status !== 'rejected' && i.t_start != null);
-  let gap = { len: 0, at: 0 }, last = 0;
-  for (const i of live) { if (i.t_start - last > gap.len) gap = { len: i.t_start - last, at: last }; last = Math.max(last, i.t_end); }
-  if (D - last > gap.len) gap = { len: D - last, at: last };
-  $('#tlGap').textContent = live.length ? `가장 긴 빈 구간 ${Math.round(gap.len)}초 (${fmt(gap.at)}~)` : '';
   movePlayhead();
 }
 function tlTimeAt(clientX) { const r = $('#tl').getBoundingClientRect(); return Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (S.duration_out || 0); }
@@ -595,7 +586,6 @@ function movePlayhead() {
   const o = toOut(video.currentTime || 0);
   $('#playhead').style.left = `${(o / (S.duration_out || 1)) * 100}%`;
   $('#tlNow').textContent = fmt(o); $('#vTime').textContent = `${fmt(o)} / ${fmt(S.duration_out)}`;
-  moveSpanHead();
 }
 let cutSkipSeek = false;  // 아래 이동이 잘린 구간 건너뛰기임을 seeking 핸들러에 알림
 function skipCuts() {
@@ -622,8 +612,6 @@ function sfxCross(i) {
 }
 function tick() {
   if (!S) return;
-  // ▶ 듣기의 끝 - 그사이 다른 곳으로 크게 옮겼으면 멈추지 않는다
-  if (spanStopAt != null && !video.paused && video.currentTime >= spanStopAt && video.currentTime < spanStopAt + 1) video.pause();
   if (!video.paused) skipCuts();
   // 재생 중 인서트 시작 지점을 지나면 연결된 효과음을 파일 길이 그대로 재생
   const nowT = video.currentTime;
@@ -669,7 +657,7 @@ video.addEventListener('play', () => {
   sfxLastT = video.currentTime - 0.15;
   document.querySelectorAll('#detail video').forEach((v) => v.pause());  // 본 영상과 동시에 디코딩하지 않게
 });
-video.addEventListener('pause', () => { $('#btnPlay').textContent = '▶ 재생'; sfxStopAll(); spanStopAt = null; });
+video.addEventListener('pause', () => { $('#btnPlay').textContent = '▶ 재생'; sfxStopAll(); });
 $('#btnPlay').addEventListener('click', () => (video.paused ? video.play() : video.pause()));
 
 // ---------------------------------------------------------------- 드래그로 구간 선택 -> 인서트 만들기
@@ -931,7 +919,7 @@ function renderDecisionBar() {
     else if (it.status === 'approved') actions = `<span class="db-done ok">✓ 승인됨</span><button class="btn" data-act="reopen">승인 취소</button>`;
     else if (it.status === 'rejected') actions = `<span class="db-done no">취소됨</span><button class="btn" data-act="reopen">다시 살리기</button>`;
     else if (it.status === 'suggested' && it.form !== 'asset') actions = `<button class="primary" data-act="make">${what} 만들기 · ${COST[it.form]}</button><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
-    else if (it.status === 'suggested' || it.status === 'needs_asset') actions = `<span class="db-hint" style="flex:1">자료 파일 필요 (① 결과)</span><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
+    else if (it.status === 'suggested' || it.status === 'needs_asset') actions = `<span class="db-hint" style="flex:1">자료 파일 필요</span><button class="btn" data-act="reject">무시<span class="k">X</span></button>`;
     else if (BUSY.has(it.status)) actions = `<span class="busy" style="padding:4px 0;flex:1"><span class="spin"></span>${esc(it.progress) || (it.status === 'deciding' ? '내용과 앞뒤 문맥을 보고 형태를 정하는 중…' : it.form === 'image' ? '이미지 후보를 만드는 중… (약 30초)' : '만드는 중…')}</span>
       <button class="btn" data-act="cancel" ${it.cancel ? 'disabled' : ''}>${it.cancel ? '중단하는 중' : '중단'}</button>`;
     else {  // 오류 - 원인과 해결 방법, 다시 시도 / 삭제
@@ -944,8 +932,8 @@ function renderDecisionBar() {
       strip = errorBlock({ ...it.error_info, title: `다시 만들기 실패 - ${it.error_info.title}`, hint: `${it.error_info.hint} (이전 결과는 그대로 있어요)` },
         `<button class="btn" data-act="retry">다시 시도</button><button class="btn" data-act="dismiss_error">닫기</button>`);
     } else if (it.notice) strip = `<div class="notice">${esc(it.notice)}<button class="btn" data-act="dismiss_error" style="padding:2px 8px">닫기</button></div>`;
-    bar.innerHTML = `<div class="db-top">${formChip(it)}${statusChip(it)}<span class="db-time mono">${fmt(it.t_start)}–${fmt(it.t_end)} · ${dur}초${d.layer ? ` · ${esc(d.layer)}` : ''}</span>
-        <span class="db-nav"><span class="db-time mono" style="align-self:center;margin-right:4px">${k + 1}/${list.length}</span><button id="dbPrev" title="이전 (↑)" ${k <= 0 ? 'disabled' : ''}>▲</button><button id="dbNext" title="다음 (↓)" ${k >= list.length - 1 ? 'disabled' : ''}>▼</button></span></div>
+    bar.innerHTML = `<div class="db-top">${formChip(it)}${statusChip(it)}<span class="db-time mono">${fmt(it.t_start)} · ${dur}초</span>
+        <span class="db-nav"><button id="dbPrev" title="이전 (↑)" ${k <= 0 ? 'disabled' : ''}>▲</button><button id="dbNext" title="다음 (↓)" ${k >= list.length - 1 ? 'disabled' : ''}>▼</button></span></div>
       <div class="db-act">${actions}</div>${strip}`;
     bar.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.act === 'delete' && !confirm('이 인서트를 목록에서 지울까요?')) return;
@@ -967,255 +955,62 @@ function errorBlock(info, buttons = '') {
 }
 const errInfo = (it) => it.error_info || (it.error ? { title: it.error, hint: '다시 시도해 보세요', retryable: true, raw: '' } : null);
 
-function card(num, title, desc, body) {
-  return `<section class="card-sec"><h3><span class="num">${num}</span>${title}</h3>${desc ? `<div class="desc">${desc}</div>` : ''}${body}</section>`;
-}
-
-// 들어가는 자리: 편집본 시간축(잘린 곳은 이어 붙임)에 파형 + 대본을 깔고, 인서트 구간의 양 끝을 끌어 정한다.
-// 컷편집 정밀 조정과 같은 방식 - 다만 인서트는 말 단위로 붙으니 끝은 말 경계에 붙는다. 영상(모션)은 길이에 맞춰 렌더돼 보기만
+// 들어가는 자리: 인서트를 고르면 대본의 그 구간 양 끝에 손잡이가 생기고, 다른 말로 끌면 그 말까지로 바뀐다.
+// 파형·팝업·"위치 조정" 버튼 없이 대본에서 바로 (10-12 사용자 요청). 영상(모션)은 길이에 맞춰 렌더돼 손잡이 없음
 const IMAGE_MAX_SEC = 5;  // scripts/inserts.py IMAGE_MAX_SEC와 같은 값 - 만들 때만 적용, 직접 늘리는 건 자유
-const SPAN_PPS = 150, SPAN_MIN_PPS = 30, SPAN_PAD = 8;  // 1초당 px(최대·최소), 구간 앞뒤로 보여 줄 초
-const SPAN_LABEL_H = 36, SPAN_H = 96, SPAN_GAP = 10;  // 줄 하나의 높이·줄 사이. 글자는 두 단으로 엇갈려 - 짧은 말도 옆 말 자리까지 쓴다
-const FORMS = ['text', 'image', 'video', 'asset'];
-const waveCache = [];   // [{a, b, peaks}] 원본 시각 - 자리를 조금 옮겨도 다시 받지 않게 앞뒤로 넉넉히 받아 둔다
-let spanTrack = null;   // 지금 상세에 그려진 자리 트랙
-let spanDrag = false;   // 끝을 끄는 중 - 그동안 폴링이 상세를 다시 그리지 않게
-let spanStopAt = null;  // ▶ 듣기 - 원본 시각으로 여기서 멈춤
+let spanEdit = null;      // 끄는 중인 자리 {id, wi_start, wi_end} - 그동안 폴링이 상세를 다시 그리지 않고 대본은 이 값으로 칠한다
 const spanHit = (o, s, e) => o.wi_start <= e && s <= o.wi_end;  // 인서트 o가 말 s~e와 겹치나
-const spanTop = {};     // 인서트 id -> 보던 세로 스크롤 (자리를 바꿔 다시 그려도 유지)
-
-let spanPopId = null;   // 위치 조정 팝업에 열린 인서트
-// 상세에는 길이와 버튼만 - 어느 말에 붙는지는 대본 밑줄로 이미 보이고, 긴 파형은 좁은 상세에서 다루기 어렵다 (10-12 사용자 요청)
-function spanBox(it, busy) {
-  const ok = S.words.some((w) => w.wi === it.wi_start) && S.words.some((w) => w.wi === it.wi_end);
-  const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
-  const over = it.form === 'image' && dur > IMAGE_MAX_SEC + 0.05;
-  const edit = ok && !busy && it.form !== 'video';
-  return `<div class="sub"><div class="lbl span-lbl">들어가는 자리 · <span class="mono">${dur.toFixed(1)}초</span>
-      <span style="margin-left:auto;display:flex;gap:6px">${ok ? '<button class="btn" id="dSpanPlay">▶ 듣기</button>' : ''}${edit ? '<button class="btn" id="dSpanEdit">위치 조정</button>' : ''}</span></div>
-    ${over ? `<div class="warn" style="margin-bottom:0">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div>` : ''}</div>`;
+const isStructIt = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
+function spanDur(s, e) {
+  const a = S.words.find((w) => w.wi === s), b = S.words.find((w) => w.wi === e);
+  return a && b ? toOut(b.e) - a.o : 0;
 }
-function spanListen(it) {  // 인서트 구간만 듣기 - 끝에서 멈춤
-  video.currentTime = it.src_start; spanStopAt = it.src_end; video.play();
-}
-function openSpanPopup(id) {
-  const it = S.items.find((i) => i.id === id); if (!it) return;
-  const dur = (it.t_end ?? 0) - (it.t_start ?? 0);
-  spanPopId = id;
-  showModal(`<div class="span-pop-head"><b>들어가는 자리</b><span class="mono" id="spanDur">${dur.toFixed(1)}초</span>
-      <span class="sp"><button class="btn" id="spanPlay">▶ 듣기</button><button class="btn" id="spanClose">닫기</button></span></div>
-    <div id="spanScroll"><div id="spanInner"><canvas id="spanCv"></canvas><div id="spanHead"></div></div></div>
-    <div class="warn" id="spanOver" style="display:none;margin-bottom:0">이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요</div>`, true);
-  $('#spanClose').addEventListener('click', hideModal);
-  mountSpanTrack(it, BUSY.has(it.status));
-}
-async function spanPeaks(srcA, srcB) {
-  const hit = waveCache.find((c) => c.a <= srcA + 0.01 && c.b >= srcB - 0.01);
-  if (hit) return hit;
-  const a = Math.max(0, srcA - 10), b = Math.min(S.duration_src, srcB + 10);
-  try {
-    const r = await (await fetch(`/api/waveform?start=${a}&end=${b}&buckets=${Math.ceil((b - a) * 100)}`)).json();
-    if (!r.peaks?.length) return null;
-    const c = { a: r.start, b: r.end, peaks: r.peaks };
-    waveCache.push(c); if (waveCache.length > 8) waveCache.shift();
-    return c;
-  } catch (e) { return null; }  // 파형 없이도 대본으로 자리는 정할 수 있다
-}
-// 트랙은 한 줄짜리 시간축(x = 편집본 시각 × pps)으로 계산하고, 그릴 때만 말 경계에서 여러 줄로 접는다.
-// rows[r] = 한 줄이 맡는 x 구간. spanPos/spanAt이 시간축 x <-> 캔버스 위치를 오간다
-function spanRows(words, w, W) {
-  const rows = []; let start = 0;
-  for (const wd of words) if (wd.x1 - start > W && wd.x0 > start) { rows.push({ x0: start, x1: wd.x0 }); start = wd.x0; }
-  rows.push({ x0: start, x1: w });
-  return rows;
-}
-const spanRowY = (r) => r * (SPAN_H + SPAN_GAP);
-function spanPos(tr, x, end = false) {  // end: 줄 경계에 딱 걸리면 앞줄 끝으로 (구간의 끝 손잡이)
-  let r = tr.rows.findIndex((row) => (end ? x > row.x0 && x <= row.x1 : x >= row.x0 && x < row.x1));
-  if (r < 0) r = x <= 0 ? 0 : tr.rows.length - 1;
-  return { r, cx: x - tr.rows[r].x0, cy: spanRowY(r) };
-}
-function spanAt(tr, cx, cy) {  // 캔버스 위치 -> 시간축 x
-  const r = Math.max(0, Math.min(tr.rows.length - 1, Math.floor(cy / (SPAN_H + SPAN_GAP))));
-  const row = tr.rows[r];
-  return { r, x: row.x0 + Math.max(0, Math.min(row.x1 - row.x0, cx)) };
-}
-function mountSpanTrack(it, busy) {
-  spanTrack = null;
-  const sc = $('#spanScroll'); if (!sc) return;
-  const ws = S.words, iS = ws.findIndex((w) => w.wi === it.wi_start), iE = ws.findIndex((w) => w.wi === it.wi_end);
-  const o0 = ws[iS].o, o1 = toOut(ws[iE].e);
-  const a = Math.max(0, o0 - SPAN_PAD), b = Math.min(S.duration_out, o1 + SPAN_PAD);
-  // 스크롤 없이 한 번에 보이게: 화면 높이에 들어가는 줄 수 안에 다 담기도록 1초당 px를 줄인다 (10-12 사용자 요청).
-  // 줄은 말 경계에서 끊어 끝이 조금씩 비니 실제로 접어 보고 넘치면 더 줄인다
-  const W = Math.max(200, sc.clientWidth - 12);
-  const maxRows = Math.max(1, Math.floor((window.innerHeight - 150 - 12 + SPAN_GAP) / (SPAN_H + SPAN_GAP)));
-  const inRange = ws.filter((w) => w.o < b && toOut(w.e) > a);
-  const layout = (pps) => {
-    const words = inRange.map((w) => ({ wi: w.wi, t: w.t, s: w.s, e: w.e, x0: (w.o - a) * pps, x1: (toOut(w.e) - a) * pps }));
-    const w = Math.ceil((b - a) * pps);
-    return { pps, words, w, rows: spanRows(words, w, W) };
+function mountScriptHandles() {
+  document.querySelectorAll('#doc .hd').forEach((h) => h.remove());
+  const it = S.items.find((i) => i.id === selId);
+  if (!it || it.status === 'rejected' || BUSY.has(it.status) || it.form === 'video') return;
+  const r = spanEdit?.id === it.id ? spanEdit : it;
+  const a = wordEl(r.wi_start), b = wordEl(r.wi_end); if (!a || !b) return;
+  const mk = (edge) => {
+    const h = document.createElement('span'); h.className = `hd ${edge}`; h.title = '끌어서 자리 조정';
+    h.style.setProperty('--hc', `var(--f-${it.form || 'asset'})`);
+    h.addEventListener('pointerdown', (e) => spanDragStart(e, it, edge));
+    return h;
   };
-  let L = layout(Math.max(SPAN_MIN_PPS, Math.min(SPAN_PPS, (maxRows * W * 0.95) / Math.max(1, b - a))));
-  while (L.rows.length > maxRows && L.pps > SPAN_MIN_PPS) L = layout(Math.max(SPAN_MIN_PPS, L.pps * 0.92));
-  const { pps, words, w } = L;
-  const pos = (wi) => words.findIndex((w) => w.wi === wi);
+  const dur = spanDur(r.wi_start, r.wi_end), over = it.form === 'image' && dur > IMAGE_MAX_SEC + 0.05;
+  const he = mk('e'); he.innerHTML = `<span class="dur${over ? ' over' : ''}" title="${over ? `이미지 기본 최대 ${IMAGE_MAX_SEC}초보다 길어요` : ''}">${dur.toFixed(1)}초</span>`;
+  a.before(mk('s')); b.after(he);
+}
+function spanDragStart(ev, it, edge) {
+  ev.preventDefault(); ev.stopPropagation();
+  window.getSelection()?.removeAllRanges(); $('#mkBtn').style.display = 'none';
+  spanEdit = { id: it.id, wi_start: it.wi_start, wi_end: it.wi_end };
+  document.body.classList.add('span-dragging');
   // 같은 층(구조 층끼리 / 나머지끼리)인데 지금 안 겹친 인서트는 넘지 못한다 - scripts/inserts.py update('span')과 같은 규칙
-  const isStruct = (i) => i.decision?.layer === '구조' && ['top', 'list'].includes(i.decision?.layout);
-  const others = S.items.filter((o) => o.id !== it.id && o.status !== 'rejected' && o.t_end > a && o.t_start < b)
-    .map((o) => ({ form: o.form, x0: (o.t_start - a) * pps, x1: (o.t_end - a) * pps, wi_start: o.wi_start, wi_end: o.wi_end,
-      block: isStruct(o) === isStruct(it) && !spanHit(o, it.wi_start, it.wi_end) }));
-  const tr = { it, a, b, pps, words, others, s: pos(it.wi_start), e: pos(it.wi_end), edit: !busy && it.form !== 'video',
-    w, W, rows: L.rows, cv: $('#spanCv'), sc, cols: null };
-  spanTrack = tr;
-  drawSpan(tr);
-  sc.scrollTop = spanTop[it.id] ?? Math.max(0, spanPos(tr, words[tr.s].x0).cy - SPAN_GAP);
-  sc.addEventListener('scroll', () => { spanTop[it.id] = sc.scrollTop; });
-  const cvXY = (e) => { const r = tr.cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  tr.cv.addEventListener('mousemove', (e) => { if (!spanDrag) tr.cv.style.cursor = spanEdgeAt(tr, ...cvXY(e)) ? 'ew-resize' : 'pointer'; });
-  tr.cv.addEventListener('mousedown', (e) => spanMouseDown(tr, e, cvXY));
-  $('#spanPlay').addEventListener('click', () => {
-    video.currentTime = tr.words[tr.s].s; spanStopAt = tr.words[tr.e].e; video.play();
-  });
-  spanPeaks(toSrc(a), toSrc(b)).then((c) => {
-    if (!c || spanTrack !== tr) return;
-    // 원본 파형 칸을 편집본 시각으로 옮긴다 - 잘린 구간의 칸은 버림 (칸과 kept 둘 다 시간순이라 한 번에 훑음)
-    const bs = (c.b - c.a) / c.peaks.length; const cols = []; let k = 0, peak = 0.05;
-    c.peaks.forEach(([mn, mx], i) => {
-      const t = c.a + (i + 0.5) * bs;
-      while (k < kept.length && kept[k].e <= t) k++;
-      if (k >= kept.length || t < kept[k].s) return;
-      const o = kept[k].o + t - kept[k].s; if (o < a || o > b) return;
-      cols.push([(o - a) * pps, mn, mx]); peak = Math.max(peak, -mn, mx);
-    });
-    tr.cols = { list: cols, bw: Math.max(1, bs * pps), scale: 0.95 / peak };
-    drawSpan(tr);
-  });
-}
-function drawSpan(tr) {
-  const { cv, w, W, rows, words } = tr; const H = SPAN_H, dpr = window.devicePixelRatio || 1;
-  const CH = spanRowY(rows.length) - SPAN_GAP;
-  cv.style.width = `${W}px`; cv.style.height = `${CH}px`; cv.width = W * dpr; cv.height = CH * dpr;
-  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, CH);
-  // 캔버스는 CSS 변수를 바로 못 쓴다 - 형태 색을 읽어 온다
-  const css = getComputedStyle(document.documentElement); const v = (n) => css.getPropertyValue(n).trim();
-  const fc = (f, soft = '') => (FORMS.includes(f) ? v(`--f-${f}${soft}`) : v(soft ? '--accent-soft' : '--accent'));
-  const form = tr.it.form, main = fc(form);
-  const x0 = words[tr.s].x0, x1 = words[tr.e].x1;
-  const waveTop = SPAN_LABEL_H, waveH = H - SPAN_LABEL_H - 6, mid = waveTop + waveH / 2;
-  // 줄마다 시간축의 그 구간만 잘라 그린다 (한 줄짜리 그림을 옮겨 놓고 그 줄 폭만 보이게)
-  rows.forEach((row, r) => {
-    ctx.save(); ctx.translate(-row.x0, spanRowY(r));
-    ctx.beginPath(); ctx.rect(row.x0, 0, row.x1 - row.x0, H); ctx.clip();
-    ctx.fillStyle = v('--panel'); ctx.fillRect(row.x0, 0, row.x1 - row.x0, H);
-    ctx.fillStyle = fc(form, '-soft'); ctx.fillRect(x0, 0, x1 - x0, H);
-    // 다른 인서트 - 바닥에 옅은 띠 (새로 겹치게 끌면 서버가 막는다)
-    ctx.globalAlpha = 0.45;
-    for (const o of tr.others) { ctx.fillStyle = fc(o.form); ctx.fillRect(o.x0, H - 4, o.x1 - o.x0, 4); }
-    ctx.globalAlpha = 1;
-    if (tr.cols) {
-      const { list, bw, scale } = tr.cols, ink = v('--ink'), dim = v('--line-strong');
-      for (const [x, mn, mx] of list) {
-        if (x < row.x0 - bw || x > row.x1) continue;
-        ctx.fillStyle = x >= x0 && x <= x1 ? ink : dim;
-        const y1 = mid - mx * scale * (waveH / 2), y2 = mid - mn * scale * (waveH / 2);
-        ctx.fillRect(x, y1, Math.max(1, bw - 0.3), Math.max(1, y2 - y1));
-      }
-    }
-    ctx.textBaseline = 'middle'; ctx.strokeStyle = 'rgba(0,0,0,0.10)'; ctx.lineWidth = 1;
-    words.forEach((wd, k) => {
-      if (wd.x1 < row.x0 || wd.x0 >= row.x1) return;
-      const inSel = k >= tr.s && k <= tr.e, half = k % 2, lh = SPAN_LABEL_H / 2;
-      const colW = Math.min(words[k + 2]?.x0 ?? w, row.x1) - wd.x0;  // 같은 단의 다음 말까지, 줄 끝을 넘지 않게
-      ctx.beginPath(); ctx.moveTo(wd.x0 + 0.5, half * lh); ctx.lineTo(wd.x0 + 0.5, H); ctx.stroke();
-      ctx.font = `${inSel ? '600 ' : ''}12px -apple-system, "Apple SD Gothic Neo", sans-serif`;
-      ctx.fillStyle = inSel ? v('--ink') : v('--muted');
-      let label = wd.t;
-      while (label.length > 1 && ctx.measureText(label).width > colW - 3) label = label.slice(0, -1);
-      if (label !== wd.t) label = label.slice(0, -1) + '…';
-      ctx.save(); ctx.beginPath(); ctx.rect(wd.x0, half * lh, Math.max(0, colW), lh); ctx.clip();
-      ctx.fillText(label, wd.x0 + 3, half * lh + lh / 2 + 1); ctx.restore();
-    });
-    ctx.restore();
-  });
-  const dur = (x1 - x0) / tr.pps;
-  const vline = (x, end, dash) => {
-    const p = spanPos(tr, x, end);
-    if (dash) { ctx.strokeStyle = main; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(p.cx + 0.5, p.cy); ctx.lineTo(p.cx + 0.5, p.cy + H); ctx.stroke(); ctx.setLineDash([]); }
-    return p;
+  const walls = S.items.filter((o) => o.id !== it.id && o.status !== 'rejected' && isStructIt(o) === isStructIt(it) && !spanHit(o, it.wi_start, it.wi_end));
+  let raf = 0, lastWi = null;
+  const move = (e) => {
+    const w = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('#doc .w'); if (!w) return;
+    const wi = +w.dataset.wi; if (wi === lastWi) return; lastWi = wi;
+    const s = edge === 's' ? Math.min(wi, spanEdit.wi_end) : spanEdit.wi_start;
+    const en = edge === 'e' ? Math.max(wi, spanEdit.wi_start) : spanEdit.wi_end;
+    if (walls.some((o) => spanHit(o, s, en))) return;  // 옆 인서트 앞에서 멈춤
+    spanEdit.wi_start = s; spanEdit.wi_end = en;
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(paintInserts);
   };
-  if (form === 'image' && x0 + IMAGE_MAX_SEC * tr.pps < w) vline(x0 + IMAGE_MAX_SEC * tr.pps, false, true);  // 만들 때 기준 5초 - 넘겨도 되지만 어디까지인지
-  ctx.fillStyle = main;
-  for (const [x, end] of [[x0, false], [x1, true]]) {
-    const p = vline(x, end, false);
-    ctx.fillRect(p.cx - 1, p.cy, 2, H);
-    if (tr.edit) ctx.fillRect(p.cx - 3, p.cy + mid - 9, 6, 18);  // 손잡이
-  }
-  $('#spanDur').textContent = `${dur.toFixed(1)}초`;
-  $('#spanOver').style.display = form === 'image' && dur > IMAGE_MAX_SEC + 0.05 ? '' : 'none';
-  moveSpanHead();
-}
-function spanEdgeAt(tr, cx, cy) {
-  if (!tr.edit) return null;
-  const d = (x, end) => { const p = spanPos(tr, x, end); return cy >= p.cy && cy <= p.cy + SPAN_H ? Math.abs(cx - p.cx) : Infinity; };
-  const ds = d(tr.words[tr.s].x0, false), de = d(tr.words[tr.e].x1, true);
-  if (Math.min(ds, de) > 10) return null;
-  return ds < de ? 's' : 'e';
-}
-function spanMouseDown(tr, ev, cvXY) {
-  const [cx0, cy0] = cvXY(ev);
-  const edge = spanEdgeAt(tr, cx0, cy0);
-  if (!edge) {  // 끝이 아닌 곳을 누르면 그 시각으로 이동
-    video.currentTime = toSrc(tr.a + spanAt(tr, cx0, cy0).x / tr.pps); tick();
-    return;
-  }
-  ev.preventDefault();
-  const s0 = tr.s, e0 = tr.e; let last = ev, raf = 0;
-  spanDrag = true;
-  const apply = () => {  // 끝은 가장 가까운 말 경계로 - 시작은 말의 앞, 끝은 말의 뒤. 다른 줄로 끌어도 된다
-    const x = spanAt(tr, ...cvXY(last)).x;
-    let best = edge === 's' ? tr.s : tr.e, bd = Infinity;
-    const blocked = (k) => tr.others.some((o) => o.block && (edge === 's' ? spanHit(o, tr.words[k].wi, tr.words[tr.e].wi) : spanHit(o, tr.words[tr.s].wi, tr.words[k].wi)));
-    tr.words.forEach((wd, k) => {
-      if (edge === 's' ? k > tr.e : k < tr.s) return;
-      if (blocked(k)) return;
-      const d = Math.abs((edge === 's' ? wd.x0 : wd.x1) - x);
-      if (d < bd) { bd = d; best = k; }
-    });
-    if (best !== tr[edge]) { tr[edge] = best; drawSpan(tr); }
-  };
-  // 끝을 들고 트랙 위·아래 가장자리로 가면 그쪽으로 저절로 스크롤
-  const edgeScroll = () => {
-    const r = tr.sc.getBoundingClientRect();
-    const dy = last.clientY < r.top + 24 ? last.clientY - (r.top + 24) : last.clientY > r.bottom - 24 ? last.clientY - (r.bottom - 24) : 0;
-    if (dy) { tr.sc.scrollTop += Math.max(-16, Math.min(16, dy / 2)); apply(); }
-    raf = requestAnimationFrame(edgeScroll);
-  };
-  raf = requestAnimationFrame(edgeScroll);
-  const move = (e) => { last = e; apply(); };
   const up = async () => {
-    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
-    cancelAnimationFrame(raf); spanDrag = false;
-    if (tr.s === s0 && tr.e === e0) return;
-    try {
-      await api('/api/insert/update', { id: tr.it.id, action: 'span', wi_start: tr.words[tr.s].wi, wi_end: tr.words[tr.e].wi });
-      await refresh();
-      if (spanPopId === tr.it.id) openSpanPopup(tr.it.id);  // 바뀐 자리로 다시 그림 (보던 스크롤 위치는 spanTop으로 유지)
-    } catch (err) { toast(err.message); tr.s = s0; tr.e = e0; drawSpan(tr); }
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    document.body.classList.remove('span-dragging');
+    cancelAnimationFrame(raf);
+    const r = spanEdit; spanEdit = null;
+    if (r.wi_start === it.wi_start && r.wi_end === it.wi_end) { paintInserts(); return; }
+    const cur = S.items.find((x) => x.id === it.id), was = [cur.wi_start, cur.wi_end];
+    cur.wi_start = r.wi_start; cur.wi_end = r.wi_end; paintInserts();  // 저장을 기다리는 동안 옛 자리로 튀지 않게
+    try { await api('/api/insert/update', { id: it.id, action: 'span', wi_start: r.wi_start, wi_end: r.wi_end }); await refresh(); }
+    catch (err) { toast(err.message); [cur.wi_start, cur.wi_end] = was; paintInserts(); }
   };
-  window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
-function moveSpanHead() {
-  const tr = spanTrack; const h = $('#spanHead');
-  if (!tr || !h) return;
-  const x = (toOut(video.currentTime || 0) - tr.a) * tr.pps;
-  if (x < 0 || x > tr.w) { h.style.display = 'none'; return; }
-  const p = spanPos(tr, x);
-  h.style.display = 'block'; h.style.left = `${p.cx - 1}px`; h.style.top = `${p.cy}px`; h.style.height = `${SPAN_H}px`;
-}
-// 창 크기가 바뀌면 줄을 다시 접는다
-let spanResizeT = 0;
-window.addEventListener('resize', () => { clearTimeout(spanResizeT); spanResizeT = setTimeout(() => { if (spanPopId && !spanDrag) openSpanPopup(spanPopId); }, 150); });
 
 function renderDetail() {
   if (panel) { renderPanel(); return; }
@@ -1229,93 +1024,52 @@ function renderDetail() {
   const d = it.decision || {};
   const busy = BUSY.has(it.status);
   const what = it.form === 'image' ? (d.image_kind === 'photo' ? '생성 사진' : '삽화') : it.form === 'video' ? '모션그래픽' : '';
-  let h = '';
-
-  // ① 결과 - 보고 판단하는 것
-  let r = '';
-  if (it.files?.length && ['ready', 'approved', 'rejected'].includes(it.status)) {
-    r += `<div class="pv">${it.files.map((f) => f.endsWith('.mp4') ? `<video src="${fileUrl(f)}" muted loop playsinline ${video.paused ? 'autoplay' : ''} style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"></video>` : `<img src="${fileUrl(f)}" alt="">`).join('')}</div>
-      <div class="row" style="justify-content:flex-end"><button class="btn" id="dPlay">영상 위에서 재생</button></div>`;
+  // 결과는 영상 위에 보이니 여기서 다시 보여 주지 않는다. 위: 고르자마자 하는 일(글자·효과음), 아래: 다시 만들기·형태·삭제 (10-12 사용자 요청)
+  const sec = (label, body) => `<section class="dsec">${label ? `<div class="dl">${label}</div>` : ''}${body}</section>`;
+  let top = '';
+  if (it.status === 'suggested' && it.form !== 'asset') {  // 아직 안 만든 제안 - 무엇을 만들지 (영상에 아직 없으니)
+    const q = (d.lines?.length ? `<div class="quote">${d.lines.map(esc).join('<br>')}</div>` : '') + (d.scene ? `<div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div>` : '');
+    if (q) top += sec(it.form === 'text' ? '화면 글자' : `${what} 구상`, q);
   }
-  if (it.form === 'image' && it.candidates?.length && !busy && it.status !== 'suggested') {
+  if (it.form === 'image' && it.candidates?.length > 1 && !busy && it.status !== 'suggested') {
     const ck = it.checks || [];
-    r += `<div class="sub"><div class="lbl">후보</div><div class="cands">${it.candidates.map((c, k) => {
+    top += sec('후보', `<div class="cands" style="margin:0">${it.candidates.map((c, k) => {
       const v = ck[k]; const badge = v ? `<span class="vd ${v.ok ? 'ok' : 'no'}">${v.ok ? '✓' : '✗'}</span>` : '';
       return `<button data-k="${k}" class="${k === it.chosen ? 'on' : ''}" aria-label="후보 ${k + 1}" title="${esc(v && !v.ok ? v.note : '')}">${badge}<img src="${fileUrl(c)}" alt=""></button>`;
-    }).join('')}</div>${ck[it.chosen] && !ck[it.chosen].ok ? `<div class="warn">고른 후보: ${esc(ck[it.chosen].note)}</div>` : ''}</div>`;
+    }).join('')}</div>`);
   }
-  if (it.form === 'video' && it.candidates?.length && !busy && it.status !== 'suggested') {
-    r += `<div class="sub"><div class="lbl">검사한 장면</div><div class="cands">${it.candidates.map((c) =>
-      `<span style="display:block;border-radius:var(--r-sm);overflow:hidden;aspect-ratio:16/9;background:#000"><img src="${fileUrl(c)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></span>`).join('')}</div></div>`;
-  }
-  if (it.status === 'suggested' && it.form !== 'asset') {
-    if (d.lines?.length) r += `<div class="sub"><div class="lbl">${it.form === 'text' ? '화면 글자' : '얹을 노란 글자'}</div><div class="quote">${d.lines.map(esc).join('<br>')}</div></div>`;
-    if (d.scene) r += `<div class="sub"><div class="lbl">${what} 구상</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
-  }
-  if (it.form === 'video' && d.scene && it.status !== 'suggested' && !it.files?.length) r += `<div class="sub"><div class="lbl">영상 구성안</div><div class="quote" style="white-space:pre-wrap">${esc(d.scene)}</div></div>`;
   if (it.form === 'asset' && !busy && it.status !== 'rejected') {
-    r += `<div class="sub"><div class="lbl">필요한 실물 자료</div><div class="quote">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div>
-      <input type="file" id="dUpload" accept="image/*"></div>`;
+    top += sec('실물 자료', `<div class="note">${esc(d.scene || '책 표지, 논문 캡처, 실제 사진 등')}</div><input type="file" id="dUpload" accept="image/*" style="margin-top:6px">`);
   }
-  if (errInfo(it) && !busy && !['ready', 'approved', 'rejected'].includes(it.status)) r += errorBlock(errInfo(it));
-  if (it.font_fallback?.length) r += `<div class="warn">채널 글꼴(${it.font_fallback.map(esc).join(', ')}) 대신 대체 글꼴로 만들어졌어요 - 글꼴을 받은 뒤 ③에서 <b>글자 반영</b>을 누르면 다시 그려요</div>`;
-  if (busy) r += `<div class="busy"><span class="spin"></span>${esc(it.progress) || '만드는 중'}</div>`;
-  if (!r) r = `<div class="note">결과 없음</div>`;
-  h += card(1, '결과', '', r);
-
-  // ② 판단 - 왜 이렇게
-  let w = spanBox(it, busy);
-  if (d.reason) w += `<div class="sub"><div class="lbl">왜 이 형태인지</div><div class="reason" style="margin:0">${esc(d.reason)}</div></div>`;
-  if (it.form === 'image' && d.point) w += `<div class="sub"><div class="lbl">그림이 보여 줄 것</div><div class="reason" style="margin:0">${esc(d.point)}</div></div>`;
-  if (it.motion_refs?.length) {
-    const title = (n) => (n.split('__')[1] || n).replace(/-/g, ' ');
-    w += `<div class="sub"><div class="lbl">참고한 레퍼런스</div>
-      ${it.motion_refs.map((r) => `<div style="margin-bottom:6px"><div style="font-size:13px;font-weight:600">${esc(title(r.name))}</div><div class="reason" style="margin:0">${esc(r.why)}</div></div>`).join('')}</div>`;
-  }
-  if ((d.warnings || []).length) w += `<div class="sub"><div class="lbl">주의</div>${d.warnings.map((x) => `<div class="warn">${esc(x)}</div>`).join('')}</div>`;
-  h += card(2, '판단', '', w);
-
-  // ③ 고치기
+  if (it.font_fallback?.length) top += `<div class="warn">대체 글꼴로 그려졌어요 (${it.font_fallback.map(esc).join(', ')}) - 글꼴을 받은 뒤 반영을 누르면 다시 그려요</div>`;
+  let more = '';
   if (!busy) {
-    let f = '';
     if (['text', 'image', 'asset'].includes(it.form) && d.lines && it.status !== 'suggested') {
       const isText = it.form === 'text';
-      f += `<div class="sub"><div class="lbl">${isText ? '글자' : '노란 글자'}</div>
-        <textarea id="dLines" placeholder="${isText ? '한 줄에 한 줄씩' : '없으면 비워 두기'}">${esc((d.lines || []).join('\n'))}</textarea>
-        ${isText ? `<div class="row" style="margin-top:6px"><select id="dLayout" style="flex:1">${Object.entries(LAYOUT_KO).map(([k, v]) => `<option value="${k}"${k === d.layout ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
-        <input type="text" id="dSource" placeholder="출처 (인용 카드일 때, 예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}
-        <div class="row" style="margin-top:6px"><button class="btn" id="dApplyText">글자 반영</button></div></div>`;
+      top += sec(isText ? '글자' : '노란 글자', `<textarea id="dLines" placeholder="${isText ? '한 줄에 한 줄씩' : '없으면 비워 두기'}">${esc((d.lines || []).join('\n'))}</textarea>
+        ${isText ? `<input type="text" id="dSource" placeholder="출처 (예: Carlson, 2023)" value="${esc(d.source || '')}" style="margin-top:6px;${d.layout === 'quote' ? '' : 'display:none'}">` : ''}
+        <div class="row" style="margin-top:6px">${isText ? `<select id="dLayout" style="flex:1;min-width:0">${Object.entries(LAYOUT_KO).map(([k, v]) => `<option value="${k}"${k === d.layout ? ' selected' : ''}>${v}</option>`).join('')}</select>` : '<span style="flex:1"></span>'}
+          <button class="btn" id="dApplyText">반영</button></div>`);
     }
-    if (it.form !== null && it.status !== 'suggested') {
-      f += `<div class="sub"><div class="lbl">요청하고 다시 만들기</div>
-        ${(it.notes || []).length ? `<div class="note" style="margin-bottom:4px">지금까지 요청: ${it.notes.map(esc).join(' · ')}</div>` : ''}
-        <textarea id="dNote" placeholder="예: 숟가락이 아니라 그냥 나뭇가지여야 해요" style="min-height:44px"></textarea>
-        <div class="row" style="margin-top:6px"><button class="btn" id="dNoteGo">요청 반영해 다시 만들기 · ${COST[it.form] || ''}</button></div></div>`;
-    }
-    const pf = pendingForm && pendingForm.id === it.id ? pendingForm.form : null;
     const lib = S.sfx_lib || [];
-    f += `<div class="sub"><div class="lbl">효과음</div>${lib.length ? `<div class="row"><select id="dSfx" style="flex:1"><option value="">없음</option>${lib.map((x) =>
+    top += sec('효과음', lib.length ? `<div class="row"><select id="dSfx" style="flex:1;min-width:0"><option value="">없음</option>${lib.map((x) =>
       `<option value="${x.id}"${x.id === it.sfx ? ' selected' : ''}>${esc(x.name)} (${x.duration.toFixed(1)}s)</option>`).join('')}</select>
       <button class="btn" id="dSfxPlay" ${it.sfx ? '' : 'disabled'}>▶</button></div>
       ${it.sfx ? `<div class="sl"><span>크기</span><input type="range" id="dSfxVol" min="5" max="200" step="5" value="${pctOf(it)}"><span class="val" id="dSfxVal">${Math.round(pctOf(it))}%</span></div>
-      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="note">${it.sfx_pct != null ? '개별 조정' : '영상 설정 따름'} ${dbTxt(it.sfx_db)}</span>
-        ${it.sfx_pct != null ? `<button class="btn" id="dSfxAuto" style="padding:2px 10px;font-size:12px">영상 설정으로</button>` : ''}</div>` : ''}` : `<div class="note">홈 공통 자산에서 효과음 등록</div>`}
-      ${it.sfx && !lib.some((x) => x.id === it.sfx) ? '<div class="warn">연결된 효과음이 삭제됐어요</div>' : ''}</div>`;
-    f += `<div class="sub"><div class="lbl">형태 바꾸기</div><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
+        ${it.sfx_pct != null ? `<div class="row" style="justify-content:flex-end;margin-top:4px"><button class="btn" id="dSfxAuto" style="padding:2px 10px;font-size:12px">영상 설정으로</button></div>` : ''}` : ''}
+      ${it.sfx && !lib.some((x) => x.id === it.sfx) ? '<div class="warn">연결된 효과음이 삭제됐어요</div>' : ''}` : `<div class="note">홈 공통 자산에서 효과음 등록</div>`);
+    const pf = pendingForm && pendingForm.id === it.id ? pendingForm.form : null;
+    let m = '';
+    if (it.form && it.status !== 'suggested') m += `<div class="row"><input type="text" id="dNote" placeholder="요청 (선택)" style="flex:1;min-width:0"><button class="btn" id="dNoteGo">다시 만들기</button></div>`;
+    m += `<div class="row" style="margin-top:${m ? 8 : 0}px"><span class="note">형태</span><div class="seg">${Object.entries(FORM_KO).map(([k, v]) =>
       `<button data-form="${k}" class="${k === (pf || it.form) ? 'on' : ''}">${v}</button>`).join('')}</div>
+      <button class="danger-link" data-act="delete" style="margin-left:auto">삭제</button></div>
       ${pf ? `<div class="confirm-row"><span><b>${FORM_KO[pf]}</b>${pf === it.form ? '(으)로 다시' : '(으)로 새로'} 만들어요 · ${COST[pf]}</span>
-        <span style="margin-left:auto;display:flex;gap:6px"><button class="btn" id="pfCancel">취소</button><button class="primary" id="pfGo">만들기</button></span></div>` : ''}
-      </div>`;
-    h += card(3, '고치기', '', f);
-
-    // ④ 기타
-    h += card(4, '기타', '', `<div class="row">${it.status !== 'suggested' ? `<button class="btn" data-act="regenerate">같은 형태로 다시 만들기</button>` : ''}<button class="danger-link" data-act="delete">목록에서 삭제</button></div>`);
+        <span style="margin-left:auto;display:flex;gap:6px"><button class="btn" id="pfCancel">취소</button><button class="primary" id="pfGo">만들기</button></span></div>` : ''}`;
+    more = sec('', m);
   }
-  box.innerHTML = h;
+  box.innerHTML = (top ? `<div class="dcard">${top}</div>` : '') + (more ? `<div class="dcard more">${more}</div>` : '');
 
-  box.querySelector('#dPlay')?.addEventListener('click', () => { video.currentTime = Math.max(0, it.src_start - 1); video.play(); });
-  box.querySelector('#dSpanPlay')?.addEventListener('click', () => spanListen(it));
-  box.querySelector('#dSpanEdit')?.addEventListener('click', () => openSpanPopup(it.id));
   box.querySelectorAll('.cands button').forEach((b) => b.addEventListener('click', () => act(it, 'choose', { index: +b.dataset.k })));
   box.querySelectorAll('[data-form]').forEach((b) => b.addEventListener('click', () => {  // 고르기만 - 만들기는 확인 버튼으로
     pendingForm = { id: it.id, form: b.dataset.form }; renderDetail();
@@ -1327,11 +1081,13 @@ function renderDetail() {
     if (b.dataset.act === 'regenerate' && ['image', 'video'].includes(it.form) && !confirm(`${FORM_KO[it.form]}을(를) 다시 만들까요? (${COST[it.form]})`)) return;
     act(it, b.dataset.act);
   }));
-  box.querySelector('#dNoteGo')?.addEventListener('click', () => {
-    const note = $('#dNote').value.trim(); if (!note) return toast('요청을 적어 주세요');
-    if (['image', 'video'].includes(it.form) && !confirm(`요청을 반영해 ${FORM_KO[it.form]}을(를) 다시 만들까요? (${COST[it.form]})`)) return;
-    act(it, 'regenerate', { note });
-  });
+  const regen = () => {  // 요청이 비면 같은 형태로 그냥 다시
+    const note = $('#dNote').value.trim();
+    if (['image', 'video'].includes(it.form) && !confirm(`${note ? '요청을 반영해 ' : ''}${FORM_KO[it.form]}을(를) 다시 만들까요? (${COST[it.form]})`)) return;
+    act(it, 'regenerate', note ? { note } : {});
+  };
+  box.querySelector('#dNoteGo')?.addEventListener('click', regen);
+  box.querySelector('#dNote')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); regen(); } });
   box.querySelector('#dSfx')?.addEventListener('change', async (e) => {
     const id = e.target.value || null; e.target.blur();  // 포커스가 남으면 refresh가 상세를 다시 안 그려 크기 슬라이더가 안 나온다
     try { await api('/api/insert/update', { id: it.id, action: 'sfx', sfx: id }); await refresh(); if (id) playSfxOf(it.id); } catch (err) { toast(err.message); }
