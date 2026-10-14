@@ -72,6 +72,9 @@
   #modal .field input[type=text], #modal .field input[type=password],
   #setupGate .field input[type=text], #setupGate .field input[type=password] { width: 100%; padding: 7px 10px; border-radius: 8px;
     border: 1px solid var(--line); font: inherit; font-size: 13px; box-sizing: border-box; }
+  /* 10-14 사고: type=password면 브라우저 비밀번호 관리자가 autocomplete=off를 무시하고 저장된 값을 몰래 채워,
+     다른 키를 저장할 때 ElevenLabs 키가 엉뚱한 값으로 덮였다 - text 칸에 글자만 가린다 */
+  .field input.secret { -webkit-text-security: disc; }
   #modal .field a, #setupGate .field a { font-size: 12px; color: var(--accent); }
   #modal .row-line, #setupGate .row-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
   #setupGate { max-width: 460px; margin: 60px auto; }
@@ -781,7 +784,7 @@ function setupBodyHtml(data) {
         <span class="field-chip ${k.set ? 'ok' : k.optional ? '' : 'missing'}">${k.set ? '설정됨' : k.optional ? '선택' : '미설정'}</span>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${esc(k.desc)} · <a href="${esc(k.url)}" target="_blank" rel="noopener">발급받기</a></div>
-      <input type="password" data-key="${esc(k.key)}" placeholder="${k.set ? '설정됨 · 변경하려면 입력' : '값을 붙여넣으세요'}" autocomplete="off">
+      <input type="text" class="secret" data-key="${esc(k.key)}" placeholder="${k.set ? '설정됨 · 변경하려면 입력' : '값을 붙여넣으세요'}" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true">
     </div>`).join('');
   const ffmpegOk = data.ffmpeg && data.ffprobe;
   const ffmpegRow = ffmpegOk

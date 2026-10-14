@@ -22,6 +22,14 @@ OPTIONAL_API_KEYS = [
     ("GEMINI_API_KEY", "Gemini API 키 (선택) - 분할 편마다 인트로 이미지 생성에 씀", "https://aistudio.google.com/apikey"),
 ]
 
+# 10-14 사고(다른 컴퓨터): 환경설정 저장으로 ElevenLabs 키가 브라우저 자동완성 값으로 덮여 전사가
+# 401로 멈췄다. 키 모양이 아니면 .env에 쓰지 않는다. ElevenLabs 옛 키는 접두사 없는 32자 hex.
+# Gemini는 AIza… 말고 AQ.… 형식도 나와서 검사하지 않는다 - 맞는 새 키를 막는 쪽이 더 나쁘다.
+API_KEY_PATTERNS = {
+    "ANTHROPIC_API_KEY": re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
+    "ELEVENLABS_API_KEY": re.compile(r"sk_[A-Za-z0-9]{20,}|[0-9a-f]{32}"),
+}
+
 # 10-01 (홈 화면 영상 생성): *_final_gold/*.backup-*는 평가용/과거 스냅샷 접미사라 실제
 # 프로젝트로 취급하지 않는다 - scripts/home_server.py의 is_project_folder()와 여기
 # sanitize_project_name()이 같은 규칙을 공유해야, 웹에서 만든 이름이 우연히 이 패턴과 겹쳐
@@ -125,7 +133,10 @@ def write_env_keys(pairs: dict[str, str]) -> None:
     아님, 웹 설정 폼에서 키를 바꿀 때마다 중복 줄이 쌓이는 걸 막음), 없던 키만 새 줄로 추가.
     `os.environ`에도 즉시 반영한다. `ensure_api_keys()`의 CLI 저장 블록과
     `POST /api/setup/keys`(home_server.py)가 이 함수 하나를 공유 - `.env` 파싱/쓰기 로직이
-    두 곳에 따로 생기지 않게."""
+    두 곳에 따로 생기지 않게. 키 모양이 아닌 값이 하나라도 있으면 아무것도 쓰지 않고 ValueError."""
+    bad = [k for k, v in pairs.items() if k in API_KEY_PATTERNS and not API_KEY_PATTERNS[k].fullmatch(v)]
+    if bad:
+        raise ValueError(f"키 형식이 아닙니다: {', '.join(bad)}")
     env_path = PROJECT_ROOT / ".env"
     lines = env_path.read_text().splitlines() if env_path.exists() else []
     remaining = dict(pairs)
@@ -185,6 +196,9 @@ def ensure_api_keys() -> None:
         value = ""
         while not value:
             value = getpass.getpass(f"  {key} 입력(화면에 안 보임): ").strip()
+            if value and key in API_KEY_PATTERNS and not API_KEY_PATTERNS[key].fullmatch(value):
+                print("  키 형식이 아닙니다 - 다시 붙여넣어 주세요")
+                value = ""
         pairs[key] = value
     write_env_keys(pairs)
     print(f"\n{env_path}에 저장했습니다. 다음부터는 안 물어봅니다.\n")

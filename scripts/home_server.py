@@ -1068,7 +1068,10 @@ class Handler(BaseHTTPRequestHandler):
                      if k in valid_keys and isinstance(v, str) and v.strip() and "\n" not in v}
             if not pairs:
                 return self._json({"ok": False, "error": "등록할 키가 없습니다"}, 400)
-            write_env_keys({k: v.strip() for k, v in pairs.items()})
+            try:
+                write_env_keys({k: v.strip() for k, v in pairs.items()})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
             return self._json({"ok": True, "keys": api_keys_status(), **ffmpeg_status()})
         if path == "/api/setup/ffmpeg/install":
             try:
