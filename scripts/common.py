@@ -89,7 +89,7 @@ def ensure_project_python() -> None:
                    str(Path(sys.argv[0]).resolve()), *sys.argv[1:]])
 
 
-# 이 프로세스가 .env에서 넣은 키 - .env에서 지워지면 os.environ에서도 뺀다 (셸에서 export한 키는 건드리지 않음)
+# 이 프로세스가 .env에서 넣은 키 - .env에서 지워지면 os.environ에서도 뺀다
 _FROM_ENV_FILE: set[str] = set()
 
 
@@ -98,7 +98,9 @@ def load_env() -> None:
     .env가 곧 웹에 보이는 상태다. 있는 키는 덮어쓰고, .env에서 지워진(또는 빈 값이 된) 키는 뺀다.
     10-12 사고(다른 컴퓨터): 검토 서버는 시작할 때 한 번만 읽고 떠 있으면 재사용되는데, 기존 값을
     덮지 않으니 홈 환경설정에서 키를 다시 등록해도(또는 셸에 예전 키가 export돼 있으면) 인서트가
-    계속 옛 키로 "API 키가 맞지 않아요". 그래서 오래 떠 있는 서버는 POST마다 다시 부른다."""
+    계속 옛 키로 "API 키가 맞지 않아요". 그래서 오래 떠 있는 서버는 POST마다 다시 부른다.
+    10-14: API 키(REQUIRED/OPTIONAL_API_KEYS)는 .env에 없으면 셸에서 export한 값도 뺀다 - 사용자 "한 곳으로
+    통일하면 안돼?". 셸 키가 남아 있으면 .env에 없어도 웹에 '설정됨'으로 보이고 어느 키가 쓰이는지 헷갈렸다."""
     env_path = PROJECT_ROOT / ".env"
     present: dict[str, str] = {}
     if env_path.exists():
@@ -110,7 +112,8 @@ def load_env() -> None:
             k, v = k.strip(), v.strip().strip('"').strip("'")
             if k and v:
                 present[k] = v
-    for k in _FROM_ENV_FILE - present.keys():
+    api_keys = {k for k, _, _ in REQUIRED_API_KEYS + OPTIONAL_API_KEYS}
+    for k in (_FROM_ENV_FILE | api_keys) - present.keys():
         os.environ.pop(k, None)
     os.environ.update(present)
     _FROM_ENV_FILE.clear()
