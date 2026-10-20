@@ -11,12 +11,14 @@ source (jasonzhu.ai data + X video CDN) into this folder.
 scripts/inserts.py imports fetch_cases() to pull only the 1-3 references it picked for a motion
 insert, so a user without the full library still gets the catalog-wide pick.
 
-Stdlib only. Files that already exist are skipped, so it is safe to rerun.
+Stdlib only (cases from the second source also need the yt-dlp binary). Files that already exist are skipped, so it is safe to rerun.
 """
 
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -26,6 +28,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX_URL = "https://jasonzhu.ai/data/opus-prompts/index.json"
 PROMPT_URL = "https://jasonzhu.ai/data/opus-prompts/{id}.json"
 UA = {"User-Agent": "Mozilla/5.0"}
+# Second source for ids missing from INDEX_URL: the middle "__" segment of the name is a slug in this
+# repo's videos.json. It has no video files, so the video comes from the X post via yt-dlp.
+EXTRA_URL = "https://raw.githubusercontent.com/yihui-dev/awesome-opus5-5-videos/main/data/videos.json"
 
 
 def get(url):
@@ -66,12 +71,44 @@ def load_index():
     return {r["id"]: r for r in json.loads(get(INDEX_URL))}
 
 
+_extra = {}
+
+
+def fetch_extra(name):
+    """Download one awesome-opus5-5-videos case (prompt .md + .mp4 from the X post). Returns None, or why it failed."""
+    try:
+        if not _extra:
+            _extra.update({v["slug"]: v for v in json.loads(get(EXTRA_URL))})
+    except Exception as e:
+        return f"failed: {e}"
+    v = _extra.get(name.split("__")[1])
+    if v is None:
+        return "gone from source index"
+    md = os.path.join(HERE, name + ".md")
+    mp4 = os.path.join(HERE, name + ".mp4")
+    if not os.path.exists(md):
+        with open(md, "w", encoding="utf-8") as f:
+            f.write(f"# {v['slug']}\n\n- 작성자: @{v['author']}\n- 게시물: {v['post_url']}\n"
+                    f"- 카테고리: {v['category']} · 기술: {', '.join(v['tech_tags']) or '-'}\n"
+                    f"- 출처: yihui-dev/awesome-opus5-5-videos (콘텐츠 권리는 각 크리에이터)\n\n"
+                    f"## 프롬프트\n\n{v['prompt']}\n")
+    if not os.path.exists(mp4) or os.path.getsize(mp4) == 0:
+        if not shutil.which("yt-dlp"):
+            return "failed: yt-dlp not installed (brew install yt-dlp)"
+        r = subprocess.run(["yt-dlp", "-q", "--no-warnings", "-f", "best[ext=mp4]/best",
+                            "--merge-output-format", "mp4", "-o", mp4, v["post_url"]],
+                           capture_output=True, text=True)
+        if r.returncode:
+            return "failed: " + (r.stderr.strip().splitlines() or ["yt-dlp"])[-1]
+    return None
+
+
 def fetch_one(name, index):
     """Download one case (prompt .md + .mp4) into this folder. Returns None, or why it failed."""
     cid = name.rsplit("__", 1)[1]
     r = index.get(cid)
     if r is None:
-        return "gone from source index"
+        return fetch_extra(name)
     mp4 = os.path.join(HERE, name + ".mp4")
     md = os.path.join(HERE, name + ".md")
     try:
