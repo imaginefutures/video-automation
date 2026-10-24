@@ -23,6 +23,8 @@ import argparse
 import json
 import re
 import subprocess
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -144,8 +146,13 @@ def srt_text(seg: dict, sents: list[dict], edits: dict, offset: float) -> str:
     return "".join(f"{n}\n{srt_clock(a)} --> {srt_clock(b)}\n{txt}\n\n" for n, (a, b, txt) in enumerate(cues, 1) if b > a)
 
 
+class ExportCancelled(Exception):
+    """화면의 "중단" - 지금 인코딩 중인 ffmpeg를 죽이고 빠져나온다."""
+
+
 def encode(media: Path, start: float, dur: float, dest: Path, vbit: int, hw: bool, fps: float,
-           shape: tuple[int, int, bool], intro: Path | None = None, outro: Path | None = None) -> None:
+           shape: tuple[int, int, bool], intro: Path | None = None, outro: Path | None = None,
+           cancel: "threading.Event | None" = None) -> None:
     """영상은 프레임 수로 자른다 - 길이(-t)만 주면 ffmpeg가 끝에 한 프레임을 더 넣는 경우가 있어
     (10-08 실측) 앞 편 마지막 프레임에 다음 편의 새 자막·새 장면이 찍혔다. 경계 시각은 split_refine이
     프레임 시작 바로 앞에 두므로 시작 프레임은 -ss로, 끝은 프레임 수(trim=end_frame)로 정확히 정해진다."""
@@ -174,11 +181,25 @@ def encode(media: Path, start: float, dur: float, dest: Path, vbit: int, hw: boo
         order.append(label)
     graph.append("".join(f"[{l}v][{l}a]" for l in order) + f"concat=n={len(order)}:v=1:a=1[v][a]")
     part = dest.with_suffix(".part.mp4")
-    subprocess.run(
+    proc = subprocess.Popen(
         ["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(graph), "-map", "[v]", "-map", "[a]",
          *vcodec, "-pix_fmt", "yuv420p", "-r", f"{fps:.6f}", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(part)],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
     )
+    # stderr는 -v error라 적게 나오지만 파이프가 차면 ffmpeg가 멈추므로 별도 스레드가 비운다
+    err_buf: list[bytes] = []
+    reader = threading.Thread(target=lambda: err_buf.append(proc.stderr.read()), daemon=True)
+    reader.start()
+    while proc.poll() is None:
+        if cancel is not None and cancel.is_set():
+            proc.kill()
+            proc.wait()
+            part.unlink(missing_ok=True)
+            raise ExportCancelled()
+        time.sleep(0.2)
+    reader.join(2)
+    if proc.returncode:
+        raise subprocess.CalledProcessError(proc.returncode, "ffmpeg", stderr=b"".join(err_buf))
     part.rename(dest)
 
 
@@ -195,7 +216,8 @@ def intro_paths(folder: Path, dec: dict, n: int) -> list[Path | None]:
     return out
 
 
-def export(folder: Path, progress: Callable[[int, int, str], None] | None = None) -> dict:
+def export(folder: Path, progress: Callable[[int, int, str], None] | None = None,
+           cancel: "threading.Event | None" = None) -> dict:
     work = edit_dir(folder)
     media = source_media(folder)
     sdata = load_sentences(folder)
@@ -222,19 +244,28 @@ def export(folder: Path, progress: Callable[[int, int, str], None] | None = None
     intros = intro_paths(folder, dec, len(segs))
     outro = assets_lib.outro_path()
     files, items, lines = [], [], [f"{folder.name} - {len(segs)}편", ""]
-    for k, seg in enumerate(segs):
-        title = dec["titles"][k] if k < len(dec["titles"]) and dec["titles"][k] else f"{k + 1}편"
-        base = safe_name(title, k + 1)
-        if progress:
-            progress(k, len(segs), title)
-        encode(media, seg["start"], seg["duration"], out / f"{base}.mp4", vbit, hw, fps, shape, intros[k], outro)
-        (out / f"{base}.txt").write_text(script_text(title, seg, sents, edits), encoding="utf-8")
-        (out / f"{base}.srt").write_text(srt_text(seg, sents, edits, INTRO_SEC if intros[k] else 0.0), encoding="utf-8")
-        files += [f"{base}.mp4", f"{base}.txt", f"{base}.srt"]
-        total = seg["duration"] + (INTRO_SEC if intros[k] else 0) + (OUTRO_SEC if outro else 0)
-        items.append({"n": k + 1, "title": title, "duration": total, "mp4": f"{base}.mp4", "txt": f"{base}.txt", "srt": f"{base}.srt",
-                      "intro": bool(intros[k]), "outro": bool(outro)})
-        lines.append(f"{k + 1:2d}. {title}  ({fmt_len(seg['duration'])}, 원본 {fmt_clock(seg['start'])}~{fmt_clock(seg['end'])})")
+    try:
+        for k, seg in enumerate(segs):
+            title = dec["titles"][k] if k < len(dec["titles"]) and dec["titles"][k] else f"{k + 1}편"
+            base = safe_name(title, k + 1)
+            if cancel is not None and cancel.is_set():
+                raise ExportCancelled()
+            if progress:
+                progress(k, len(segs), title)
+            encode(media, seg["start"], seg["duration"], out / f"{base}.mp4", vbit, hw, fps, shape, intros[k], outro, cancel)
+            (out / f"{base}.txt").write_text(script_text(title, seg, sents, edits), encoding="utf-8")
+            (out / f"{base}.srt").write_text(srt_text(seg, sents, edits, INTRO_SEC if intros[k] else 0.0), encoding="utf-8")
+            files += [f"{base}.mp4", f"{base}.txt", f"{base}.srt"]
+            total = seg["duration"] + (INTRO_SEC if intros[k] else 0) + (OUTRO_SEC if outro else 0)
+            items.append({"n": k + 1, "title": title, "duration": total, "mp4": f"{base}.mp4", "txt": f"{base}.txt", "srt": f"{base}.srt",
+                          "intro": bool(intros[k]), "outro": bool(outro)})
+            lines.append(f"{k + 1:2d}. {title}  ({fmt_len(seg['duration'])}, 원본 {fmt_clock(seg['start'])}~{fmt_clock(seg['end'])})")
+    except ExportCancelled:
+        # 중단 - 이번에 만든 조각과 지난 기록을 치워 화면이 없는 파일을 가리키지 않게 한다
+        for name in files:
+            (out / name).unlink(missing_ok=True)
+        (work / "export.json").unlink(missing_ok=True)
+        raise
     (out / LIST_NAME).write_text("\n".join(lines) + "\n", encoding="utf-8")
     if progress:
         progress(len(segs), len(segs), "")

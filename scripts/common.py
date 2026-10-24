@@ -12,9 +12,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # 2026-09-30: 스킬을 설치한 다른 사용자를 위한 온보딩 - 키가 없으면 여기서 물어봐서 .env에
-# 저장한다. (키, 설명, 발급 페이지) 튜플 목록.
+# 저장한다. (키, 설명, 발급 페이지) 튜플 목록. Claude는 키 대신 Claude Code 로그인으로 돈다(claude_cli.py).
 REQUIRED_API_KEYS = [
-    ("ANTHROPIC_API_KEY", "Claude API 키 - NG 판별·분류·전체 검토에 씀", "https://console.anthropic.com/settings/keys"),
     ("ELEVENLABS_API_KEY", "ElevenLabs API 키 - Scribe 전사에 씀", "https://elevenlabs.io/app/settings/api-keys"),
 ]
 # 없어도 컷편집·분할은 돈다 - 설정 게이트·영상 생성 검사에서 빠진다. 분할의 인트로 이미지 생성에만 쓴다.
@@ -26,7 +25,6 @@ OPTIONAL_API_KEYS = [
 # 401로 멈췄다. 키 모양이 아니면 .env에 쓰지 않는다. ElevenLabs 옛 키는 접두사 없는 32자 hex.
 # Gemini는 AIza… 말고 AQ.… 형식도 나와서 검사하지 않는다 - 맞는 새 키를 막는 쪽이 더 나쁘다.
 API_KEY_PATTERNS = {
-    "ANTHROPIC_API_KEY": re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
     "ELEVENLABS_API_KEY": re.compile(r"sk_[A-Za-z0-9]{20,}|[0-9a-f]{32}"),
 }
 
@@ -58,7 +56,7 @@ def sanitize_project_name(raw: str) -> str:
 
 # pyproject.toml 의존성(+librosa가 끌고 오는 numpy)의 import 이름 - 하나라도 없으면 프로젝트
 # 환경(.venv)이 아닌 파이썬으로 실행된 것이다.
-_REQUIRED_MODULES = ("anthropic", "pydantic", "requests", "librosa", "numpy")
+_REQUIRED_MODULES = ("pydantic", "requests", "librosa", "numpy")
 
 
 def ensure_project_python() -> None:
@@ -401,35 +399,6 @@ def read_pipeline_status(folder: Path) -> dict | None:
     return data
 
 
-# 점버전 모델(예: Opus 5.5, Fable 5.1)은 thinking.type.disabled를 거부하고 adaptive+effort만
-# 받는다 - 버전 없는 모델(claude-sonnet-5 등)과는 다른 API 계약. global_review.py의 Fable
-# 처리에서 먼저 발견됐고(2026-09-29), claude-opus-5 -> claude-opus-5-5로 모델 ID를 올린 뒤
-# 실제로 opus 쪽 thinking-disabled 호출이 처음 돌아간 순간(seam_refine.py judge_batch,
-# 2026-09-29) 같은 오류로 재발 - 그래서 개별 호출부마다 분기하는 대신 여기 한 곳에 모은다.
-NEW_THINKING_CONTRACT_MODELS = {"claude-opus-5-5", "claude-fable-5-1"}
-
-
-def thinking_kwargs(model: str, effort: str = "low") -> dict:
-    """anthropic client.messages.parse()에 그대로 풀어 넣을 thinking(+output_config) kwargs."""
-    if model in NEW_THINKING_CONTRACT_MODELS:
-        return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
-    return {"thinking": {"type": "disabled"}}
-
-
-# R8(백로그/R8-실패-대응.md) "남은 것: 영수증에 영상당 처리 비용 추정 표시" - USD/1M토큰 가격표.
-# `claude-api` 스킬의 캐시된 가격표(2026-06-24)에서 이 파이프라인이 실제로 부르는 모델 문자열만
-# 그대로 가져왔다 - 추측하지 않음. cache_write/cache_read는 ephemeral(5분) 프롬프트 캐시 단가 -
-# 2026-10-01 현재 이 helper를 쓰는 6개 호출부 중 cache_control을 쓰는 곳은 없어서(grep으로 확인)
-# 실제로는 안 쓰이지만, 나중에 캐싱을 넣었을 때 조용히 잘못 계산되는 걸 막기 위해 남겨 둔다.
-# 새 호출부가 여기 없는 모델을 쓰게 되면 가격을 먼저 이 표에 추가할 것 - 추측해서 넣지 말 것.
-LLM_PRICING_USD_PER_MTOK: dict[str, dict[str, float]] = {
-    "claude-opus-5-5":           {"input": 4.00, "output": 20.00, "cache_write": 5.00, "cache_read": 0.20},
-    "claude-sonnet-5":           {"input": 2.00, "output": 10.00, "cache_write": 2.50, "cache_read": 0.20},
-    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00, "cache_write": 1.25, "cache_read": 0.10},
-    "claude-fable-5-1":          {"input": 10.00, "output": 50.00, "cache_write": 12.50, "cache_read": 1.00},
-}
-
-
 CLIENT_ERROR_FIELDS = ("kind", "message", "src", "page", "stack")
 CLIENT_ERROR_TAG = "[브라우저 오류]"  # log_share.py가 server.log에서 이 줄을 찾는다
 
@@ -446,41 +415,20 @@ def print_client_error(body: dict) -> None:
 
 
 def log_llm_usage(folder: Path, step_label: str, model: str, usage) -> None:
-    """Anthropic API 호출 하나의 토큰 사용량을 <folder>/edit/llm_usage.jsonl에 한 줄 추가한다
-    (R8 영수증의 "영상당 처리 비용 추정"이 이 파일을 합산해서 보여줌, server.py Session.receipt()).
-
-    `usage`는 보통 `client.messages.parse(...)` 응답의 `.usage` 객체지만(속성:
-    input_tokens/output_tokens/cache_creation_input_tokens/cache_read_input_tokens), 테스트
-    편의를 위해 같은 키를 가진 dict도 받는다. 가격표에 없는 모델은 비용을 추측하지 않고
-    그냥 기록을 건너뛴다(잘못된 비용보다 누락이 낫다)."""
-    pricing = LLM_PRICING_USD_PER_MTOK.get(model)
-    if pricing is None:
-        print(f"[llm_usage] 가격표에 없는 모델 '{model}' - 비용 기록 생략", file=sys.stderr)
-        return
-
+    """Claude 호출 하나의 토큰 사용량을 <folder>/edit/llm_usage.jsonl에 한 줄 추가한다.
+    Claude는 10-24부터 Claude Code 구독(`claude_cli`)으로 돌아서 따로 드는 돈이 없다 - cost_usd는 0.
+    영수증의 "처리 비용 추정"(server.py Session.receipt())에는 같은 파일의 유료 API(Gemini 이미지)만 쌓인다."""
     def _get(key: str) -> int:
-        val = usage.get(key) if isinstance(usage, dict) else getattr(usage, key, None)
-        return val or 0
-
-    input_tokens = _get("input_tokens")
-    output_tokens = _get("output_tokens")
-    cache_write_tokens = _get("cache_creation_input_tokens")
-    cache_read_tokens = _get("cache_read_input_tokens")
-
-    cost_usd = (
-        input_tokens * pricing["input"]
-        + output_tokens * pricing["output"]
-        + cache_write_tokens * pricing["cache_write"]
-        + cache_read_tokens * pricing["cache_read"]
-    ) / 1_000_000
+        return (usage.get(key) if isinstance(usage, dict) else getattr(usage, key, None)) or 0
 
     row = {
         "at": datetime.now().isoformat(timespec="seconds"),
         "step": step_label,
         "model": model,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "cost_usd": round(cost_usd, 6),
+        "input_tokens": _get("input_tokens") + _get("cache_creation_input_tokens") + _get("cache_read_input_tokens"),
+        "output_tokens": _get("output_tokens"),
+        "cost_usd": 0,
+        "billing": "claude_code",
     }
     with (edit_dir(folder) / "llm_usage.jsonl").open("a") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")

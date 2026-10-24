@@ -11,13 +11,13 @@
 
 ## 필요한 것
 
-- **Claude Code** (이 스킬을 실행하는 에이전트)
+- **Claude Code** (이 스킬을 실행하는 에이전트) — 로그인돼 있어야 합니다. 컷 판별·인서트 등 Claude가
+  하는 일은 전부 이 로그인(구독)으로 돌고, Claude API 키는 따로 필요 없습니다
 - **[uv](https://docs.astral.sh/uv/)** — 없으면 스킬을 아예 실행할 수 없어 자동 확인이 안 됩니다.
   미리 설치해 두세요(`curl -LsSf https://astral.sh/uv/install.sh | sh`). 나머지 파이썬
   라이브러리는 `uv run`이 알아서 설치합니다
-- **ffmpeg / ffprobe**, **API 키 두 개** — 아래 홈 화면의 설정 패널에서 등록·설치할 수 있습니다.
+- **ffmpeg / ffprobe**, **API 키** — 아래 홈 화면의 설정 패널에서 등록·설치할 수 있습니다.
   미리 안 해둬도 되고, 빠뜨려도 Claude Code가 처음 스킬을 부를 때 알아서 확인합니다
-  - [Anthropic](https://console.anthropic.com/settings/keys) — NG 판별·전체 검토에 씀
   - [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) — 음성 전사(Scribe)에 씀
 - **영상 넣을 폴더** — 따로 안 만들어도 됩니다. 홈 화면의 "+ 새 영상"이나 아래 CLI 환경설정이
   `video-edit/` 폴더와 안내 파일을 자동으로 만들어 줍니다

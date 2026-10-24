@@ -2,8 +2,9 @@
 
 규칙(무엇을, 언제, 왜): docs/인서트-가이드.md. 자동화 설계: docs/백로그/자료-화면-삽입.md.
 
-흐름: 사용자가 완성 대본(잘린 말 제외)에서 구간을 드래그 → create() → 백그라운드에서
-  1) decide(): Opus 5.5가 구간·앞뒤 문맥·주변 인서트를 보고 형태(텍스트/이미지/영상/실물)를 정함
+흐름: 사용자가 완성 대본(잘린 말 제외)에서 구간을 드래그 → create()는 빈 인서트(draft)만 만든다.
+  오른쪽 패널에서 형태(텍스트/이미지/영상)를 고르고 글자·프롬프트를 직접 넣은 뒤 build → 백그라운드에서
+  (직접 넣지 않고 '자동'이면) 1) decide(): Opus 5.5가 구간·앞뒤 문맥·주변 인서트를 보고 내용을 정함
   2) generate(): 텍스트는 Pillow로 투명 PNG를 그림(즉시, 비용 0), 이미지는 Nano Banana 후보 여러 장
   → 사용자가 화면에서 승인/취소/다시 만들기/형태 바꾸기 → export 때 승인된 것만 FCPXML에 들어간다.
 
@@ -27,7 +28,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from build_edl import compute_kept_segments
-from common import log_llm_usage, thinking_kwargs, write_json
+import claude_cli
+from common import log_llm_usage, write_json
 import fonts
 import assets_lib
 import audio_level
@@ -69,7 +71,6 @@ apartment living room. Soft window daylight, warm neutral tones, shallow depth o
 Realistic skin, hands and fingers. Ordinary everyday clothes and toys. No text, letters, logos or readable writing anywhere
 (blank labels, no brand names). 16:9 frame."""
 
-FORMS = ("text", "image", "video", "asset")
 IMAGE_MAX_SEC = 5.0  # 정적 이미지는 편집본 기준 최대 5초 - 만들 때만 적용, 사용자가 늘리는 건 자유 (10-12 사용자 결정)
 
 
@@ -279,10 +280,18 @@ def explain_error(e: Exception, stage: str | None) -> dict:
         return {"stage": stage or "", "title": title, "hint": hint, "retryable": retryable, "raw": raw[:1500]}
     if "prompt is too long" in low or "too many tokens" in low:
         return out("AI에 보낸 내용이 한도를 넘었어요", "프로그램 쪽 문제일 가능성이 커요. 다시 시도해 보고, 같은 오류가 반복되면 알려 주세요")
+    if "not logged in" in low or "/login" in low:
+        return out("Claude Code에 로그인돼 있지 않아요", "터미널에서 claude를 실행해 /login으로 로그인한 뒤 다시 시도하세요", retryable=False)
+    if "usage limit" in low or "hit your limit" in low or "limit reached" in low:
+        return out("Claude 구독 사용량 한도에 걸렸어요", "한도가 풀린 뒤 다시 시도하세요")
+    if "claude -p timed out" in low:
+        return out("AI 응답이 너무 오래 걸렸어요", "다시 시도하세요")
+    if "no such file" in low and "claude" in low:
+        return out("Claude Code가 설치돼 있지 않아요", "Claude Code를 설치하고 로그인한 뒤 다시 시도하세요", retryable=False)
     if status == 401 or "authentication" in low or "invalid x-api-key" in low or "api key not valid" in low:
         return out("API 키가 맞지 않아요", "홈 화면 환경설정에서 키를 다시 등록한 뒤 다시 시도하세요", retryable=False)
     if status == 402 or "credit" in low or "billing" in low or "선불 크레딧" in raw:
-        return out("API 크레딧이 부족해요", "해당 서비스(Anthropic 또는 Gemini) 결제 화면에서 충전한 뒤 다시 시도하세요", retryable=False)
+        return out("API 크레딧이 부족해요", "Gemini 결제 화면에서 충전한 뒤 다시 시도하세요", retryable=False)
     if status == 429 or "rate limit" in low or "rate_limit" in low or "resource_exhausted" in low:
         return out("요청이 한꺼번에 몰려 잠시 막혔어요", "1~2분 뒤 다시 시도하세요")
     if status in (500, 502, 503, 529) or "overloaded" in low or "internal server error" in low:
@@ -323,6 +332,8 @@ class InsertStore:
         self.dir = session.edit / "inserts"
         self.dir.mkdir(exist_ok=True)
         self.lock = threading.RLock()
+        self._inflight: set[str] = set()  # 만드는 중인 인서트 id - _start 참고
+        self._prev: dict[str, dict] = {}  # 시작 직전 상태 - 실패·중단 때 이전 결과로 되돌리는 기준 (_guarded)
         self.data = json.loads(self.path.read_text()) if self.path.exists() else {"items": []}
         sg = self.data.get("suggest")
         if sg and sg.get("state") == "running":  # 서버가 제안 도중 꺼졌으면
@@ -457,18 +468,80 @@ class InsertStore:
     # ---- 생성 요청
 
     def create(self, wi_start: int, wi_end: int) -> dict:
+        """빈 인서트만 만든다 - 형태·내용은 사용자가 오른쪽 패널에서 정하고 build로 만든다 (10-14 사용자 요청: 고르자마자 자동으로 만들지 않게)."""
         if wi_end < wi_start:
             wi_start, wi_end = wi_end, wi_start
         text = "".join(w["text"] + " " for w in self.s.words[wi_start:wi_end + 1]).strip()
-        it = {"id": uuid.uuid4().hex[:8], "wi_start": wi_start, "wi_end": wi_end, "text": text,
-              "status": "deciding", "created_at": _now(), "updated_at": _now(),
+        it = {"id": uuid.uuid4().hex[:8], "wi_start": wi_start, "wi_end": wi_end, "text": text, "origin": "manual",
+              "status": "draft", "created_at": _now(), "updated_at": _now(),
               "decision": None, "form": None, "files": [], "candidates": [], "chosen": None, "error": None}
         with self.lock:
             self.data["items"].append(it)
             self._save()
-        # 드래그로 만들 때는 형태만 정한다 - 텍스트는 바로 그리고, 이미지·영상은 비용·시간을 보여 준 뒤 '만들기'로 (10-09 사용자: 바로 영상이 만들어짐)
-        threading.Thread(target=self._run, args=(it["id"], None, None, True), daemon=True).start()
         return it
+
+    # build가 직접 입력으로 채우는 글자 레이아웃: 화면 이름 -> (layout, layer)
+    TEXT_LAYOUTS = {"section": ("top", "구조"), "top": ("top", "요점"), "comment": ("comment", "목소리"),
+                    "chapter": ("chapter", "구조"), "quote": ("quote", "근거"), "list": ("list", "구조")}
+
+    def _build_manual(self, iid: str, body: dict) -> None:
+        """사용자가 글자·프롬프트를 직접 넣은 것을 그대로 만든다 (LLM 구상 없음). 같은 형태의 기존 결정(층·글자·모션 종류 등)은
+        이어받고 직접 넣은 값만 덮어쓴다. point를 채워 두는 건 _make(다시 시도)가 image_prompt 단계를 또 돌려
+        직접 쓴 프롬프트를 덮어쓰지 않게 하는 표시."""
+        def work(it):
+            form = body["form"]
+            old = it.get("decision") or {}
+            same = old.get("form") == form
+            dec = {"form": form, "layer": "장면", "layout": "fullscreen", "lines": [], "source": "", "image_kind": "none",
+                   "must_show": [], "scene": "", "anchor": "", "reason": "직접 입력", "motion_kind": "none",
+                   "alternatives": [], "warnings": [], **(old if same else {})}
+            if form == "text":
+                dec["lines"] = body["lines"]
+                dec["layout"], dec["layer"] = self.TEXT_LAYOUTS[body.get("layout") if body.get("layout") in self.TEXT_LAYOUTS else "top"]
+                dec["source"] = str(body.get("source") or "")
+            elif form == "image":
+                dec["lines"] = body["lines"]
+                same_prompt = same and body["prompt"] == (old.get("scene") or "")
+                if not same_prompt:  # 프롬프트를 고쳤으면 전 프롬프트에 딸린 확인 조건·피할 것은 맞지 않는다
+                    dec.update(must_show=[], avoid=[])
+                dec.update(scene=body["prompt"], point="직접 입력" if not same_prompt else old.get("point") or "직접 입력",
+                           image_kind="photo" if body.get("kind") == "photo" else "illustration")
+                self._limit_image(it, "")
+            else:
+                dec.update(scene=body["prompt"], lines=body["lines"])
+            self._set(it, decision=dec, form=form, status="generating", candidates=[], chosen=None, files=[])
+            self.generate(it)
+        self._guarded(iid, work)
+
+    def _start(self, iid: str, target, *args, before=None) -> None:
+        """생성 스레드를 시작한다 - 인서트 하나에 하나만. 더블클릭이나 화면 두 개가 같은 생성을 두 번(=돈 두 번) 시작하지 않게
+        서버가 막는다. before는 시작이 확정된 뒤 동기로 할 일(상태 바꾸기)."""
+        with self.lock:
+            if iid in self._inflight:
+                raise ValueError("이미 만드는 중입니다")
+            self._inflight.add(iid)
+            self._prev[iid] = self._snapshot(self._get(iid))  # 상태를 바꾸기 전 - 다시 만들기가 실패하면 이 결과로 돌아간다
+
+        def run():
+            try:
+                target(iid, *args)
+            finally:
+                with self.lock:
+                    self._inflight.discard(iid)
+                    self._prev.pop(iid, None)
+        try:
+            if before:
+                before()
+        except Exception:
+            with self.lock:
+                self._inflight.discard(iid)
+                self._prev.pop(iid, None)
+            raise
+        threading.Thread(target=run, daemon=True).start()
+
+    @classmethod
+    def _snapshot(cls, it: dict) -> dict:
+        return json.loads(json.dumps({k: it.get(k) for k in cls._KEEP}))
 
     _KEEP = ("status", "files", "candidates", "chosen", "checks", "decision", "form", "motion_refs", "font_fallback")
 
@@ -476,17 +549,25 @@ class InsertStore:
         """만들기 작업 하나를 감싼다: 단계 추적, 중단, 오류 설명. 다시 만들기가 실패하거나 중단되면
         이전 결과로 되돌린다 - 돈을 들여 만든 결과를 실패 하나로 잃지 않게."""
         it = self._get(iid)
-        prev = json.loads(json.dumps({k: it.get(k) for k in self._KEEP}))
+        prev = self._prev.pop(iid, None) or self._snapshot(it)
         had_result = bool(prev.get("files")) and prev.get("status") in ("ready", "approved", "rejected")
+        # 직접 만든 빈 인서트가 형태 결정·생성 시작 전에 멈추면 오류가 아니라 입력 화면(draft)으로 돌아간다
+        draft = it.get("origin") == "manual" and not prev.get("decision") and not had_result
         self._set(it, cancel=False, error=None, error_info=None, notice=None, stage=None, progress=None)
         try:
             work(it)
         except Cancelled:
-            back = prev if had_result else {**prev, "status": "suggested" if it.get("origin") == "suggest" and prev.get("decision") else "error"}
+            if had_result:
+                back = prev
+            elif draft:
+                back = {**prev, "status": "draft", "form": None}
+            else:
+                back = {**prev, "status": "suggested" if it.get("origin") == "suggest" and prev.get("decision") else "error"}
+            quiet = had_result or back["status"] in ("suggested", "draft")
             self._set(it, **back, cancel=False, progress=None, stage=None,
                       notice="중단했어요" + (" - 이전 결과로 되돌렸어요" if had_result else ""),
-                      error=None if had_result or back["status"] == "suggested" else "중단했어요",
-                      error_info=None if had_result or back["status"] == "suggested" else
+                      error=None if quiet else "중단했어요",
+                      error_info=None if quiet else
                       {"stage": "", "title": "중단했어요", "hint": "다시 시도하거나 삭제하세요", "retryable": True, "raw": ""})
         except Exception as e:  # 화면에 설명과 함께 보여 준다 - 조용히 실패하지 않게
             info = explain_error(e, STAGE_KO.get(it.get("stage") or "", it.get("stage")))
@@ -494,6 +575,8 @@ class InsertStore:
             traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
             if had_result:  # 이전 결과는 두고 실패만 알린다
                 self._set(it, **prev, error=info["title"], error_info={**info, "kept_previous": True}, progress=None, stage=None, cancel=False)
+            elif draft and not self._get(iid).get("decision"):  # 내용을 정하기 전에 실패 - 입력을 고쳐 다시 만들 수 있게 입력 화면으로
+                self._set(it, status="draft", form=None, error=info["title"], error_info=info, progress=None, stage=None, cancel=False)
             else:
                 self._set(it, status="error", error=info["title"], error_info=info, progress=None, stage=None, cancel=False)
 
@@ -503,18 +586,18 @@ class InsertStore:
             raise Cancelled()
         self._set(it, stage=key, **({"progress": msg} if msg else {}))
 
-    def _run(self, iid: str, force_form: str | None, note: str | None = None, defer_costly: bool = False) -> None:
+    def _run(self, iid: str, force_form: str | None, note: str | None = None, lines: list[str] | None = None) -> None:
+        """AI가 내용을 구상해 만든다. lines는 사용자가 직접 고친 화면 글자(이미지의 노란 글자·영상 글자) - AI가 새로 쓴 것보다 우선."""
         def work(it):
             self._set(it, status="deciding")
             if note:
                 self._set(it, notes=(it.get("notes") or []) + [note])
             self._stage(it, "decide")
             dec = self.decide(it, force_form)
+            if lines is not None and dec["form"] in ("image", "video"):
+                dec["lines"] = lines
             if dec["form"] == "image":
                 self._limit_image(it, dec.get("anchor", ""))
-            if defer_costly and dec["form"] in ("image", "video"):  # 돈·시간이 드는 형태는 사용자가 '만들기'를 눌러야
-                self._set(it, decision=dec, form=dec["form"], status="suggested", files=[], candidates=[], chosen=None)
-                return
             if dec["form"] == "image":
                 self._stage(it, "image_prompt", "장면을 이해하고 그림을 구상하는 중…")
                 dec.update(self.write_image_prompt(it, dec))
@@ -528,7 +611,6 @@ class InsertStore:
     def suggest_all(self) -> dict:
         """대본 전체를 읽고 인서트 자리를 제안한다. 처음 한 번 + '추가 제안' - 있는 인서트는 하나도 건드리지 않고
         빈 구간에 넣을 만한 곳만 더한다 (10-09 사용자: '다시 제안'(손 안 댄 제안 교체)은 필요 없고 추가 제안이 필요)."""
-        import anthropic
         with self.lock:
             prev = self.data.get("suggest") or {}
             adding = any(it for it in self.data["items"] if it["status"] != "rejected")
@@ -559,13 +641,9 @@ class InsertStore:
             if (self.data.get("suggest") or {}).get("adding"):
                 user += ("\n\n이번은 '추가 제안'이다. 위 인서트들은 이미 정해진 것으로 보고 건드리지 않는다. 그 사이 빈 구간 중 가이드 리듬(4장)상 "
                          "비어 있으면 안 되는 곳만 더한다. '넣지 않는 곳'은 계속 비워 두고, 이미 충분하면 빈 배열을 돌려준다.")
-            client = anthropic.Anthropic()
-            # 긴 영상은 응답이 길어 스트리밍이 필수 (SDK가 10분 넘을 수 있는 요청을 거부)
-            with client.messages.stream(
-                    model=DECIDE_MODEL, max_tokens=32000, system=SUGGEST_SYSTEM_HEAD + "\n=== 인서트 가이드 ===\n" + GUIDE_PATH.read_text(),
-                    messages=[{"role": "user", "content": user}], output_format=Suggestions,
-                    **thinking_kwargs(DECIDE_MODEL, effort="medium")) as stream:
-                resp = stream.get_final_message()
+            resp = claude_cli.parse(
+                model=DECIDE_MODEL, max_tokens=32000, system=SUGGEST_SYSTEM_HEAD + "\n=== 인서트 가이드 ===\n" + GUIDE_PATH.read_text(),
+                messages=[{"role": "user", "content": user}], output_format=Suggestions, effort="medium")
             log_llm_usage(self.folder, "insert_suggest", DECIDE_MODEL, resp.usage)
             if cancelled():  # 응답을 받는 동안 중단을 눌렀다 - 결과를 버린다
                 raise Cancelled()
@@ -652,7 +730,6 @@ class InsertStore:
         return before, after
 
     def decide(self, it: dict, force_form: str | None) -> dict:
-        import anthropic
         kept = self._kept()
         before, after = self._context(it)
         by_wi = {w["wi"]: w for w in self.s.words}
@@ -699,10 +776,10 @@ class InsertStore:
                   "- 이미지 모델은 익숙한 물건으로 끌려간다. 장면의 핵심이 '무엇을 무엇처럼'(대체·흉내·비교)이면, scene에서 흉내 내는 대상의 "
                   "이름을 그릴 물건처럼 쓰지 말고(예: 'stick like a spoon' 금지) 실제로 그릴 물건만 구체적으로 묘사하고, must_show에 '무엇이 아닌지'를 적는다\n"
                   "\n=== 인서트 가이드 ===\n" + GUIDE_PATH.read_text())
-        resp = anthropic.Anthropic().messages.parse(
+        resp = claude_cli.parse(
             model=DECIDE_MODEL, max_tokens=4000, system=system,
             messages=[{"role": "user", "content": user}],
-            output_format=InsertDecision, **thinking_kwargs(DECIDE_MODEL, effort="medium"))
+            output_format=InsertDecision, effort="medium")
         log_llm_usage(self.folder, "insert_decide", DECIDE_MODEL, resp.usage)
         dec = resp.parsed_output.model_dump()
         if force_form:
@@ -717,7 +794,6 @@ class InsertStore:
     def write_image_prompt(self, it: dict, dec: dict) -> dict:
         """이미지 전용 프롬프트 단계 - 문맥에서 '한눈에 보여 줄 한 가지'를 먼저 정하고 그릴 것을 쓴다.
         10-09: 형태 결정 단계가 함께 쓴 장면("stick like a spoon")에서 이미지 모델이 진짜 숟가락을 그렸다."""
-        import anthropic
         before, after = self._context(it, 8, 4)
         notes = "\n".join(f"- {n}" for n in it.get("notes") or [])
         user = f"""Selected passage (Korean): "{it['text']}"
@@ -732,10 +808,10 @@ The editor's plan for this insert: layer={dec['layer']}, caption to overlay late
 Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illustration = concept drawing)"""
         if notes:
             user += f"\n\nThe user reviewed earlier results and asked (must follow):\n{notes}"
-        resp = anthropic.Anthropic().messages.parse(
+        resp = claude_cli.parse(
             model=DECIDE_MODEL, max_tokens=3000, system=IMAGE_WRITER_SYSTEM,
             messages=[{"role": "user", "content": user}],
-            output_format=ImagePrompt, **thinking_kwargs(DECIDE_MODEL, effort="medium"))
+            output_format=ImagePrompt, effort="medium")
         log_llm_usage(self.folder, "insert_image_prompt", DECIDE_MODEL, resp.usage)
         ip = resp.parsed_output
         return {"point": ip.point, "image_kind": ip.image_kind, "subject": ip.subject,
@@ -834,7 +910,6 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
         if not must:
             return []
         try:
-            import anthropic
             import io
             from PIL import Image
 
@@ -857,9 +932,9 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
                 content += [{"type": "text", "text": f"후보 {k}:"},
                             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                          "data": base64.b64encode(buf.getvalue()).decode()}}]
-            resp = anthropic.Anthropic().messages.parse(
+            resp = claude_cli.parse(
                 model=JUDGE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": content}],
-                output_format=Verdicts, **thinking_kwargs(JUDGE_MODEL))
+                output_format=Verdicts, effort="low")
             log_llm_usage(self.folder, "insert_judge", JUDGE_MODEL, resp.usage)
             got = {v.index: {"ok": v.ok, "note": v.note} for v in resp.parsed_output.verdicts}
             return [got.get(k, {"ok": True, "note": ""}) for k in range(len(names))]
@@ -913,7 +988,6 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
     def pick_motion_refs(self, it: dict) -> list[dict]:
         """레퍼런스 라이브러리 카탈로그 전체(_META.md)에서 이 장면에 맞는 1~3개를 고른다 (10-09 사용자 요청:
         카탈로그를 다 활용). 라이브러리가 없거나 고르기에 실패하면 용도별 고정 목록(MOTION_REFS)으로."""
-        import anthropic
         dec = it["decision"]
         catalog = catalog_digest()
         picks: list[dict] = []
@@ -927,12 +1001,12 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
                         "Our look is fixed (warm cream, deep violet, Korean text, calm editorial 2D) - so judge by structure and motion, "
                         "not colors. Avoid cases the catalog warns about for this use (comparison split screens, screen recordings, "
                         "external asset or external model dependence) unless only their prompt structure is useful.")
-                resp = anthropic.Anthropic().messages.parse(
+                resp = claude_cli.parse(
                     model=DECIDE_MODEL, max_tokens=3000,
                     system=[{"type": "text", "text": "You pick motion-graphic references from a curated library.\n\n" + catalog,
                              "cache_control": {"type": "ephemeral"}}],
                     messages=[{"role": "user", "content": user}], output_format=RefPicks,
-                    **thinking_kwargs(DECIDE_MODEL, effort="low"))
+                    effort="low")
                 log_llm_usage(self.folder, "insert_motion_refs", DECIDE_MODEL, resp.usage)
                 picks = [p.model_dump() for p in resp.parsed_output.picks if p.name in _case_names()][:3]
                 missing = [p["name"] for p in picks if not self._ref_available(p["name"])]
@@ -963,7 +1037,6 @@ Suggested kind: {dec.get('image_kind')}  (photo = realistic everyday scene, illu
         return "\n\n".join(texts), frames
 
     def _write_motion_html(self, it: dict, dur: float, fix: tuple[str, str, list[bytes]] | None = None) -> str:
-        import anthropic
         dec = it["decision"]
         before, after = self._context(it, 6, 3)
         ref_text, ref_frames = self._ref_material(it.get("motion_refs") or [])
@@ -986,13 +1059,10 @@ Duration D = {dur:.2f} seconds.
             content.append({"type": "text", "text": f"Your previous version had these problems - fix exactly these and keep the rest:\n{problems}\n\nPrevious HTML:\n```html\n{old_html}\n```\nIts rendered frames:"})
             for b in shots:
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}})
-        client = anthropic.Anthropic()
-        with client.messages.stream(model=DECIDE_MODEL, max_tokens=32000, system=motion_system(),
-                                    messages=[{"role": "user", "content": content}],
-                                    **thinking_kwargs(DECIDE_MODEL, effort="medium")) as stream:
-            msg = stream.get_final_message()
+        msg = claude_cli.parse(model=DECIDE_MODEL, max_tokens=32000, system=motion_system(),
+                               messages=[{"role": "user", "content": content}], effort="medium")
         log_llm_usage(self.folder, "insert_motion_html", DECIDE_MODEL, msg.usage)
-        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        text = msg.text
         m = re.search(r"```html\s*(.*?)```", text, re.S)
         html = (m.group(1) if m else text).strip()
         if "seek" not in html:
@@ -1022,7 +1092,6 @@ Duration D = {dur:.2f} seconds.
     def _judge_motion(self, it: dict, shots: list[bytes], times: list[float]) -> tuple[bool, str]:
         """두 단계 판정. ① 의도를 모른 채 화면만 보고 무엇을 말하는지 읽게 한다 - 의도를 먼저 알려 주면
         '그렇게 보인다'고 후하게 판정한다(외부 연구 정리: 자막 없이도 이해되나가 핵심 시험). ② 그 읽기를 의도와 비교 + 형식 검사."""
-        import anthropic
 
         class Reading(BaseModel):
             message: str = Field(description="자막·설명 없이 이 장면들만 본 시청자가 받아들일 메시지, 한국어 한두 문장")
@@ -1036,15 +1105,14 @@ Duration D = {dur:.2f} seconds.
         for t, b in zip(times, shots):
             frames += [{"type": "text", "text": f"t={t:.1f}s"},
                        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(b).decode()}}]
-        client = anthropic.Anthropic()
-        r1 = client.messages.parse(model=JUDGE_MODEL, max_tokens=800, output_format=Reading, **thinking_kwargs(JUDGE_MODEL),
+        r1 = claude_cli.parse(model=JUDGE_MODEL, max_tokens=800, output_format=Reading, effort="low",
                                    messages=[{"role": "user", "content": [{"type": "text", "text": (
                                        "These are frames of a short muted motion-graphic clip, in time order. You have no other context. "
                                        "What message would a viewer take away? What draws the eye first in each frame?")}] + frames}])
         log_llm_usage(self.folder, "insert_motion_read", JUDGE_MODEL, r1.usage)
         reading = r1.parsed_output
         dec = it["decision"]
-        r2 = client.messages.parse(model=JUDGE_MODEL, max_tokens=1500, output_format=MotionVerdict, **thinking_kwargs(JUDGE_MODEL),
+        r2 = claude_cli.parse(model=JUDGE_MODEL, max_tokens=1500, output_format=MotionVerdict, effort="low",
                                    messages=[{"role": "user", "content": [{"type": "text", "text": (
             "Frames of a motion-graphic insert for a Korean parenting lecture. Judge strictly:\n"
             f"1) Intended point: {dec.get('scene', '')}\n"
@@ -1253,7 +1321,7 @@ Duration D = {dur:.2f} seconds.
         if action == "span":  # 들어가는 자리 늘리기·줄이기 - 직접 정한 길이는 5초 규칙 없이 유지 (다시 만들어도)
             if it["status"] in ("deciding", "generating"):
                 raise ValueError("만드는 중에는 자리를 바꿀 수 없어요")
-            if it.get("form") == "video":
+            if it.get("form") == "video" and it.get("files"):  # 아직 안 만든 영상(제안)은 자리를 바꿔도 된다 - 만들 때 그 길이로
                 raise ValueError("영상은 길이에 맞춰 만들어져 자리를 바꾸려면 다시 만들어야 해요")
             s, e = sorted((int(body["wi_start"]), int(body["wi_end"])))
             kept_wi = {w["wi"] for w in self.kept_words(self._kept())}
@@ -1271,13 +1339,44 @@ Duration D = {dur:.2f} seconds.
         if action == "retry":  # 형태가 정해져 있으면 그대로 만들기만 다시, 아니면 처음부터
             if it["status"] in ("deciding", "generating"):
                 raise ValueError("이미 만드는 중입니다")
-            target = (self._make, (iid,)) if it.get("decision") and it.get("form") else (self._run, (iid, None))
-            threading.Thread(target=target[0], args=target[1], daemon=True).start()
+            if it["status"] in ("draft", "suggested"):
+                raise ValueError("만들기를 눌러야 만들어집니다")  # 아직 안 만든 것은 패널의 만들기/생성으로만
+            target = (self._make, (iid,)) if it.get("decision") and it.get("form") else (self._run, (iid, it.get("form")))
+            self._start(iid, target[0], *target[1][1:])
             return it
-        if action == "make":
-            if it["status"] not in ("suggested", "error"):
-                raise ValueError("이미 만들었거나 만드는 중입니다")
-            threading.Thread(target=self._make, args=(iid,), daemon=True).start()
+        if action == "build":  # 만들기·다시 만들기·형태 바꾸기 전부 이 하나 - 사용자가 누를 때만. 직접 넣은 내용은 그대로, 비우면 자동 구상
+            if it["status"] in ("deciding", "generating"):
+                raise ValueError("이미 만드는 중입니다")
+            form = body.get("form")
+            if form not in ("text", "image", "video"):
+                raise ValueError("텍스트, 이미지, 영상 중에서 고르세요")
+            prompt = str(body.get("prompt") or "").strip()
+            lines = [l.strip() for l in body.get("lines") or [] if isinstance(l, str) and l.strip()]
+            auto = bool(body.get("auto")) if form == "text" else not prompt
+            if form == "text" and not auto and not lines:
+                raise ValueError("글자를 입력하거나 자동 생성을 누르세요")
+            old = it.get("decision") or {}
+            same = it.get("form") == form
+            # AI가 아직 다듬지 않은 제안 그대로(프롬프트를 안 고침)면 만들 때 문맥을 보고 다듬는 기존 길(_make)로
+            # 이미지·영상의 화면 글자(노란 글자)를 직접 고쳤으면 AI 경로에서도 그 글자를 쓴다
+            user_lines = lines if "lines" in body and form != "text" and lines != [str(l).strip() for l in old.get("lines") or []] else None
+            refine = form == "image" and same and not auto and not old.get("point") and prompt == (old.get("scene") or "")
+
+            def mark():
+                if refine and user_lines is not None:
+                    self._set(it, decision={**old, "lines": user_lines})
+                if not same:  # 다른 형태에 맞춰 고친 자리였으니 새 형태 규칙(이미지 5초)을 다시 적용 - 시작이 확정된 뒤에만
+                    self._set(it, span_user=False)
+                # 상태를 바로 바꿔 둔다 - 스레드가 늦게 시작해도 화면이 '만드는 중'을 보고 상태를 계속 확인하게
+                self._set(it, status="deciding" if auto else "generating", form=form, error=None, error_info=None, notice=None)
+            if refine:
+                self._start(iid, self._make, before=mark)
+            elif auto:
+                kind = body.get("kind")
+                note = {"photo": "이미지는 생성 사진으로", "illustration": "이미지는 삽화로"}.get(kind) if form == "image" else None
+                self._start(iid, self._run, form, note, user_lines, before=mark)
+            else:
+                self._start(iid, self._build_manual, {**body, "form": form, "prompt": prompt, "lines": lines}, before=mark)
             return it
         if action == "reject" and it["status"] == "suggested":
             self._set(it, status="rejected")
@@ -1291,17 +1390,6 @@ Duration D = {dur:.2f} seconds.
                 self.data["items"] = [o for o in self.data["items"] if o["id"] != iid]
                 self._save()
             return {"deleted": iid}
-        elif action == "regenerate":
-            note = (body.get("note") or "").strip() or None
-            threading.Thread(target=self._run, args=(iid, it["form"] if body.get("keep_form", True) else None, note),
-                             daemon=True).start()
-        elif action == "form":
-            form = body.get("form")
-            if form not in FORMS:
-                raise ValueError("알 수 없는 형태입니다")
-            if form != it.get("form"):  # 다른 형태에 맞춰 고친 자리였으니 새 형태 규칙(이미지 5초)을 다시 적용
-                self._set(it, span_user=False)
-            threading.Thread(target=self._run, args=(iid, form), daemon=True).start()
         elif action == "choose":
             if it["form"] != "image":
                 raise ValueError("이미지 인서트만 후보를 고를 수 있습니다")
@@ -1314,15 +1402,16 @@ Duration D = {dur:.2f} seconds.
             dec = dict(it["decision"] or {}, lines=lines)
             if "source" in body:
                 dec["source"] = str(body["source"])
-            if "layout" in body and it["form"] == "text":
-                dec["layout"] = body["layout"]
+            if body.get("layout") in self.TEXT_LAYOUTS and it["form"] == "text":
+                if body["layout"] != layout_key(dec):  # 고른 게 지금과 같으면 층은 건드리지 않는다
+                    dec["layout"], dec["layer"] = self.TEXT_LAYOUTS[body["layout"]]
             self._set(it, decision=dec)
             if it["form"] == "text":
                 name = f"{it['id']}_text_{int(time.time())}.png"
                 render_text(dec["layout"], lines, dec.get("source", ""), dec.get("layer"), self.data.get("styles")).save(self.dir / name)
                 self._set(it, files=[name], status="ready" if it["status"] != "approved" else "approved",
                           font_fallback=_fallback_labels(dec["layout"]), error=None, error_info=None)  # 오류였던 글자도 반영으로 복구
-            elif it["form"] == "image" and it["files"]:
+            elif it["form"] in ("image", "asset") and it["files"]:
                 overlay = self._render_overlay(it)
                 self._set(it, files=[it["files"][0]] + ([overlay] if overlay else []))
         else:
@@ -1579,6 +1668,14 @@ def _find_anchor(ws: list[dict], anchor: str) -> tuple[int, int]:
 def _clamp_pct(v) -> float:
     """효과음 크기(원본 말소리 대비 %) - 5~200. 0이면 효과음을 빼는 게 맞다."""
     return round(max(5.0, min(200.0, float(v))), 1)
+
+
+def layout_key(dec: dict | None) -> str:
+    """결정 → 화면의 글자 레이아웃 이름 (InsertStore.TEXT_LAYOUTS의 키). 구조 층 top은 섹션 바."""
+    dec = dec or {}
+    if dec.get("layout") == "top":
+        return "section" if dec.get("layer") == "구조" else "top"
+    return dec.get("layout") or "top"
 
 
 def style_key(layout: str, layer: str | None = None) -> str:

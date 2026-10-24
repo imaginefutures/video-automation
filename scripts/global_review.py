@@ -32,8 +32,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+import claude_cli
 from common import (load_env, video_dir, edit_dir, load_transcript, words_only, write_json,
-                    trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs, log_llm_usage)
+                    trace_to_ng_indices, apply_flag_to_ng, log_llm_usage)
 
 PD_MODEL = "claude-opus-5-5"
 VIEWER_MODEL = "claude-fable-5-1"
@@ -165,11 +166,9 @@ missed_cut으로 다시 보고하지 마라** - 이미 처리 중이다.
 
 
 def pd_review(pd_view: str, folder: Path) -> list[PDFinding]:
-    import anthropic
-    client = anthropic.Anthropic()
-    resp = client.messages.parse(model=PD_MODEL, max_tokens=6000, system=PD_SYSTEM,
+    resp = claude_cli.parse(model=PD_MODEL, max_tokens=6000, system=PD_SYSTEM,
                                  messages=[{"role": "user", "content": pd_view}],
-                                 output_format=PDReview, **thinking_kwargs(PD_MODEL))
+                                 output_format=PDReview, effort="low")
     log_llm_usage(folder, "global_review_pd", PD_MODEL, resp.usage)
     return resp.parsed_output.findings
 
@@ -209,11 +208,9 @@ def recheck_repetitions(words: list[dict], repetition_vfs: list["ViewerFinding"]
         seg_ranges.append((seg["wi_start"], seg["wi_end"]))
     if not blocks:
         return []
-    import anthropic
-    client = anthropic.Anthropic()
-    resp = client.messages.parse(model=PD_MODEL, max_tokens=3000, system=REPETITION_RECHECK_SYSTEM,
+    resp = claude_cli.parse(model=PD_MODEL, max_tokens=3000, system=REPETITION_RECHECK_SYSTEM,
                                  messages=[{"role": "user", "content": "\n\n".join(blocks)}],
-                                 output_format=PDReview, **thinking_kwargs(PD_MODEL))
+                                 output_format=PDReview, effort="low")
     log_llm_usage(folder, "global_review_repetition_recheck", PD_MODEL, resp.usage)
     # 안전망: 10-01 BS167 실측 - "구간 그대로 채워라"는 예전 지시가 92단어짜리 세그먼트 전체를
     # 삭제시켜 정밀도를 0.70대->0.54로 떨어뜨린 실제 버그였다. 프롬프트를 고쳤어도(위) 모델이
@@ -266,19 +263,17 @@ quote(짧은 인용), reason(한 문장), severity. 마지막에 overall(flow 1-
 
 
 def viewer_review(viewer_view: str, folder: Path) -> tuple[ViewerReview, str]:
-    import anthropic
-    client = anthropic.Anthropic()
     model = VIEWER_MODEL
     try:
-        resp = client.messages.parse(model=model, max_tokens=4000, system=VIEWER_SYSTEM,
+        resp = claude_cli.parse(model=model, max_tokens=4000, system=VIEWER_SYSTEM,
                                      messages=[{"role": "user", "content": viewer_view}],
-                                     output_format=ViewerReview, **thinking_kwargs(model))
+                                     output_format=ViewerReview, effort="low")
     except Exception as e:
         print(f"  {VIEWER_MODEL} 호출 실패({e}) - {VIEWER_FALLBACK_MODEL}로 대체")
         model = VIEWER_FALLBACK_MODEL
-        resp = client.messages.parse(model=model, max_tokens=4000, system=VIEWER_SYSTEM,
+        resp = claude_cli.parse(model=model, max_tokens=4000, system=VIEWER_SYSTEM,
                                      messages=[{"role": "user", "content": viewer_view}],
-                                     output_format=ViewerReview, thinking={"type": "disabled"})
+                                     output_format=ViewerReview, effort="low")
     log_llm_usage(folder, "global_review_viewer", model, resp.usage)
     return resp.parsed_output, model
 

@@ -44,12 +44,12 @@ Usage:
 from __future__ import annotations
 import argparse
 import json
-import os
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
 
+import claude_cli
 from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, log_llm_usage
 from audio_map import load_audio_map, true_onset, min_energy_in
 
@@ -204,17 +204,15 @@ def build_gaps(words: list[dict], amap: dict | None = None) -> list[dict]:
 
 
 def classify_with_llm(gaps: list[dict], folder: Path) -> dict[int, str]:
-    import anthropic
-    client = anthropic.Anthropic()
     labels: dict[int, str] = {}
     chunk = 120
     for k in range(0, len(gaps), chunk):
         part = gaps[k:k + chunk]
         lines = [f"[gap {g['id']}] ({g['duration']:.2f}s)\n  앞: …{g['before']}\n  뒤: {g['after']}…" for g in part]
-        resp = client.messages.parse(
+        resp = claude_cli.parse(
             model="claude-haiku-4-5-20251001", max_tokens=8000, system=SYSTEM,
             messages=[{"role": "user", "content": "\n\n".join(lines)}], output_format=GapLabels,
-            thinking={"type": "disabled"})
+            effort="low")
         log_llm_usage(folder, "plan_pauses", "claude-haiku-4-5-20251001", resp.usage)
         for lab in resp.parsed_output.labels:
             labels[lab.gap_id] = lab.style
@@ -247,11 +245,11 @@ def plan(folder: Path, use_llm: bool = True) -> Path:
     todo = [g for g in need if g["id"] not in labels]
     if use_llm and todo:
         load_env()
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if claude_cli.available():
             print(f"classifying {len(todo)} gaps with claude-haiku-4-5 ({len(need) - len(todo)} reused)...")
             labels.update(classify_with_llm(todo, folder))
         else:
-            print("ANTHROPIC_API_KEY not set - using conservative fallback labels")
+            print("Claude Code not installed - using conservative fallback labels")
 
     targets = {k: v["target"] for k, v in PRESETS.items()}
     for g in gaps:

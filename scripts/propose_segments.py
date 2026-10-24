@@ -17,7 +17,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from common import load_env, edit_dir, write_json, thinking_kwargs, log_llm_usage
+import claude_cli
+from common import load_env, edit_dir, write_json, log_llm_usage
 from split_sentences import load_sentences
 
 MAKER_MODEL = "claude-opus-5-5"   # 전체 강의를 한 번에 읽고 구조를 잡는 판단 - detect_regions.py와 같은 급
@@ -125,14 +126,12 @@ def build_doc(sents: list[dict], duration: float, lo: float, hi: float) -> str:
 
 
 def ask_llm(folder: Path, doc: str, n_sents: int) -> list[SegmentPlan] | None:
-    import anthropic
-    client = anthropic.Anthropic()
     msg = doc
     for attempt in range(2):
         try:
-            resp = client.messages.parse(model=MAKER_MODEL, max_tokens=16000, system=SYSTEM,
+            resp = claude_cli.parse(model=MAKER_MODEL, max_tokens=16000, system=SYSTEM,
                                          messages=[{"role": "user", "content": msg}],
-                                         output_format=Proposal, **thinking_kwargs(MAKER_MODEL, effort="high"))
+                                         output_format=Proposal, effort="high")
         except Exception as e:  # noqa: BLE001 - 어떤 실패든 결정론적 분할로 넘어간다
             print(f"LLM 호출 실패: {e}")
             return None
@@ -178,13 +177,12 @@ TITLE_SYSTEM = """너는 강의 영상 편집자다. 긴 강의를 여러 편으
 
 def retitle(folder: Path, seg_texts: list[str]) -> list[str]:
     """분할 화면의 "제목 자동 작성" - 사용자가 편집을 끝낸 경계·대본 기준으로 모든 편의 제목을 다시 짓는다."""
-    import anthropic
     load_env()
     doc = "\n\n".join(f"=== {n}편 ===\n{t}" for n, t in enumerate(seg_texts, 1))
-    resp = anthropic.Anthropic().messages.parse(
+    resp = claude_cli.parse(
         model=TITLE_MODEL, max_tokens=8000, system=TITLE_SYSTEM,
         messages=[{"role": "user", "content": doc}], output_format=Titles,
-        **thinking_kwargs(TITLE_MODEL, effort="low"))
+        effort="low")
     log_llm_usage(folder, "retitle", TITLE_MODEL, resp.usage)
     by_n = {t.n: t.title.strip().strip('"\'') for t in resp.parsed_output.titles}
     if len(by_n) != len(seg_texts) or any(not by_n.get(n) for n in range(1, len(seg_texts) + 1)):

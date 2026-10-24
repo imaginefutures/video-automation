@@ -30,6 +30,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+import claude_cli
 from common import load_env, video_dir, edit_dir, words_only, load_transcript
 import fewshot
 
@@ -129,11 +130,9 @@ def build_prompt(evidence: list[dict]) -> str:
 
 
 def learn(evidence: list[dict]) -> SessionLearning:
-    import anthropic
-    client = anthropic.Anthropic()
-    resp = client.messages.parse(model=MODEL, max_tokens=3000, system=SYSTEM,
+    resp = claude_cli.parse(model=MODEL, max_tokens=3000, system=SYSTEM,
                                  messages=[{"role": "user", "content": build_prompt(evidence)}],
-                                 output_format=SessionLearning, thinking={"type": "disabled"})
+                                 output_format=SessionLearning, effort="low")
     return resp.parsed_output
 
 

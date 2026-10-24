@@ -149,7 +149,7 @@ def step(title: str, cmd: list[str], folder: Path | None = None, *, llm_fallback
         subprocess.run([sys.executable, *cmd], check=True, cwd=HERE.parent)
     except subprocess.CalledProcessError as e:
         if not llm_fallback or "--no-llm" in cmd:
-            print(f"\n[실패] {title} - 위 에러 메시지가 원인입니다(API 키 만료, 네트워크 오류, "
+            print(f"\n[실패] {title} - 위 에러 메시지가 원인입니다(Claude Code 로그인·사용량 한도, ElevenLabs 키, 네트워크 오류, "
                   f"ffmpeg 문제가 흔함). 각 단계는 결과 파일로 캐시되므로, 원인을 해결한 뒤 "
                   f"같은 명령으로 다시 실행하면 이 단계부터 이어서 진행됩니다.")
             if folder is not None:
@@ -405,7 +405,7 @@ def main() -> None:
         print("NG 탐지: cached")
 
     if not (edit / "pauses.json").exists():
-        step("무음 리듬", [str(HERE / "plan_pauses.py"), str(folder), *(["--no-llm"] if args.no_llm else [])], folder)
+        step("무음 리듬", [str(HERE / "plan_pauses.py"), str(folder), *(["--no-llm"] if args.no_llm else [])], folder, llm_fallback=True)
     else:
         print("5/7 pauses: cached")
 

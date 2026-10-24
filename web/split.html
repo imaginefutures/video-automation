@@ -175,6 +175,9 @@
   .intro-cand .badge { position: absolute; left: 8px; top: 8px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; border-radius: var(--r-full); padding: 1px 9px; }
   .intro-warn { font-size: 12.5px; color: var(--proposal-line); margin: 8px 0 0; }
   .intro-cell { display: flex; flex-direction: column; gap: 4px; }
+  .intro-fix { display: flex; gap: 6px; }
+  .intro-fix input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: inherit; }
+  .intro-fix button { font-size: 12.5px; padding: 5px 10px; white-space: nowrap; }
   .intro-cell .cap { font-size: 12px; color: var(--muted); line-height: 1.4; }
   .intro-core { font-size: 13px; margin: 2px 0 0; }
   .intro-core b { color: var(--muted); font-weight: 600; margin-right: 6px; }
@@ -593,7 +596,10 @@ $('#btnTitles').onclick = async () => {
 
 // ------------------------------------------------------------------ 인트로 이미지 (split_intro.py)
 const padIntros = (a, n) => { a = [...(a || [])]; while (a.length < n) a.push(null); return a; };
-let introBusy = null;   // 만드는 중인 편 번호
+const introBusy = new Set();   // 만드는 중인 편 번호들 - 편마다 따로 동시에 만든다
+const introFix = {};           // 그림별로 적어 둔 고칠 내용
+const introHints = {};         // 편별로 적어 둔 추가 지시 (창을 닫았다 열어도 남는다)
+let introOpenK = null;         // 지금 인트로 창이 보여주는 편 (생성이 끝났을 때 그 창만 다시 그린다)
 function openIntro(k) {
   const g = segs[k], key = `${g.start_sent}-${g.end_sent}`, cand = S.intro_candidates[key];
   const cur = dec.intros[k], title = dec.titles[k] || '';
@@ -602,41 +608,68 @@ function openIntro(k) {
   const caps = {}; if (cand) cand.files.forEach((f, i) => { caps[f] = (cand.captions || [])[i] || ''; });
   const grid = files.map(f => `<div class="intro-cell"><button class="intro-cand ${f === cur ? 'on' : ''}" data-f="${esc(f)}">
       <img src="/api/intro/img?f=${encodeURIComponent(f)}" alt="인트로 후보">${f === cur ? '<span class="badge">선택됨</span>' : ''}</button>
-      ${caps[f] ? `<span class="cap">${esc(caps[f])}</span>` : ''}</div>`).join('');
+      ${caps[f] ? `<span class="cap">${esc(caps[f])}</span>` : ''}
+      <form class="intro-fix" data-f="${esc(f)}"><input maxlength="500" placeholder="이 그림에서 고칠 것" value="${esc(introFix[f] || '')}" ${introBusy.has(k) ? 'disabled' : ''}>
+        <button class="btn-secondary" ${introBusy.has(k) ? 'disabled' : ''}>고치기</button></form></div>`).join('');
   const help = `편 앞에 ${S.intro_sec}초 붙습니다 (검은 화면에서 페이드 인·아웃). 이미지를 누르면 고릅니다 - 제목 글자가 정확한지도 확인하세요. 한 번 만들 때 약 400원 (Nano Banana 2 이미지 4장).`;
-  const busy = introBusy === k;
+  const busy = introBusy.has(k);
   showModal(`<h2>${k + 1}편 인트로<span class="info" tabindex="0" title="${esc(help)}" aria-label="${esc(help)}">i</span></h2>
     ${cand && cand.core ? `<p class="intro-core"><b>핵심</b>${esc(cand.core)}</p>` : ''}
     ${files.length ? `<div class="intro-grid">${grid}</div>` : '<p class="note">아직 만든 이미지가 없습니다.</p>'}
     ${cand && cand.title !== title ? `<p class="intro-warn">이 이미지들은 예전 제목 "${esc(cand.title)}"으로 만들었습니다 - 다시 만들면 지금 제목이 들어갑니다</p>` : ''}
     ${!title ? '<p class="intro-warn">편 제목이 없습니다 - 제목을 먼저 정해야 인트로를 만들 수 있습니다</p>' : ''}
     ${busy ? '<p class="note" style="margin-top:12px">만드는 중… 30초쯤 (창을 닫아도 계속됩니다)</p>' : ''}
+    <textarea id="mHint" rows="2" maxlength="500" placeholder="추가 지시 (선택)" ${busy ? 'disabled' : ''} style="width:100%;margin-top:12px;box-sizing:border-box;font:inherit;padding:8px;resize:vertical">${esc(introHints[k] || '')}</textarea>
     <div class="modal-actions">
-      <button class="primary" id="mGen" ${busy || introBusy != null || !title ? 'disabled' : ''}>${busy ? '만드는 중…' : files.length ? '4장 다시 만들기' : '4장 만들기'}</button>
+      <button class="primary" id="mGen" ${busy || !title ? 'disabled' : ''}>${busy ? '만드는 중…' : files.length ? '4장 다시 만들기' : '4장 만들기'}</button>
       ${cur ? '<button class="btn-secondary" id="mNone">인트로 빼기</button>' : ''}
       <button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button>
     </div>`);
+  introOpenK = k;
   $('#mClose').onclick = hideModal;
   if ($('#mNone')) $('#mNone').onclick = () => { setIntro(k, null); hideModal(); toast(`${k + 1}편 인트로를 뺐습니다`); };
   $('#modalBox').querySelectorAll('.intro-cand').forEach(b => b.onclick = async () => { await setIntro(k, b.dataset.f); openIntro(k); });
+  $('#modalBox').querySelectorAll('.intro-fix').forEach(f => {
+    const input = f.querySelector('input');
+    input.oninput = () => { introFix[f.dataset.f] = input.value; };
+    f.onsubmit = e => { e.preventDefault(); if (input.value.trim()) editIntro(k, f.dataset.f, input.value.trim()); };
+  });
+  $('#mHint').oninput = e => { introHints[k] = e.target.value; };
   $('#mGen').onclick = () => makeIntro(k);
 }
 async function setIntro(k, f) {
   const n = clone(dec); n.intros = padIntros(n.intros, segs.length); n.intros[k] = f;
   await commit(n, f ? 'intro_pick' : 'intro_none');
 }
-async function makeIntro(k) {
-  introBusy = k; openIntro(k);
+async function editIntro(k, file, instruction) {
+  introBusy.add(k); openIntro(k);
   try {
-    const r = await fetch('/api/intro/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, dec }) });
+    const r = await fetch('/api/intro/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, dec, file, instruction }) });
+    const data = await r.json();
+    if (!r.ok) { toast(data.error || '인트로를 고치지 못했습니다'); return; }
+    S.intro_candidates[data.key] = data;
+    delete introFix[file];
+    if (data.failed) toast(`${data.failed}장은 실패해서 ${data.added}장만 만들었습니다`);
+  } catch (e) { toast('서버에 연결할 수 없습니다'); }
+  finally {
+    introBusy.delete(k);
+    if ($('#modal').classList.contains('show') && introOpenK === k) openIntro(k);
+    else render();
+  }
+}
+async function makeIntro(k) {
+  introBusy.add(k); openIntro(k);
+  try {
+    const r = await fetch('/api/intro/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, dec, hint: introHints[k] || '' }) });
     const data = await r.json();
     if (!r.ok) { toast(data.error || '인트로를 만들지 못했습니다'); return; }
     S.intro_candidates[data.key] = data;
     if (data.failed) toast(`${data.failed}장은 실패해서 ${data.files.length}장만 만들었습니다`);
   } catch (e) { toast('서버에 연결할 수 없습니다'); }
   finally {
-    introBusy = null;
-    if ($('#modal').classList.contains('show') && $('#modalBox h2')?.textContent === `${k + 1}편 인트로`) openIntro(k);
+    introBusy.delete(k);
+    if ($('#modal').classList.contains('show') && introOpenK === k) openIntro(k);
+    else render();
   }
 }
 
@@ -651,8 +684,8 @@ function renderExportNote() {
   const chosen = segs.filter((g, k) => dec.intros[k]).length;
   $('#brandNote').innerHTML = `인트로 ${chosen}/${n}편 · 아웃트로 ${S.outro ? `${S.outro_sec}초` : `없음 (<a href="http://127.0.0.1:${S.home_port || 8764}/#assets" target="_blank">홈 공통 자산</a>에서 올리기)`}`;
 }
-function showModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.add('show'); }
-function hideModal() { $('#modal').classList.remove('show'); }
+function showModal(html) { introOpenK = null; $('#modalBox').innerHTML = html; $('#modal').classList.add('show'); }
+function hideModal() { introOpenK = null; $('#modal').classList.remove('show'); }
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') hideModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#modal').classList.contains('show')) { e.stopImmediatePropagation(); hideModal(); } }, true);
 
@@ -679,25 +712,32 @@ function wireResults() {
 }
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+let exportDismissed = false, exportTimer = null;  // 진행 중 닫기 - 폴링이 0.8초마다 모달을 다시 열지 않게
 async function startExport() {
+  exportDismissed = false;
   const r = await fetch('/api/export', { method: 'POST' });
   const data = await r.json();
   if (!r.ok && !String(data.error || '').includes('이미')) { toast(data.error || '내보내기를 시작하지 못했습니다'); return; }
   S.exporting = true; renderExportNote(); pollExport();
 }
 async function pollExport() {
+  clearTimeout(exportTimer);
   let st;
-  try { st = await (await fetch('/api/export/status')).json(); } catch (e) { setTimeout(pollExport, 1500); return; }
+  try { st = await (await fetch('/api/export/status')).json(); } catch (e) { exportTimer = setTimeout(pollExport, 1500); return; }
   if (st.running) {
+    if (exportDismissed) { exportTimer = setTimeout(pollExport, 800); return; }
     const pct = st.n ? Math.round((st.k / st.n) * 100) : 0;
     showModal(`<h2>내보내는 중<span class="info" tabindex="0" title="편마다 영상을 프레임 단위로 잘라 다시 인코딩합니다. 창을 닫아도 계속 진행됩니다.">i</span></h2>
       <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div style="font-size:13px"><span class="mono">${Math.min(st.k + 1, st.n)}/${st.n}</span> ${esc(st.title)}</div>
-      <div class="modal-actions"><button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button></div>`);
-    $('#mClose').onclick = hideModal;
-    setTimeout(pollExport, 800); return;
+      <div class="modal-actions"><button class="btn-secondary" id="mCancel">중단</button><button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button></div>`);
+    $('#mCancel').onclick = async () => { $('#mCancel').disabled = true; $('#mCancel').textContent = '중단하는 중…'; await fetch('/api/export/cancel', { method: 'POST' }); };
+    $('#mClose').onclick = () => { exportDismissed = true; hideModal(); };
+    exportTimer = setTimeout(pollExport, 800); return;
   }
   S.exporting = false; S.export = st.export; renderExportNote();
+  if (st.cancelled) { exportDismissed = false; hideModal(); toast('내보내기를 중단했습니다'); return; }
+  if (exportDismissed) { exportDismissed = false; toast(st.error ? '내보내지 못했습니다' : '내보내기를 마쳤습니다'); return; }
   if (st.error) {
     showModal(`<h2>내보내지 못했습니다</h2><div class="err-box">${esc(st.error)}</div>
       <div class="modal-actions"><button class="btn-secondary" id="mAgain">다시 시도</button><button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button></div>`);
@@ -706,8 +746,11 @@ async function pollExport() {
   if (st.export) { showModal(resultsHtml(st.export)); wireResults(); }
 }
 $('#btnExport').onclick = () => {
-  if (S.exporting) return pollExport();
+  if (S.exporting) { exportDismissed = false; return pollExport(); }
   if (S.export && !S.export.stale) { showModal(resultsHtml(S.export)); wireResults(); return; }
+  const missing = segs.map((g, k) => k + 1).filter(k => !dec.intros[k - 1]);
+  if (missing.length) { showModal(`<h2>인트로 이미지가 없습니다</h2><p class="note">${missing.join(', ')}편에 인트로를 먼저 만들어주세요. 없으면 내보낼 수 없습니다.</p>
+    <div class="modal-actions"><button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button></div>`); $('#mClose').onclick = hideModal; return; }
   startExport();
 };
 

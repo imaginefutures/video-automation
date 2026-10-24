@@ -29,8 +29,8 @@ from common import PROJECT_ROOT, edit_dir, load_env, print_client_error, source_
 from audio_map import load_audio_map
 from propose_segments import retitle, segments_from_ends, valid_ends
 import assets_lib
-from split_export import INTRO_SEC, OUTRO_SEC, export as run_export
-from split_intro import generate as generate_intro, image_file as intro_file, load_candidates as intro_candidates
+from split_export import INTRO_SEC, OUTRO_SEC, ExportCancelled, export as run_export, intro_paths
+from split_intro import edit as edit_intro, generate as generate_intro, image_file as intro_file, load_candidates as intro_candidates
 from split_refine import load_cache as load_refined, refine_all
 from split_run import resolve_folder
 from split_sentences import load_sentences
@@ -51,6 +51,7 @@ class Project:
         self.out = folder / "out"
         self.export_lock = threading.Lock()
         self.export_job: dict = {"running": False, "k": 0, "n": 0, "title": "", "error": None}
+        self.export_cancel = threading.Event()
 
     # ------------------------------------------------------------------ 내보내기
     def export_info(self) -> dict | None:
@@ -71,6 +72,11 @@ class Project:
         with self.export_lock:
             if self.export_job["running"]:
                 raise ValueError("이미 내보내는 중입니다")
+            dec = self.decisions()
+            missing = [str(k + 1) for k, p in enumerate(intro_paths(self.folder, dec, len(dec["ends"]))) if p is None]
+            if missing:
+                raise ValueError(f"인트로 이미지가 없는 편이 있습니다 ({', '.join(missing)}편) - 인트로를 먼저 만들어주세요")
+            self.export_cancel.clear()
             self.export_job = {"running": True, "k": 0, "n": len(self.decisions()["ends"]), "title": "", "error": None}
 
         def progress(k: int, n: int, title: str) -> None:
@@ -78,8 +84,10 @@ class Project:
 
         def work() -> None:
             try:
-                run_export(self.folder, progress)
+                run_export(self.folder, progress, self.export_cancel)
                 self.log("export")
+            except ExportCancelled:
+                self.export_job["cancelled"] = True
             except Exception as e:  # noqa: BLE001 - 실패 원인을 화면에 보여준다
                 traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                 err = getattr(e, "stderr", None)
@@ -88,6 +96,9 @@ class Project:
                 self.export_job["running"] = False
 
         threading.Thread(target=work, daemon=True).start()
+
+    def cancel_export(self) -> None:
+        self.export_cancel.set()
 
     def export_status(self) -> dict:
         return {**self.export_job, "export": self.export_info()}
@@ -185,8 +196,20 @@ class Project:
         start, end = (ends[k - 1] + 1 if k else 0), ends[k]
         edits = {int(a): str(b) for a, b in (dec.get("text_edits") or {}).items()}
         text = " ".join(edits.get(i, self.sents[i]["text"]) for i in range(start, end + 1))
-        entry = generate_intro(self.folder, start, end, str(dec["titles"][k] or "").strip(), text)
+        entry = generate_intro(self.folder, start, end, str(dec["titles"][k] or "").strip(), text,
+                               str(body.get("hint") or ""))
         self.log("intro_generate")
+        return {"key": f"{start}-{end}", **entry}
+
+    def edit_intro(self, body: dict) -> dict:
+        """후보 한 장을 레퍼런스로 지시한 부분만 고친 변형을 받는다."""
+        dec, k = body["dec"], int(body["k"])
+        ends = [int(e) for e in dec["ends"]]
+        if not valid_ends(ends, len(self.sents)) or not 0 <= k < len(ends):
+            raise ValueError("편 번호가 올바르지 않습니다")
+        start, end = (ends[k - 1] + 1 if k else 0), ends[k]
+        entry = edit_intro(self.folder, start, end, str(body.get("file") or ""), str(body.get("instruction") or ""))
+        self.log("intro_edit")
         return {"key": f"{start}-{end}", **entry}
 
     def reset(self) -> None:
@@ -261,9 +284,20 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:  # noqa: BLE001 - LLM·이미지 API 실패는 화면에 그대로 알린다
                     traceback.print_exc()  # 로그 공유로 받았을 때 원인 줄까지 보이게
                     return self._json({"error": f"인트로를 만들지 못했습니다: {e}"}, 502)
+            if path == "/api/intro/edit":
+                try:
+                    return self._json(self.project.edit_intro(self._body()))
+                except ValueError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    traceback.print_exc()
+                    return self._json({"error": f"인트로를 고치지 못했습니다: {e}"}, 502)
             if path == "/api/export":
                 self.project.start_export()
                 return self._json(self.project.export_status())
+            if path == "/api/export/cancel":
+                self.project.cancel_export()
+                return self._json({"ok": True})
             if path == "/api/export/reveal":
                 subprocess.run(["open", str(self.project.out)], check=False)
                 return self._json({"ok": True})
@@ -386,7 +420,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8790)
     ap.add_argument("--no-open", action="store_true")
     args = ap.parse_args()
-    load_env()  # 제목 자동 작성(ANTHROPIC_API_KEY) - 홈 서버가 띄우면 이미 환경에 있다
+    load_env()  # Gemini 키(인트로 이미지) - 홈 서버가 띄우면 이미 환경에 있다
     serve(resolve_folder(args.folder), args.port, not args.no_open)
 
 

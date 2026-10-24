@@ -41,8 +41,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+import claude_cli
 from common import (load_env, video_dir, edit_dir, load_transcript, words_only, write_json, source_media, norm,
-                    trace_to_ng_indices, apply_flag_to_ng, thinking_kwargs, log_llm_usage)
+                    trace_to_ng_indices, apply_flag_to_ng, log_llm_usage)
 import audio_map as am
 from plan_pauses import PRESETS
 from transcribe import call_scribe
@@ -186,13 +187,13 @@ def build_judge_prompt(items: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def judge_batch(client, model: str, items: list[dict], folder: Path) -> dict[tuple[int, str], AltJudgment]:
+def judge_batch(model: str, items: list[dict], folder: Path) -> dict[tuple[int, str], AltJudgment]:
     out: dict[tuple[int, str], AltJudgment] = {}
     for k in range(0, len(items), JUDGE_BATCH):
         part = items[k:k + JUDGE_BATCH]
-        resp = client.messages.parse(model=model, max_tokens=8000, system=JUDGE_SYSTEM,
+        resp = claude_cli.parse(model=model, max_tokens=8000, system=JUDGE_SYSTEM,
                                      messages=[{"role": "user", "content": build_judge_prompt(part)}],
-                                     output_format=AltJudgments, **thinking_kwargs(model))
+                                     output_format=AltJudgments, effort="low")
         log_llm_usage(folder, "seam_refine_judge", model, resp.usage)
         for j in resp.parsed_output.judgments:
             out[(j.cut_id, j.alt)] = j
@@ -392,7 +393,6 @@ def select_alt(alts: list[dict], judgments: dict[tuple[int, str], AltJudgment], 
 
 def refine(folder: Path, max_rounds: int = 3) -> Path:
     load_env()
-    import anthropic
     import os
 
     words = words_only(load_transcript(folder))
@@ -406,7 +406,6 @@ def refine(folder: Path, max_rounds: int = 3) -> Path:
     if not amap:
         print("WARNING: no audio_map.json - boundaries fall back to the plain 15ms pad for every cut")
 
-    client = anthropic.Anthropic()
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
 
     # 이음새별 현재 상태 (라운드 사이 유지). `seen`은 02 문서 2.7절 진동 감지용 - 이 이음새가
@@ -444,7 +443,7 @@ def refine(folder: Path, max_rounds: int = 3) -> Path:
         judgments: dict[tuple[int, str], AltJudgment] = {}
         for model, items in groups.items():
             print(f"  judging {len(items)} (cut,alt) pair(s) with {model}...")
-            judgments.update(judge_batch(client, model, items, folder))
+            judgments.update(judge_batch(model, items, folder))
 
         changed = set()
         for cid in to_process:

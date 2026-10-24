@@ -45,6 +45,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+import claude_cli
 from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, norm
 
 FN_JUDGE_MODEL = "claude-sonnet-5"
@@ -225,8 +226,6 @@ def build_fn_prompt(items: list[dict]) -> str:
 
 
 def classify_fn_spans(fn_spans: list[dict], words: list[dict], opcodes, gold_fin: list[dict]) -> dict[int, FNVerdict]:
-    import anthropic
-    client = anthropic.Anthropic()
     items = []
     for i, s in enumerate(fn_spans):
         before = " ".join(w["text"] for w in words[max(0, s["wi_start"] - 10):s["wi_start"]])
@@ -237,9 +236,9 @@ def classify_fn_spans(fn_spans: list[dict], words: list[dict], opcodes, gold_fin
     out: dict[int, FNVerdict] = {}
     for k in range(0, len(items), FN_JUDGE_BATCH):
         part = items[k:k + FN_JUDGE_BATCH]
-        resp = client.messages.parse(model=FN_JUDGE_MODEL, max_tokens=6000, system=FN_JUDGE_SYSTEM,
+        resp = claude_cli.parse(model=FN_JUDGE_MODEL, max_tokens=6000, system=FN_JUDGE_SYSTEM,
                                      messages=[{"role": "user", "content": build_fn_prompt(part)}],
-                                     output_format=FNVerdicts, thinking={"type": "disabled"})
+                                     output_format=FNVerdicts, effort="low")
         for v in resp.parsed_output.verdicts:
             out[v.fn_id] = v
     return out

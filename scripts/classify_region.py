@@ -33,10 +33,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Literal, Optional
 
-import anthropic
 from pydantic import BaseModel
 
-from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, thinking_kwargs, log_llm_usage
+import claude_cli
+from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, log_llm_usage
 from prosody import load_prosody, span_evidence
 from audio_map import load_audio_map, breath_before
 import fewshot
@@ -204,21 +204,21 @@ def build_prompt(words: list[dict], region: dict, audio_evidence: str, fewshot_b
     return prompt, lo, hi
 
 
-def classify_one(client: anthropic.Anthropic, model: str, prompt: str, folder: Path) -> RegionClassification:
-    response = client.messages.parse(
+def classify_one(model: str, prompt: str, folder: Path) -> RegionClassification:
+    response = claude_cli.parse(
         model=model, max_tokens=2000, system=CASE_TAXONOMY,
         messages=[{"role": "user", "content": prompt}], output_format=RegionClassification,
-        **thinking_kwargs(model),
+        effort="low",
     )
     log_llm_usage(folder, "classify_region", model, response.usage)
     return response.parsed_output
 
 
-def classify_with_escalation(client: anthropic.Anthropic, prompt: str, folder: Path) -> tuple[RegionClassification, str]:
-    clf = classify_one(client, MODEL_STANDARD, prompt, folder)
+def classify_with_escalation(prompt: str, folder: Path) -> tuple[RegionClassification, str]:
+    clf = classify_one(MODEL_STANDARD, prompt, folder)
     needs_escalation = clf.case in ALWAYS_ESCALATE_CASES or clf.confidence < ESCALATE_CONF_BELOW
     if needs_escalation:
-        clf = classify_one(client, MODEL_ESCALATE, prompt, folder)
+        clf = classify_one(MODEL_ESCALATE, prompt, folder)
         return clf, MODEL_ESCALATE
     return clf, MODEL_STANDARD
 
@@ -310,7 +310,6 @@ def main() -> None:
 
     prosody = load_prosody(folder)
     amap = load_audio_map(folder)
-    client = anthropic.Anthropic()
     video_name = folder.name
 
     # 2026-10-01: L2 사용자 사례 few-shot을 껐다가(개인화 폐기 방침) BS167 gold 재검증에서 재현율이
@@ -343,7 +342,7 @@ def main() -> None:
 
     results: list[Optional[dict]] = [None] * len(regions)
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = {pool.submit(classify_with_escalation, client, prompt, folder): n
+        futures = {pool.submit(classify_with_escalation, prompt, folder): n
                    for n, prompt in enumerate(prompts)}
         done = 0
         for fut in as_completed(futures):

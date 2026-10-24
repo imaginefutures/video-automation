@@ -45,6 +45,7 @@ from common import (  # noqa: E402
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, VIDEO_EDIT_DIR, SPLIT_DIR,
 )
 
+import claude_cli  # noqa: E402
 import log_share  # noqa: E402
 import assets_lib  # noqa: E402
 
@@ -397,6 +398,7 @@ def create_project(title: str, content_length: int, rfile, mode: str = "cut") ->
     missing = [k["key"] for k in api_keys_status() if not k["set"] and not k["optional"]]
     if missing:
         raise ValueError(f"API 키가 없습니다 - 설정 패널에서 먼저 등록하세요 ({', '.join(missing)})")
+    claude_cli.require_login()
 
     # 10-01 추가: 설정 게이트는 클라이언트 쪽 판단(페이지 로드 시점의 /api/setup 응답)일 뿐이라,
     # 게이트를 통과한 뒤 ffmpeg가 사라지거나(드묾) API를 직접 호출하는 경우를 서버에서도 막는다 -
@@ -636,10 +638,11 @@ def create_split(title: str, content_length: int, rfile, has_srt: bool, min_min:
     if not 0 < min_min < max_min:
         raise ValueError("목표 길이가 올바르지 않습니다 - 최소가 최대보다 작아야 합니다")
     status = {k["key"]: k["set"] for k in api_keys_status()}
-    need = ["ANTHROPIC_API_KEY"] + ([] if has_srt else ["ELEVENLABS_API_KEY"])
+    need = [] if has_srt else ["ELEVENLABS_API_KEY"]
     missing = [k for k in need if not status.get(k, False)]
     if missing:
         raise ValueError(f"API 키가 없습니다 - 환경설정에서 먼저 등록하세요 ({', '.join(missing)})")
+    claude_cli.require_login()
     fstatus = ffmpeg_status()
     if not (fstatus["ffmpeg"] and fstatus["ffprobe"]):
         raise ValueError("ffmpeg/ffprobe가 설치돼 있지 않습니다 - 환경설정에서 먼저 설치하세요")
@@ -896,6 +899,23 @@ def restart_self() -> None:
     threading.Thread(target=_go, daemon=True).start()
 
 
+def shutdown_self() -> None:
+    """바탕화면 "끄기" 아이콘 - 홈 서버와 그 밑의 분할 화면 서버를 함께 끈다. 처리 중이면 거절한다(재시작과 같은 기준)."""
+    with _active_lock:
+        busy = [n for n, a in _active.items()
+                if a["proc"].poll() is None and Path(a["proc"].args[1]).name in ("run.py", "split_run.py")]
+    if busy:
+        raise ValueError(f"처리 중인 작업이 끝난 뒤 꺼주세요: {', '.join(busy)}")
+
+    def _go():
+        time.sleep(0.5)  # 응답이 화면에 닿을 시간
+        _cleanup_children()
+        print(f"== 홈 서버 끄기 {datetime.now().isoformat(timespec='seconds')}", flush=True)
+        os._exit(0)
+
+    threading.Thread(target=_go, daemon=True).start()
+
+
 def git_pull() -> dict:
     if not _pull_lock.acquire(blocking=False):
         raise ValueError("이미 업데이트가 진행 중입니다")
@@ -966,7 +986,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
             return self._json({"text": text, "videos": [p.name for p in videos], "splits": [p.name for p in splits]})
         if path == "/api/setup":
-            return self._json({"keys": api_keys_status(), **ffmpeg_status()})
+            return self._json({"keys": api_keys_status(), **ffmpeg_status(), **claude_cli.status()})
         if path == "/api/assets":  # 공통 자산 - 모든 영상이 같이 쓰는 파일 (docs/백로그/공통-자산.md)
             return self._json({"kinds": assets_view()})
         if path == "/api/assets/file":
@@ -1078,6 +1098,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **start_ffmpeg_install()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/shutdown":
+            try:
+                shutdown_self()
+                return self._json({"ok": True})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 409)
         if path == "/api/restart":
             try:
                 restart_self()

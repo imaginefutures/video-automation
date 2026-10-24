@@ -19,13 +19,15 @@ import base64
 import json
 import os
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel
 
-from common import edit_dir, load_env, log_llm_usage, thinking_kwargs, write_json
+import claude_cli
+from common import edit_dir, load_env, log_llm_usage, write_json
 
 IMAGE_MODEL = "gemini-3.1-flash-image"   # Nano Banana 2 - 1K 한 장 약 $0.067 (10-08)
 PROMPT_MODEL = "claude-opus-5-5"   # 대본을 읽고 핵심을 집어내는 판단 - sonnet은 모호한 상징(톱니·원)으로 흘렀다 (10-08)
@@ -40,6 +42,7 @@ class Scene(BaseModel):
 
 
 class Concepts(BaseModel):
+    title_promise_ko: str   # 제목이 시청자에게 약속하는 것 (예: "위험·원인·문제"인지 "방법·해법"인지) - 장면의 기준
     core_ko: str    # 이 편의 핵심 메시지 한 문장
     scenes: list[Scene]
 
@@ -66,7 +69,8 @@ BRAND_STYLE = """Fixed style for every 베싸TV title card (follow exactly):
   The illustration sits in the right half and never overlaps or crosses the title.
 - Title typography: very bold, heavy Korean sans-serif, deep violet-black #2A0F3E on the cream background, high contrast, generous letter spacing.
 - People: if a child or parent appears, show them small, from behind, from the side, or as hands only - no detailed realistic faces.
-- Mood: calm, bright, uncluttered, lots of breathing room. One clear subject, not a busy collage."""
+- Mood: calm, bright, uncluttered, lots of breathing room. One clear subject, not a busy collage.
+- Calm does not mean positive: if the scene describes a problem, risk or fading effect, draw exactly that state (no smiling success, no trophies, no happy ending)."""
 
 
 PROMPT_SYSTEM = f"""You design a short title card shown before one episode of a Korean lecture series.
@@ -74,7 +78,12 @@ Given the episode title and transcript, write {N_CANDIDATES} image-generation pr
 
 {BRAND_CONTEXT}
 
-First, read the transcript and decide:
+THE TITLE IS THE CONTRACT. The card is seen together with the title, so every picture must make the title's claim visible.
+First decide title_promise_ko: what the title promises the viewer, in Korean, one sentence. Is it a risk or warning, a cause
+("why does X disappear/fail"), a mistake, a contrast, or a method or solution? Transcripts usually spend their second half on the
+solution or the happy ending; do NOT let that pull the pictures away from what the title promises.
+
+Then read the transcript and decide:
 - core_ko: the ONE message this episode wants parents to take away, one Korean sentence
 - the most concrete, memorable material the lecturer actually uses for it: a specific experiment, a math problem,
   an everyday situation with a child, a before/after contrast
@@ -83,8 +92,15 @@ Then write {N_CANDIDATES} scenes. Every scene must depict that core message thro
 so that someone who watched the episode would say "that's the cups experiment" or "that's the 8+4 problem".
 - Prefer literal, recognizable objects and situations from the lecture over abstract symbols.
   Do NOT use vague symbols (gears, circles, cycles, arrows, puzzle pieces, lightbulbs, plain balance scales) unless the lecturer uses them
+- At least {N_CANDIDATES - 1} of the {N_CANDIDATES} scenes must show what the title promises. If the title names a risk, a cause of failure or a
+  problem, show that problem state itself (overload, a method applied blindly, an effect fading or shrinking, a gap closing, a
+  mismatch) and NOT the ideal outcome, a thriving child or a solved problem. At most one scene may show the remedy or resolution
+- Test each prompt: if the same picture would fit a title that says the OPPOSITE (e.g. "why early learning is great"), rewrite it
+- The brand rule against fear and guilt limits HOW the problem is shown (no crying children, no anxious parents), not WHETHER:
+  convey tension through objects, composition and metaphor - a tower of blocks leaning, a bar chart whose early lead shrinks to
+  nothing, one shortcut route next to a path that skips what matters - always in a calm tone
 - The {N_CANDIDATES} scenes should use DIFFERENT material or a different moment of the episode, not variations of one picture
-- For each scene, idea_ko: one short Korean line saying which part of the lecture it shows and how it relates to the core message
+- For each scene, idea_ko: one short Korean line saying which part of the lecture it shows and how it makes the title's claim visible
 - Describe only the subject and composition of the illustration. Do NOT specify art style, colors, fonts or title placement -
   a fixed brand style block is appended to every prompt. The illustration goes in the right half of the frame
 - Do NOT write the title text itself in the prompt; it is added separately
@@ -114,12 +130,12 @@ def image_file(folder: Path, name: str) -> Path:
     return p
 
 
-def scene_prompts(folder: Path, title: str, text: str) -> tuple[str, list[Scene]]:
-    import anthropic
-    resp = anthropic.Anthropic().messages.parse(
+def scene_prompts(folder: Path, title: str, text: str, hint: str = "") -> tuple[str, list[Scene]]:
+    resp = claude_cli.parse(
         model=PROMPT_MODEL, max_tokens=3000, system=PROMPT_SYSTEM,
-        messages=[{"role": "user", "content": f"제목: {title}\n\n대본:\n{text[:12000]}"}],
-        output_format=Concepts, **thinking_kwargs(PROMPT_MODEL, effort="medium"))
+        messages=[{"role": "user", "content": f"제목: {title}\n\n대본:\n{text[:12000]}"
+                   + (f"\n\n사용자 추가 지시 (장면 구상에 우선 반영): {hint}" if hint else "")}],
+        output_format=Concepts, effort="medium")
     log_llm_usage(folder, "split_intro", PROMPT_MODEL, resp.usage)
     out = resp.parsed_output
     scenes = [sc for sc in out.scenes if sc.prompt.strip()][:N_CANDIDATES]
@@ -129,11 +145,24 @@ def scene_prompts(folder: Path, title: str, text: str) -> tuple[str, list[Scene]
 
 
 def draw(scene: str, title: str) -> tuple[bytes, str]:
-    import requests
     instr = (f"{scene}\n\nRender this Korean title text exactly once, large and bold, clearly legible, without quotation marks: \"{title}\". "
              "Spell every Korean character exactly as given. No other text anywhere in the image (no labels, signs, or writing on objects), no watermark, no logo."
              f"\n\n{BRAND_STYLE}")
-    body = {"contents": [{"parts": [{"text": instr}]}],
+    return _post_image([{"text": instr}])
+
+
+def redraw(ref: bytes, ref_ext: str, instruction: str) -> tuple[bytes, str]:
+    """고른 그림 한 장을 레퍼런스로 보내 지시한 부분만 고친 변형을 받는다 (Gemini 이미지 편집)."""
+    instr = ("Edit the attached image. Change only this, keep everything else exactly the same - the layout, style, colors, "
+             f"and the Korean title text spelled exactly as it is now: {instruction}. "
+             "Do not add any other text, label, watermark or logo.")
+    mime = "image/jpeg" if ref_ext == "jpg" else "image/png"
+    return _post_image([{"inline_data": {"mime_type": mime, "data": base64.b64encode(ref).decode()}}, {"text": instr}])
+
+
+def _post_image(parts: list[dict]) -> tuple[bytes, str]:
+    import requests
+    body = {"contents": [{"parts": parts}],
             "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "16:9", "imageSize": "1K"}}}
     r = requests.post(GEMINI_URL, headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]}, json=body, timeout=120)
     if r.status_code == 402:
@@ -149,14 +178,17 @@ def draw(scene: str, title: str) -> tuple[bytes, str]:
     raise RuntimeError("이미지가 응답에 없습니다 (안전 필터에 걸렸을 수 있습니다)")
 
 
-def generate(folder: Path, start_sent: int, end_sent: int, title: str, text: str) -> dict:
+_cand_lock = threading.Lock()
+
+
+def generate(folder: Path, start_sent: int, end_sent: int, title: str, text: str, hint: str = "") -> dict:
     """후보 N장을 만들어 candidates.json에 기록하고 그 항목을 돌려준다. 일부만 실패하면 성공한 것만."""
     load_env()
     if not os.environ.get("GEMINI_API_KEY"):
         raise ValueError("GEMINI_API_KEY가 없습니다 - 홈 화면 환경설정에서 등록하세요")
     if not title.strip():
         raise ValueError("편 제목을 먼저 정하세요 - 인트로에 제목이 들어갑니다")
-    core, scenes = scene_prompts(folder, title, text)
+    core, scenes = scene_prompts(folder, title, text, hint.strip()[:500])
     with ThreadPoolExecutor(len(scenes)) as pool:
         results = list(pool.map(lambda sc: _try(draw, sc.prompt, title), scenes))
     out_dir = edit_dir(folder) / "intros"
@@ -176,10 +208,52 @@ def generate(folder: Path, start_sent: int, end_sent: int, title: str, text: str
         raise RuntimeError(errors[0] if errors else "이미지를 만들지 못했습니다")
     entry = {"title": title, "files": files, "captions": captions, "core": core, "at": datetime.now().isoformat(timespec="seconds"),
              "model": IMAGE_MODEL, "failed": len(errors)}
-    allc = load_candidates(folder)
-    allc[range_key(start_sent, end_sent)] = entry
-    write_json(candidates_path(folder), allc)
+    with _cand_lock:  # 여러 편을 동시에 만들 때 읽고-쓰는 사이에 서로의 항목을 덮어쓰지 않게
+        allc = load_candidates(folder)
+        allc[range_key(start_sent, end_sent)] = entry
+        write_json(candidates_path(folder), allc)
     return entry
+
+
+N_EDITS = 2   # 고치기 한 번에 받는 변형 수 - 말이 안 먹힐 때를 대비해 한 장보다 두 장
+
+
+def edit(folder: Path, start_sent: int, end_sent: int, src: str, instruction: str) -> dict:
+    """후보 한 장(src)을 레퍼런스로 지시대로 고친 변형 N_EDITS장을 같은 편 후보에 덧붙이고 그 항목을 돌려준다."""
+    load_env()
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise ValueError("GEMINI_API_KEY가 없습니다 - 홈 화면 환경설정에서 등록하세요")
+    instruction = instruction.strip()[:500]
+    if not instruction:
+        raise ValueError("고칠 내용을 적어주세요")
+    ref_path = image_file(folder, src)
+    ref, ref_ext = ref_path.read_bytes(), ref_path.suffix[1:]
+    key = range_key(start_sent, end_sent)
+    if src not in load_candidates(folder).get(key, {}).get("files", []):
+        raise ValueError("이 편의 후보가 아닙니다 - 새로 만든 뒤 고쳐주세요")
+    with ThreadPoolExecutor(N_EDITS) as pool:
+        results = list(pool.map(lambda _: _try(redraw, ref, ref_ext, instruction), range(N_EDITS)))
+    out_dir = edit_dir(folder) / "intros"
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + os.urandom(3).hex()
+    files, errors = [], []
+    for i, res in enumerate(results):
+        if isinstance(res, Exception):
+            errors.append(str(res))
+            continue
+        data, ext = res
+        name = f"{stamp}-{i}.{ext}"
+        (out_dir / name).write_bytes(data)
+        files.append(name)
+    if not files:
+        raise RuntimeError(errors[0] if errors else "이미지를 만들지 못했습니다")
+    with _cand_lock:
+        allc = load_candidates(folder)
+        entry = allc[key]
+        entry["files"] += files
+        entry["captions"] = list(entry.get("captions") or []) + [f"고침: {instruction}"] * len(files)
+        entry["failed"] = len(errors)
+        write_json(candidates_path(folder), allc)
+    return {**entry, "added": len(files)}
 
 
 def _try(fn, *args):

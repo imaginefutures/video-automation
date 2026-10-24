@@ -15,7 +15,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from common import load_env, edit_dir, write_json, thinking_kwargs, log_llm_usage
+import claude_cli
+from common import load_env, edit_dir, write_json, log_llm_usage
 from split_sentences import load_sentences
 
 # propose_segments.MAKER_MODEL(opus)과 다른 모델. seam_refine.JUDGE_FOR를 가져다 쓰지 않는 건 분할이
@@ -75,13 +76,11 @@ def check(folder: Path) -> Path:
     data = json.loads(path.read_text())
     segs, sents = data["segments"], load_sentences(folder)["sentences"]
 
-    import anthropic
-    client = anthropic.Anthropic()
     print(f"완결성 검사: {len(segs)}편 ({JUDGE_MODEL})")
     try:
-        resp = client.messages.parse(model=JUDGE_MODEL, max_tokens=16000, system=SYSTEM,
+        resp = claude_cli.parse(model=JUDGE_MODEL, max_tokens=16000, system=SYSTEM,
                                      messages=[{"role": "user", "content": build_doc(segs, sents)}],
-                                     output_format=Checks, **thinking_kwargs(JUDGE_MODEL, effort="medium"))
+                                     output_format=Checks, effort="medium")
     except Exception as e:  # noqa: BLE001 - 검사는 보조 정보라 실패해도 분할 화면은 연다
         print(f"완결성 검사 실패 - 경고 없이 진행: {e}")
         return path

@@ -1739,7 +1739,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-open", action="store_true")
     args = ap.parse_args()
-    load_env()  # ANTHROPIC_API_KEY for the pattern-suggestion and search endpoints (12장)
+    load_env()  # ELEVENLABS·GEMINI 키 (Claude는 claude_cli가 Claude Code 로그인으로 부른다)
     serve(video_dir(args.folder), args.port, not args.no_open)
 
 

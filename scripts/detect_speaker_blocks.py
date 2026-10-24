@@ -23,12 +23,12 @@ Usage:
 """
 from __future__ import annotations
 import argparse
-import os
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
 
+import claude_cli
 from common import load_env, video_dir, edit_dir, load_transcript, words_only, write_json, log_llm_usage
 
 MIN_LINES = 3            # a block is a back-and-forth: at least 3 lines, 2 speaker switches
@@ -146,16 +146,14 @@ def label_with_llm(primary: str, block: dict, after_lines: list[dict], folder: P
     """`after_lines`: the lines right after the block, which stay in the cut. The real final
     take is often a long monologue line that falls OUTSIDE the block (too long to be
     "dialogue"); without seeing it the model promotes the last in-block attempt to FINAL."""
-    import anthropic
-    client = anthropic.Anthropic()
     names = {spk: f"화자{chr(65 + i)}" for i, spk in enumerate(block["speakers"])}
     body = "\n".join(f"[line {ln['id']}] ({names[ln['speaker']]}) {ln['text']}" for ln in block["lines"])
     if after_lines:
         body += "\n\n[블록 이후 — 이미 유지되는 부분, 분류 대상 아님]\n" + "\n".join(
             f"({names.get(ln['speaker'], '화자?')}) {ln['text']}" for ln in after_lines)
-    resp = client.messages.parse(model="claude-sonnet-5", max_tokens=4000, system=SYSTEM,
+    resp = claude_cli.parse(model="claude-sonnet-5", max_tokens=4000, system=SYSTEM,
                                  messages=[{"role": "user", "content": body}], output_format=BlockLabels,
-                                 thinking={"type": "disabled"})
+                                 effort="low")
     log_llm_usage(folder, "detect_speaker_blocks", "claude-sonnet-5", resp.usage)
     roles = {l.line_id: l.role for l in resp.parsed_output.lines}
     for ln in block["lines"]:
@@ -172,14 +170,14 @@ def detect(folder: Path, use_llm: bool = True) -> Path:
     labeled = False
     if use_llm and blocks:
         load_env()
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if claude_cli.available():
             all_lines = split_lines(words)
             for b in blocks:
                 after = [ln for ln in all_lines if ln["start"] > b["end"]][:2]
                 label_with_llm(primary, b, after, folder)
             labeled = True
         else:
-            print("ANTHROPIC_API_KEY not set - proposing whole-block deletion without line roles")
+            print("Claude Code not installed - proposing whole-block deletion without line roles")
     if not labeled:
         for b in blocks:
             for ln in b["lines"]:
