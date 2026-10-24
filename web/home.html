@@ -795,12 +795,13 @@ function setupBodyHtml(data) {
   const claudeRow = data.claude_logged_in
     ? `<div class="row-line"><span>Claude Code</span><span class="field-chip ok">로그인됨</span></div>`
     : data.claude_installed
-      ? `<div class="row-line"><span>Claude Code 로그인 필요 - 터미널에서 <b>claude</b> 실행 후 <b>/login</b></span><span class="field-chip missing">미로그인</span></div>`
+      ? `<div class="row-line"><span>Claude Code <span class="field-chip missing">미로그인</span></span><button id="btnClaudeLogin">로그인</button></div>`
       : `<div class="row-line"><span>Claude Code 없음 - <a href="https://claude.com/claude-code" target="_blank" rel="noopener">설치</a> 후 로그인</span><span class="field-chip missing">미설치</span></div>`;
   return claudeRow + keyRows + ffmpegRow + '<div id="ffmpegInstallProgress"></div>';
 }
 function isSetupComplete(data) { return data.claude_logged_in && data.keys.every((k) => k.set || k.optional) && data.ffmpeg && data.ffprobe; }
 function wireSetupButtons(data, onSave) {
+  $('#btnClaudeLogin')?.addEventListener('click', openClaudeLogin);
   if (!(data.ffmpeg && data.ffprobe) && data.brew) $('#btnInstallFfmpeg').addEventListener('click', startFfmpegInstall);
   onSave && $('#btnSaveKeys')?.addEventListener('click', onSave);
 }
@@ -857,6 +858,62 @@ async function pollFfmpegInstall() {
   if (!st.done) return;  // 아직 시작 전
   if (st.ok) { toast('ffmpeg 설치 완료'); refreshSetupView(); }
   else { toast('설치 실패: ' + (st.error || '')); }
+}
+// Claude Code 로그인 - 서버가 `claude auth login`을 띄우면 CLI가 브라우저를 직접 열고, 거기서 로그인을
+// 마치면 코드 없이 끝난다. 브라우저가 안 열렸으면 링크로 들어가 받은 코드를 붙인다 (scripts/claude_cli.py).
+let claudeLoginPoll = null;
+let claudeLoginPrompted = false;
+function stopClaudeLoginPoll() { clearTimeout(claudeLoginPoll); claudeLoginPoll = null; }
+function closeClaudeLogin() {
+  stopClaudeLoginPoll();
+  fetch('/api/setup/claude/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  hideModal();
+}
+function openClaudeLogin() {
+  stopClaudeLoginPoll();
+  showModal(`<div class="modal-head"><h2>Claude Code 로그인</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
+    <p class="note">로그인해야 컷 판별·인서트를 쓸 수 있습니다</p>
+    <div id="claudeLoginBody"><button id="btnClaudeLoginStart" class="primary" style="width:100%">로그인</button></div>`);
+  $('#modalX').addEventListener('click', closeClaudeLogin);
+  $('#btnClaudeLoginStart').addEventListener('click', startClaudeLogin);
+  makeDraggable($('#modalPanel'), $('#modalPanel .modal-head'));
+}
+async function startClaudeLogin() {
+  $('#claudeLoginBody').innerHTML = '<p class="note">여는 중…</p>';
+  let st;
+  try { st = await (await fetch('/api/setup/claude/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json(); }
+  catch (e) { st = { ok: false, error: '서버에 연결하지 못했습니다' }; }
+  if (!st.ok) return renderClaudeLoginFail(st.error);
+  $('#claudeLoginBody').innerHTML = `
+    <p class="note">브라우저에서 로그인 중…</p>
+    ${st.url ? `<div class="row-line"><span>브라우저가 안 열렸으면</span><a href="${esc(st.url)}" target="_blank" rel="noopener">로그인 페이지 열기</a></div>` : ''}
+    <div class="field" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="claudeCode" type="text" placeholder="받은 코드 붙여넣기" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true"><button id="btnClaudeCode" style="flex:none;white-space:nowrap">확인</button></div>`;
+  $('#btnClaudeCode').addEventListener('click', sendClaudeCode);
+  $('#claudeCode').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') sendClaudeCode(); });
+  pollClaudeLogin();
+}
+async function sendClaudeCode() {
+  const code = $('#claudeCode').value.trim();
+  if (!code) return;
+  const st = await (await fetch('/api/setup/claude/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })).json();
+  if (!st.ok) return renderClaudeLoginFail(st.error);
+  $('#btnClaudeCode').disabled = true;
+}
+function renderClaudeLoginFail(err) {
+  stopClaudeLoginPoll();
+  $('#claudeLoginBody').innerHTML = `<p class="note">로그인 실패${err ? ': ' + esc(err) : ''}</p>
+    <button id="btnClaudeLoginStart" class="primary" style="width:100%">다시 시도</button>`;
+  $('#btnClaudeLoginStart').addEventListener('click', startClaudeLogin);
+}
+async function pollClaudeLogin() {
+  let st;
+  try { st = await (await fetch('/api/setup/claude/login')).json(); }
+  catch (e) { claudeLoginPoll = setTimeout(pollClaudeLogin, 1500); return; }
+  if (!$('#claudeLoginBody')) return stopClaudeLoginPoll();  // 다른 모달로 바뀌었다
+  if (st.done && st.success) { stopClaudeLoginPoll(); hideModal(); toast('로그인했습니다'); return refreshSetupView(); }
+  if (st.done) return renderClaudeLoginFail(st.error);
+  if (!st.running) return renderClaudeLoginFail();
+  claudeLoginPoll = setTimeout(pollClaudeLogin, 1500);
 }
 async function refreshSetupView() {
   const data = await (await fetch('/api/setup')).json();
@@ -928,6 +985,11 @@ async function checkSetupGate() {
   $('#mainView').style.display = 'none';
   $('#setupGate').style.display = 'block';
   renderSetupGate(data);
+  // 로그인이 안 돼 있으면 먼저 로그인부터 하도록 한 번 띄운다 (닫으면 설정의 "로그인" 버튼으로 다시)
+  if (data.claude_installed && !data.claude_logged_in && !claudeLoginPrompted && $('#modal').style.display !== 'flex') {
+    claudeLoginPrompted = true;
+    openClaudeLogin();
+  }
   try {
     const proj = await (await fetch('/api/projects')).json();
     const n = (proj.projects || []).length;
@@ -1147,6 +1209,7 @@ async function startSplitUpload() {
 async function boot() {
   const ok = await checkSetupGate();
   if (!ok) { setTimeout(boot, 2000); return; }
+  maybeShowWelcome();
   load();
   setTab(currentTab);
   setInterval(load, 8000);  // 다른 세션이 같은 영상을 검토/확정 중일 수 있어 주기적으로 갱신
@@ -1171,13 +1234,14 @@ document.addEventListener('click', (ev) => {
 // 진입 시 단축키 카드를 한 번 보여준다) - localStorage는 브라우저 프로필별이라 "한 번"은 이
 // 브라우저 기준. video-cut-help-shown(검토 화면 쪽, web/index.html)과는 별도 키를 쓴다 - 홈
 // 화면과 검토 화면을 서로 다른 진입점으로 열 수도 있어서 하나로 묶지 않는다.
-(function maybeShowWelcome() {
+// 설정(로그인·키·ffmpeg)이 끝나 대시보드가 뜬 뒤에만 - 설정 화면·로그인 팝업을 덮지 않게 (boot()가 부른다).
+function maybeShowWelcome() {
   let seen = false;
   try { seen = !!localStorage.getItem('video-cut-home-welcome-shown'); } catch (e) { /* private mode 등 */ }
   if (seen) return;
   $('#welcomeOverlay').classList.add('show');
   try { localStorage.setItem('video-cut-home-welcome-shown', '1'); } catch (e) { /* 저장 안 돼도 화면은 보여줬으니 그대로 둠 */ }
-})();
+}
 $('#welcomeDismiss').addEventListener('click', () => $('#welcomeOverlay').classList.remove('show'));
 </script>
 </body>

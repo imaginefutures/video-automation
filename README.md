@@ -11,7 +11,7 @@
 
 ## 필요한 것
 
-- **Claude Code** (이 스킬을 실행하는 에이전트) — 로그인돼 있어야 합니다. 컷 판별·인서트 등 Claude가
+- **Claude Code** (이 스킬을 실행하는 에이전트) — 로그인돼 있어야 합니다(홈 화면 환경설정에서 로그인할 수 있습니다). 컷 판별·인서트 등 Claude가
   하는 일은 전부 이 로그인(구독)으로 돌고, Claude API 키는 따로 필요 없습니다
 - **[uv](https://docs.astral.sh/uv/)** — 없으면 스킬을 아예 실행할 수 없어 자동 확인이 안 됩니다.
   미리 설치해 두세요(`curl -LsSf https://astral.sh/uv/install.sh | sh`). 나머지 파이썬

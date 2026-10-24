@@ -19,6 +19,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,7 +65,7 @@ def require_login() -> None:
     if not st["claude_installed"]:
         raise ValueError("Claude Code가 설치돼 있지 않습니다 - 설치하고 로그인한 뒤 다시 시도하세요")
     if not st["claude_logged_in"]:
-        raise ValueError("Claude Code에 로그인돼 있지 않습니다 - 터미널에서 claude를 실행해 /login 하세요")
+        raise ValueError("Claude Code에 로그인돼 있지 않습니다 - 환경설정에서 먼저 로그인하세요")
 
 
 def _system_text(system) -> str:
@@ -136,3 +138,76 @@ def call_json(system: str, prompt: str, model: str, timeout: int = 60) -> dict |
     except Exception as e:
         print(f"claude -p call failed: {e}")
         return None
+
+
+# --------------------------------------------------------------------------- 웹 로그인
+# 홈 화면 "로그인" 버튼이 `claude auth login --claudeai`를 백그라운드로 띄운다 (10-25 실측):
+#   - CLI가 브라우저를 직접 열고 localhost에서 응답을 기다린다 - 그 브라우저에서 로그인을 마치면 코드 없이 끝난다.
+#   - 브라우저가 안 열렸을 때를 위해 수동 링크를 출력하고 "Paste code here" 상태로 stdin을 기다린다 -
+#     그 링크로 받은 코드를 웹 칸에 붙이면 stdin으로 넘긴다.
+#   - 틀린 코드면 "Login failed: ..."를 찍고 종료 코드 1로 끝난다 - 다시 시작해야 한다.
+_LOGIN_URL_RE = re.compile(r"https://\S+/oauth/authorize\?\S+")
+_login_lock = threading.Lock()
+_login: dict = {"proc": None, "out": "", "url": None, "done": False, "ok": None, "error": None}
+
+
+def _login_reader(proc: subprocess.Popen) -> None:
+    for chunk in iter(lambda: proc.stdout.read1(4096), b""):
+        with _login_lock:
+            _login["out"] += chunk.decode(errors="replace")
+            if not _login["url"] and (m := _LOGIN_URL_RE.search(_login["out"])):
+                _login["url"] = m.group(0)
+    code = proc.wait()
+    ok = code == 0 and status()["claude_logged_in"]
+    with _login_lock:
+        if _login["proc"] is proc:
+            m = re.findall(r"(?:Login failed|Error)[^\n]*", _login["out"])  # 앞에 붙은 "Paste code here >" 프롬프트는 뺀다
+            _login.update(done=True, ok=ok, error=None if ok else (m[-1].strip() if m else f"종료 코드 {code}"))
+
+
+def login_start() -> dict:
+    """이미 진행 중이면 그 상태를 돌려준다 (버튼을 두 번 눌러도 브라우저 탭이 하나만 열리게)."""
+    with _login_lock:
+        p = _login["proc"]
+        if p is not None and p.poll() is None:
+            return login_state()
+    if not available():
+        raise ValueError("Claude Code가 설치돼 있지 않습니다")
+    env = {k: v for k, v in os.environ.items() if k not in _BILLING_ENV}
+    proc = subprocess.Popen([CLAUDE_BIN, "auth", "login", "--claudeai"], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+    with _login_lock:
+        _login.update(proc=proc, out="", url=None, done=False, ok=None, error=None)
+    threading.Thread(target=_login_reader, args=(proc,), daemon=True).start()
+    for _ in range(40):  # 링크가 찍힐 때까지 최대 약 4초
+        with _login_lock:
+            if _login["url"] or proc.poll() is not None:
+                break
+        time.sleep(0.1)
+    return login_state()
+
+
+def login_code(code: str) -> dict:
+    code = code.strip()
+    with _login_lock:
+        p = _login["proc"]
+        if not code or p is None or p.poll() is not None:
+            raise ValueError("진행 중인 로그인이 없습니다 - 다시 시작하세요")
+        p.stdin.write((code + "\n").encode())
+        p.stdin.flush()
+    return login_state()
+
+
+def login_cancel() -> None:
+    with _login_lock:
+        p = _login["proc"]
+        _login.update(proc=None, done=False, ok=None, error=None, url=None)
+    if p is not None and p.poll() is None:
+        p.kill()
+
+
+def login_state() -> dict:
+    with _login_lock:
+        p = _login["proc"]
+        return {"running": p is not None and p.poll() is None and not _login["done"], "url": _login["url"],
+                "done": _login["done"], "success": _login["ok"], "error": _login["error"]}

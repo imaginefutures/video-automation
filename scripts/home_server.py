@@ -945,6 +945,7 @@ def git_pull() -> dict:
 
 @atexit.register
 def _cleanup_children() -> None:
+    claude_cli.login_cancel()
     with _active_lock:
         for a in _active.values():
             if a["proc"].poll() is None:
@@ -1000,6 +1001,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_error(404)
             ctype = {".otf": "font/otf", ".ttf": "font/ttf", ".woff": "font/woff"}.get(f.suffix.lower())
             return self._file(f, ctype or mimetypes.guess_type(str(f))[0] or "application/octet-stream")
+        if path == "/api/setup/claude/login":
+            return self._json(claude_cli.login_state())
         if path == "/api/setup/ffmpeg/status":
             with _ffmpeg_install_lock:
                 return self._json(dict(_ffmpeg_install_state))
@@ -1092,7 +1095,16 @@ class Handler(BaseHTTPRequestHandler):
                 write_env_keys({k: v.strip() for k, v in pairs.items()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            return self._json({"ok": True, "keys": api_keys_status(), **ffmpeg_status()})
+            return self._json({"ok": True, "keys": api_keys_status(), **ffmpeg_status(), **claude_cli.status()})
+        if path in ("/api/setup/claude/login", "/api/setup/claude/code"):
+            try:
+                st = claude_cli.login_start() if path.endswith("login") else claude_cli.login_code(str(body.get("code", "")))
+                return self._json({"ok": True, **st})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/setup/claude/cancel":
+            claude_cli.login_cancel()
+            return self._json({"ok": True})
         if path == "/api/setup/ffmpeg/install":
             try:
                 return self._json({"ok": True, **start_ffmpeg_install()})

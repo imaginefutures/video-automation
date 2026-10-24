@@ -281,7 +281,7 @@ def explain_error(e: Exception, stage: str | None) -> dict:
     if "prompt is too long" in low or "too many tokens" in low:
         return out("AI에 보낸 내용이 한도를 넘었어요", "프로그램 쪽 문제일 가능성이 커요. 다시 시도해 보고, 같은 오류가 반복되면 알려 주세요")
     if "not logged in" in low or "/login" in low:
-        return out("Claude Code에 로그인돼 있지 않아요", "터미널에서 claude를 실행해 /login으로 로그인한 뒤 다시 시도하세요", retryable=False)
+        return out("Claude Code에 로그인돼 있지 않아요", "홈 화면 환경설정에서 Claude Code에 로그인한 뒤 다시 시도하세요", retryable=False)
     if "usage limit" in low or "hit your limit" in low or "limit reached" in low:
         return out("Claude 구독 사용량 한도에 걸렸어요", "한도가 풀린 뒤 다시 시도하세요")
     if "claude -p timed out" in low:

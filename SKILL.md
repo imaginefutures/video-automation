@@ -103,7 +103,7 @@ uv run --directory <스킬 절대경로> python scripts/setup.py <프로젝트 �
 
 ## 필요한 것
 
-- **Claude Code 로그인** — Claude 호출은 전부 `scripts/claude_cli.py`가 `claude -p`로 보내 구독으로
+- **Claude Code 로그인** (홈 화면 환경설정의 "로그인" 버튼, 안 돼 있으면 홈을 열 때 팝업) — Claude 호출은 전부 `scripts/claude_cli.py`가 `claude -p`로 보내 구독으로
   돈다(10-24부터, Claude API 키 없음). 새 Claude 호출을 넣을 때도 `anthropic` SDK가 아니라
   `claude_cli.parse()`를 쓴다
 - `.env` (스킬이 설치된 폴더 루트, 사용자의 현재 작업 디렉터리 아님): `ELEVENLABS_API_KEY`
