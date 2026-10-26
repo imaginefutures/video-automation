@@ -36,6 +36,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+# 바탕화면 앱(scripts/home_on.sh)이나 launchd로 띄우면 PATH가 /usr/bin:/bin 정도라 brew로 깐
+# ffmpeg·brew·claude를 못 찾아 설정이 미완료로 보인다. 자식 프로세스(처리·검토 서버)도 물려받게
+# 여기서 한 번 보탠다
+_path = os.environ.get("PATH", "").split(os.pathsep)
+os.environ["PATH"] = os.pathsep.join(
+    _path + [d for d in ("/opt/homebrew/bin", "/usr/local/bin", os.path.expanduser("~/.local/bin")) if d not in _path])
+
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
