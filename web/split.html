@@ -224,6 +224,7 @@
       </div>
       </details>
       <button class="btn-secondary" id="btnTitles" title="지금 나눈 경계와 고친 대본을 읽고 모든 편의 제목을 다시 짓습니다">제목 자동 작성</button>
+      <button class="btn-secondary" id="btnIntroBulk" title="여러 편의 인트로 후보를 한 번에 만듭니다">인트로 일괄 생성</button>
       <button class="btn-secondary" id="btnReset" disabled>제안으로 되돌리기</button>
       <button class="btn-confirm" id="btnExport" title="편별 영상과 대본을 out 폴더에 만들고 내려받습니다">내보내기</button>
       <div id="exportNote"></div>
@@ -657,21 +658,72 @@ async function editIntro(k, file, instruction) {
     else render();
   }
 }
-async function makeIntro(k) {
-  introBusy.add(k); openIntro(k);
+// quiet: 일괄 생성에서 부른다 - 창을 열지 않고 토스트 대신 성공 여부만 돌려준다
+async function makeIntro(k, quiet = false) {
+  introBusy.add(k);
+  if (quiet) render(); else openIntro(k);
   try {
     const r = await fetch('/api/intro/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, dec, hint: introHints[k] || '' }) });
     const data = await r.json();
-    if (!r.ok) { toast(data.error || '인트로를 만들지 못했습니다'); return; }
+    if (!r.ok) { if (!quiet) toast(data.error || '인트로를 만들지 못했습니다'); return false; }
     S.intro_candidates[data.key] = data;
-    if (data.failed) toast(`${data.failed}장은 실패해서 ${data.files.length}장만 만들었습니다`);
-  } catch (e) { toast('서버에 연결할 수 없습니다'); }
+    if (data.failed && !quiet) toast(`${data.failed}장은 실패해서 ${data.files.length}장만 만들었습니다`);
+    return true;
+  } catch (e) { if (!quiet) toast('서버에 연결할 수 없습니다'); return false; }
   finally {
     introBusy.delete(k);
     if ($('#modal').classList.contains('show') && introOpenK === k) openIntro(k);
     else render();
   }
 }
+
+// 인트로 일괄 생성: 없는 편만 / 전부 다시. 만든 뒤 고르는 건 편마다 사람이 한다
+const INTRO_BULK_PAR = 3;   // 한 번에 같이 만드는 편 수 (편마다 이미지 4장을 동시에 요청한다)
+let introBulk = null;       // 도는 중이면 { done, total, failed }
+const hasIntroCand = g => !!(S.intro_candidates[`${g.start_sent}-${g.end_sent}`]?.files || []).length;
+function openIntroBulk() {
+  const titled = segs.map((g, k) => k).filter(k => (dec.titles[k] || '').trim());
+  const missing = titled.filter(k => !dec.intros[k] && !hasIntroCand(segs[k]));
+  const unpicked = titled.filter(k => !dec.intros[k] && hasIntroCand(segs[k])).length;
+  const untitled = segs.length - titled.length;
+  const cost = n => `약 ${(n * 400).toLocaleString()}원`;
+  showModal(`<h2>인트로 일괄 생성</h2>
+    <p class="note">편마다 후보 4장을 만듭니다. 만든 뒤 편마다 인트로를 눌러 한 장씩 골라주세요 - 제목 글자가 정확한지도 확인하세요.</p>
+    ${unpicked ? `<p class="note">후보는 있는데 아직 안 고른 편 ${unpicked}개는 "없는 편만"에서 빠집니다.</p>` : ''}
+    ${untitled ? `<p class="intro-warn">제목이 없는 편 ${untitled}개는 만들 수 없어 빠집니다</p>` : ''}
+    <div class="modal-actions">
+      <button class="primary" id="mBulkMissing" ${missing.length ? '' : 'disabled'}>인트로 없는 편만 (${missing.length}편 · ${cost(missing.length)})</button>
+      <button class="btn-secondary" id="mBulkAll" ${titled.length ? '' : 'disabled'}>전부 다시 만들기 (${titled.length}편 · ${cost(titled.length)})</button>
+      <button class="btn-secondary" id="mClose" style="margin-left:auto">닫기</button>
+    </div>`);
+  $('#mClose').onclick = hideModal;
+  $('#mBulkMissing').onclick = () => { hideModal(); runIntroBulk(missing); };
+  $('#mBulkAll').onclick = () => { hideModal(); runIntroBulk(titled); };
+}
+async function runIntroBulk(ks) {
+  ks = ks.filter(k => !introBusy.has(k));   // 따로 만드는 중인 편은 건너뛴다
+  if (!ks.length) return;
+  introBulk = { done: 0, total: ks.length, failed: [] };
+  renderIntroBulk();
+  const queue = [...ks];
+  const worker = async () => {
+    for (let k; (k = queue.shift()) !== undefined;) {
+      if (!await makeIntro(k, true)) introBulk.failed.push(k + 1);
+      introBulk.done++; renderIntroBulk();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(INTRO_BULK_PAR, ks.length) }, worker));
+  const { total, failed } = introBulk;
+  introBulk = null; renderIntroBulk();
+  toast(failed.length ? `${total - failed.length}편 만듦 · ${failed.join(', ')}편은 실패 - 그 편 인트로에서 다시 만들어주세요`
+    : `${total}편 인트로 후보를 만들었습니다 - 편마다 골라주세요`);
+}
+function renderIntroBulk() {
+  const b = $('#btnIntroBulk');
+  b.disabled = !!introBulk;
+  b.textContent = introBulk ? `인트로 만드는 중… ${introBulk.done}/${introBulk.total}` : '인트로 일괄 생성';
+}
+$('#btnIntroBulk').onclick = openIntroBulk;
 
 // ------------------------------------------------------------------ 내보내기
 const fmtAt = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
