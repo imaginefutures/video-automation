@@ -1105,8 +1105,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "keys": api_keys_status(), **ffmpeg_status(), **claude_cli.status()})
         if path in ("/api/setup/claude/login", "/api/setup/claude/code"):
             try:
-                st = claude_cli.login_start() if path.endswith("login") else claude_cli.login_code(str(body.get("code", "")))
+                st = (claude_cli.login_start(str(body.get("account") or "1")) if path.endswith("login")
+                      else claude_cli.login_code(str(body.get("code", ""))))
                 return self._json({"ok": True, **st})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+        if path in ("/api/setup/claude/active", "/api/setup/claude/logout"):
+            try:
+                account = str(body.get("account") or "")
+                claude_cli.set_active(account) if path.endswith("active") else claude_cli.logout(account)
+                return self._json({"ok": True, **claude_cli.status()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/api/setup/claude/cancel":

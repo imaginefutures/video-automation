@@ -792,16 +792,43 @@ function setupBodyHtml(data) {
     : data.brew
       ? `<div class="row-line"><span>ffmpeg/ffprobe</span><button id="btnInstallFfmpeg">설치</button></div>`
       : `<div class="row-line"><span>ffmpeg/ffprobe 없음 - <a href="https://brew.sh" target="_blank" rel="noopener">Homebrew</a> 설치 후 <b>터미널에서 홈 서버를 재시작</b>해주세요(브라우저 새로고침만으로는 반영 안 됨 - Ctrl+C 후 다시 실행)</span></div>`;
-  const claudeRow = data.claude_logged_in
-    ? `<div class="row-line"><span>Claude Code</span><span class="field-chip ok">로그인됨</span></div>`
-    : data.claude_installed
-      ? `<div class="row-line"><span>Claude Code <span class="field-chip missing">미로그인</span></span><button id="btnClaudeLogin">로그인</button></div>`
-      : `<div class="row-line"><span>Claude Code 없음 - <a href="https://claude.com/claude-code" target="_blank" rel="noopener">설치</a> 후 로그인</span><span class="field-chip missing">미설치</span></div>`;
+  const claudeRow = data.claude_installed
+    ? claudeAccountRows(data)
+    : `<div class="row-line"><span>Claude Code 없음 - <a href="https://claude.com/claude-code" target="_blank" rel="noopener">설치</a> 후 로그인</span><span class="field-chip missing">미설치</span></div>`;
   return claudeRow + keyRows + ffmpegRow + '<div id="ffmpegInstallProgress"></div>';
+}
+// Claude 계정 두 개 (scripts/claude_cli.py) - 고른 계정이 먼저 돌고, 한도에 걸리면 다른 계정으로 넘어간다
+function claudeAccountRows(data) {
+  const accts = data.claude_accounts || [];
+  const email1 = accts[0]?.email;
+  const rows = accts.map((a) => {
+    const hm = a.limited_until ? new Date(a.limited_until * 1000).toTimeString().slice(0, 5) : '';
+    const chip = !a.logged_in ? '<span class="field-chip missing">미로그인</span>'
+      : a.limited_until ? `<span class="field-chip missing" title="${hm}까지 건너뛰고 다른 계정으로 돌립니다">한도 · ${hm}까지 건너뜀</span>`
+      : a.id !== '1' && a.email && a.email === email1 ? '<span class="field-chip missing" title="브라우저에서 다른 Claude 계정으로 다시 로그인하세요">1번과 같은 계정</span>'
+      : '<span class="field-chip ok">로그인됨</span>';
+    const who = a.logged_in ? `<span style="color:var(--muted);font-size:12px">${esc(a.email || '')}${a.plan ? ' · ' + esc(a.plan) : ''}</span>` : '';
+    const btn = !a.logged_in ? `<button data-claude-login="${a.id}">로그인</button>`
+      : a.id !== '1' ? `<button data-claude-logout="${a.id}">로그아웃</button>` : '';
+    return `<div class="row-line"><label style="display:flex;align-items:center;gap:8px;min-width:0">
+        <input type="radio" name="claudeActive" value="${a.id}" ${a.id === data.claude_active ? 'checked' : ''} ${a.logged_in ? '' : 'disabled'}>
+        <span>Claude 계정 ${a.id}</span>${chip}${who}</label>${btn}</div>`;
+  }).join('');
+  return rows + '<p class="note" style="margin:4px 0 8px">고른 계정으로 먼저 돌리고, 주간·세션 한도에 걸리면 다른 계정으로 자동으로 넘깁니다</p>';
+}
+async function claudeAccountPost(path, account) {
+  const res = await fetch(`/api/setup/claude/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account }) });
+  const data = await res.json();
+  if (!data.ok) toast(data.error || '바꾸지 못했습니다');
+  refreshSetupView();
 }
 function isSetupComplete(data) { return data.claude_logged_in && data.keys.every((k) => k.set || k.optional) && data.ffmpeg && data.ffprobe; }
 function wireSetupButtons(data, onSave) {
-  $('#btnClaudeLogin')?.addEventListener('click', openClaudeLogin);
+  $$('[data-claude-login]').forEach((b) => b.addEventListener('click', () => openClaudeLogin(b.dataset.claudeLogin)));
+  $$('[data-claude-logout]').forEach((b) => b.addEventListener('click', () => {
+    if (confirm(`Claude 계정 ${b.dataset.claudeLogout}에서 로그아웃할까요?`)) claudeAccountPost('logout', b.dataset.claudeLogout);
+  }));
+  $$('input[name="claudeActive"]').forEach((r) => r.addEventListener('change', () => claudeAccountPost('active', r.value)));
   if (!(data.ffmpeg && data.ffprobe) && data.brew) $('#btnInstallFfmpeg').addEventListener('click', startFfmpegInstall);
   onSave && $('#btnSaveKeys')?.addEventListener('click', onSave);
 }
@@ -863,16 +890,19 @@ async function pollFfmpegInstall() {
 // 마치면 코드 없이 끝난다. 브라우저가 안 열렸으면 링크로 들어가 받은 코드를 붙인다 (scripts/claude_cli.py).
 let claudeLoginPoll = null;
 let claudeLoginPrompted = false;
+let claudeLoginAccount = '1';
 function stopClaudeLoginPoll() { clearTimeout(claudeLoginPoll); claudeLoginPoll = null; }
 function closeClaudeLogin() {
   stopClaudeLoginPoll();
   fetch('/api/setup/claude/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   hideModal();
 }
-function openClaudeLogin() {
+function openClaudeLogin(account = '1') {
   stopClaudeLoginPoll();
-  showModal(`<div class="modal-head"><h2>Claude Code 로그인</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
-    <p class="note">로그인해야 컷 판별·인서트를 쓸 수 있습니다</p>
+  claudeLoginAccount = account;
+  showModal(`<div class="modal-head"><h2>Claude Code 로그인${account === '1' ? '' : ` (계정 ${esc(account)})`}</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
+    <p class="note">${account === '1' ? '로그인해야 컷 판별·인서트를 쓸 수 있습니다'
+      : '1번과 <b>다른</b> Claude 계정으로 로그인하세요. 브라우저가 이미 1번 계정으로 claude.ai에 로그인돼 있으면 그 계정이 다시 잡히니, 먼저 claude.ai에서 로그아웃하거나 시크릿 창에 "로그인 페이지 열기" 링크를 붙여넣으세요'}</p>
     <div id="claudeLoginBody"><button id="btnClaudeLoginStart" class="primary" style="width:100%">로그인</button></div>`);
   $('#modalX').addEventListener('click', closeClaudeLogin);
   $('#btnClaudeLoginStart').addEventListener('click', startClaudeLogin);
@@ -881,7 +911,7 @@ function openClaudeLogin() {
 async function startClaudeLogin() {
   $('#claudeLoginBody').innerHTML = '<p class="note">여는 중…</p>';
   let st;
-  try { st = await (await fetch('/api/setup/claude/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json(); }
+  try { st = await (await fetch('/api/setup/claude/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account: claudeLoginAccount }) })).json(); }
   catch (e) { st = { ok: false, error: '서버에 연결하지 못했습니다' }; }
   if (!st.ok) return renderClaudeLoginFail(st.error);
   $('#claudeLoginBody').innerHTML = `
