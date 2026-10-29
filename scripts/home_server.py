@@ -48,7 +48,7 @@ PROJECT_ROOT = HERE.parent
 WEB_DIR = PROJECT_ROOT / "web"
 sys.path.insert(0, str(HERE))
 from common import (  # noqa: E402
-    api_keys_status, edit_dir, ensure_project_python, is_insert_only, load_env, mark_insert_only, pid_alive, pipeline_log_tail, print_client_error, read_pipeline_status, sanitize_project_name, write_env_keys,
+    api_keys_status, edit_dir, ensure_project_python, is_insert_only, load_env, mark_insert_only, pid_alive, spawn_logged, pipeline_log_tail, print_client_error, read_pipeline_status, sanitize_project_name, write_env_keys,
     RESERVED_PROJECT_NAME_RE, RESERVED_PROJECT_NAME_SUFFIXES, REQUIRED_API_KEYS, OPTIONAL_API_KEYS, VIDEO_EDIT_DIR, SPLIT_DIR,
 )
 
@@ -371,13 +371,10 @@ def open_review(name: str) -> dict:
             port = _alloc_port(_preferred_port(name))
             log_path = folder / "edit" / "server.log"
             log_offset = _log_size(log_path)
-            log_f = open(log_path, "a")
-            proc = subprocess.Popen(
+            proc = spawn_logged(
                 [sys.executable, str(HERE / "server.py"), str(folder), "--port", str(port), "--no-open"],
-                cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
-            )
-            _active[name] = {"port": port, "proc": proc, "log": log_f,
-                             "log_path": log_path, "log_offset": log_offset}
+                log_path, cwd=str(PROJECT_ROOT))
+            _active[name] = {"port": port, "proc": proc, "log_path": log_path, "log_offset": log_offset}
         active = _active[name]
 
     deadline = time.time() + 12
@@ -455,18 +452,16 @@ def _spawn_pipeline(name: str, folder: Path) -> tuple[int, subprocess.Popen, Pat
     port = _alloc_port(_preferred_port(name))
     log_path = folder / "edit" / "run.log"
     log_offset = _log_size(log_path)
-    log_f = open(log_path, "a")
-    proc = subprocess.Popen(
+    proc = spawn_logged(
         [sys.executable, str(HERE / "run.py"), str(folder), "--port", str(port), "--no-open"],
-        cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
+        log_path, cwd=str(PROJECT_ROOT),
         start_new_session=True,
         # 버퍼링되면 run.py의 "== 단계" 줄이 하위 프로세스 출력보다 늦게 찍혀 run.log 순서가
         # 뒤섞인다 - 실패 로그(common.pipeline_log_tail)가 이 순서에 기댄다.
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     with _active_lock:
-        _active[name] = {"port": port, "proc": proc, "log": log_f,
-                         "log_path": log_path, "log_offset": log_offset}
+        _active[name] = {"port": port, "proc": proc, "log_path": log_path, "log_offset": log_offset}
     return port, proc, log_path
 
 
@@ -691,14 +686,13 @@ def _spawn_split(name: str, folder: Path) -> None:
     work = folder / "work"
     work.mkdir(exist_ok=True)
     log_path = work / "run.log"
-    log_f = open(log_path, "a")
-    proc = subprocess.Popen(
+    proc = spawn_logged(
         [sys.executable, str(HERE / "split_run.py"), str(folder)],
-        cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
+        log_path, cwd=str(PROJECT_ROOT),
         start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     with _active_lock:
-        _active[_split_key(name)] = {"port": None, "proc": proc, "log": log_f,
+        _active[_split_key(name)] = {"port": None, "proc": proc,
                                      "log_path": log_path, "log_offset": _log_size(log_path)}
 
 
@@ -733,12 +727,10 @@ def open_split(name: str) -> dict:
             port = _alloc_port(_preferred_port(key))
             log_path = folder / "work" / "server.log"
             log_offset = _log_size(log_path)
-            log_f = open(log_path, "a")
-            proc = subprocess.Popen(
+            proc = spawn_logged(
                 [sys.executable, str(HERE / "split_server.py"), str(folder), "--port", str(port), "--no-open"],
-                cwd=str(PROJECT_ROOT), stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT,
-            )
-            _active[key] = {"port": port, "proc": proc, "log": log_f, "log_path": log_path, "log_offset": log_offset}
+                log_path, cwd=str(PROJECT_ROOT))
+            _active[key] = {"port": port, "proc": proc, "log_path": log_path, "log_offset": log_offset}
         active = _active[key]
     deadline = time.time() + 12
     while time.time() < deadline:
