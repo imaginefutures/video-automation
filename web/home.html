@@ -833,15 +833,36 @@ function wireSetupButtons(data, onSave) {
   onSave && $('#btnSaveKeys')?.addEventListener('click', onSave);
 }
 
+// 바탕화면 "홈 서버 켜기·끄기" 아이콘 (맥 전용 - 서버가 supported를 false로 주면 줄 자체를 안 그린다)
+function desktopIconsRowHtml(data) {
+  const d = data.desktop_icons;
+  if (!d || !d.supported) return '';
+  return `<div class="row-line"><span>바탕화면 아이콘</span>${d.installed
+    ? '<span><span class="field-chip ok">만들어짐</span> <button id="btnDesktopIcons">다시 만들기</button></span>'
+    : '<button id="btnDesktopIcons">만들기</button>'}</div>`;
+}
+async function makeDesktopIcons() {
+  const btn = $('#btnDesktopIcons');
+  btn.disabled = true;
+  try {
+    const data = await (await fetch('/api/setup/desktop-icons', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+    if (!data.ok) { toast(data.error || '아이콘을 만들지 못했습니다'); btn.disabled = false; return; }
+    toast('바탕화면에 만들었습니다');
+    renderSetupModal(await (await fetch('/api/setup')).json());
+  } catch (e) { toast('아이콘을 만들지 못했습니다'); btn.disabled = false; }
+}
+
 function renderSetupModal(data) {
   showModal(`<div class="modal-head"><h2>환경설정</h2><button id="modalX" class="modal-x" aria-label="닫기">×</button></div>
     <p class="note">Claude Code 로그인, API 키, ffmpeg는 컷편집 파이프라인을 돌리는 데 필요합니다</p>
     ${setupBodyHtml(data)}
+    ${desktopIconsRowHtml(data)}
     <div style="display:flex;gap:8px;margin-top:16px">
       <button id="modalNo">닫기</button>
       <button id="btnSaveKeys" class="primary">저장</button>
     </div>`);
   wireSetupButtons(data, saveApiKeysFromModal);
+  $('#btnDesktopIcons')?.addEventListener('click', makeDesktopIcons);
   $('#modalNo').addEventListener('click', hideModal);
   $('#modalX').addEventListener('click', hideModal);
   makeDraggable($('#modalPanel'), $('#modalPanel .modal-head'));  // 머리줄이 드래그 손잡이를 덮으므로

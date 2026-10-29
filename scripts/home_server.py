@@ -794,6 +794,29 @@ def start_ffmpeg_install() -> dict:
     return {"started": True}
 
 
+# ------------------------------------------------------------------------ 설정: 바탕화면 아이콘
+# 맥 전용. 만드는 일은 scripts/install_desktop_icons.py가 하고(Claude Code에서 "바탕화면 아이콘
+# 만들어줘"와 같은 길), 화면은 있는지만 보고 버튼으로 부른다
+_DESKTOP_ICON_NAMES = ("홈 서버 켜기.app", "홈 서버 끄기.app")
+
+
+def desktop_icons_status() -> dict:
+    mac = sys.platform == "darwin"
+    desktop = Path.home() / "Desktop"
+    return {"desktop_icons": {"supported": mac,
+                              "installed": mac and all((desktop / n).exists() for n in _DESKTOP_ICON_NAMES)}}
+
+
+def install_desktop_icons() -> dict:
+    if sys.platform != "darwin":
+        raise ValueError("바탕화면 아이콘은 맥에서만 만들 수 있습니다")
+    proc = subprocess.run([sys.executable, str(Path(__file__).parent / "install_desktop_icons.py")],
+                          capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        raise ValueError((proc.stdout + proc.stderr).strip() or "아이콘을 만들지 못했습니다")
+    return desktop_icons_status()
+
+
 # ----------------------------------------------------------------------------------- 업데이트
 # 이 저장소는 claude plugin 마켓플레이스 설치가 아니라 ~/.claude/skills/video-cut 심볼릭 링크의
 # 실제 대상이다(SKILL.md "설치와 업데이트" 참고) - 그래서 "업데이트"는 곧 git pull. fetch는
@@ -994,7 +1017,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
             return self._json({"text": text, "videos": [p.name for p in videos], "splits": [p.name for p in splits]})
         if path == "/api/setup":
-            return self._json({"keys": api_keys_status(), **ffmpeg_status(), **claude_cli.status()})
+            return self._json({"keys": api_keys_status(), **ffmpeg_status(), **desktop_icons_status(), **claude_cli.status()})
         if path == "/api/assets":  # 공통 자산 - 모든 영상이 같이 쓰는 파일 (docs/백로그/공통-자산.md)
             return self._json({"kinds": assets_view()})
         if path == "/api/assets/file":
@@ -1102,7 +1125,7 @@ class Handler(BaseHTTPRequestHandler):
                 write_env_keys({k: v.strip() for k, v in pairs.items()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            return self._json({"ok": True, "keys": api_keys_status(), **ffmpeg_status(), **claude_cli.status()})
+            return self._json({"ok": True, "keys": api_keys_status(), **ffmpeg_status(), **desktop_icons_status(), **claude_cli.status()})
         if path in ("/api/setup/claude/login", "/api/setup/claude/code"):
             try:
                 st = (claude_cli.login_start(str(body.get("account") or "1")) if path.endswith("login")
@@ -1123,6 +1146,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/setup/ffmpeg/install":
             try:
                 return self._json({"ok": True, **start_ffmpeg_install()})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+        if path == "/api/setup/desktop-icons":
+            try:
+                return self._json({"ok": True, **install_desktop_icons()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/api/shutdown":
