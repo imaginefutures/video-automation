@@ -28,7 +28,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python, pid_alive, is_insert_only, client_error_fields, print_client_error
+from common import load_env, video_dir, edit_dir, source_media, load_transcript, words_only, write_json, read_pipeline_status, pipeline_log_tail, ensure_project_python, pid_alive, spawn_logged, is_insert_only, client_error_fields, print_client_error
 if __name__ == "__main__":
     ensure_project_python()  # 아래 audio_map 등이 numpy를 import하므로 그 전에 - common.py 참고
 from build_edl import compute_kept_segments, BOUNDARY_PAD_SEC
@@ -1590,12 +1590,10 @@ def _retry_pipeline(folder: Path, port: int) -> dict:
     with _retry_lock:
         if _pipeline_status(folder)["state"] not in ("error", "stopped"):
             raise ValueError("이미 처리가 진행 중입니다")
-        log_f = open(folder / "edit" / "run.log", "a")
-        proc = subprocess.Popen(
+        proc = spawn_logged(
             [sys.executable, str(Path(__file__).resolve().parent / "run.py"), str(folder), "--port", str(port),
-             "--no-open", "--skip-server"],
-            cwd=str(Path(__file__).resolve().parent.parent), stdin=subprocess.DEVNULL, stdout=log_f,
-            stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"})
+             "--no-open", "--skip-server"], folder / "edit" / "run.log",
+            cwd=str(Path(__file__).resolve().parent.parent), start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"})
         write_json(folder / "edit" / "pipeline_status.json",
                    {"stage": "다시 시작하는 중", "state": "running", "stages": [], "pid": proc.pid,
                     "stage_started_at": time.time()})

@@ -59,7 +59,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import load_env, ensure_api_keys, ensure_project_python, video_dir, edit_dir, write_json, PROJECT_ROOT, VIDEO_EDIT_DIR, is_insert_only, mark_insert_only  # noqa: E402
+from common import load_env, ensure_api_keys, ensure_project_python, video_dir, edit_dir, write_json, spawn_logged, PROJECT_ROOT, VIDEO_EDIT_DIR, is_insert_only, mark_insert_only  # noqa: E402
 import migrate  # noqa: E402
 
 # ----------------------------------------------------------------------------- R2: 처리 중 진행 화면
@@ -194,11 +194,10 @@ def start_server(folder: Path, port: int, no_open: bool) -> subprocess.Popen:
     once the pipeline finishes, doesn't take the server down with it - the browser tab stays
     open against this same server process for the rest of the review (백로그/
     R2-시작-마찰-제거.md). `--serve`의 기존 동기 실행 경로는 이 함수와 무관하게 그대로 둔다."""
-    log = open(edit_dir(folder) / "server.log", "a")
-    return subprocess.Popen(
+    return spawn_logged(
         [sys.executable, str(HERE / "server.py"), str(folder), "--port", str(port),
          *(["--no-open"] if no_open else [])],
-        cwd=HERE.parent, stdout=log, stderr=log, start_new_session=True)
+        edit_dir(folder) / "server.log", cwd=HERE.parent, start_new_session=True)
 
 
 def auto_create_project(videos_root: Path) -> Path | None:

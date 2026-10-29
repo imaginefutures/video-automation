@@ -346,6 +346,14 @@ def write_json(path: Path, data) -> None:
     _stamp_schema_version(path)
 
 
+def spawn_logged(args: list[str], log_path: Path, **kwargs) -> subprocess.Popen:
+    """자식을 띄우고 stdout/stderr를 log_path에 이어 쓴다. 로그 핸들은 자식이 자기 몫을 물려받은 직후
+    부모에서 닫는다 - 오래 사는 홈 서버가 띄울 때마다 핸들을 하나씩 쥐고 있다가 `Too many open files`로
+    죽는 사고(macOS 기본 한도 256)를 막는다. 자식 로그는 자식이 쥔 핸들로 계속 쌓인다."""
+    with open(log_path, "a") as log_f:
+        return subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log_f, stderr=subprocess.STDOUT, **kwargs)
+
+
 def pid_alive(pid: int | None) -> bool:
     """run.py가 pipeline_status.json에 남긴 pid가 아직 살아있는지. 홈 서버가 띄운 run.py는
     죽어도 홈 서버가 poll()로 거둬가기 전까진 좀비로 남아 os.kill(pid, 0)이 성공한다 - 그래서
