@@ -1,6 +1,6 @@
 ---
 name: video-cut
-description: 한국어 강의·토킹헤드 원본 영상의 컷편집 러프컷을 만든다. 트랜스크립션 → NG(재시작·말실수) 판별 → 카메라 밖 대화 블록 → 무음 리듬 다듬기를 자동 적용한 뒤, 로컬 웹 화면에서 텍스트로 검토·수정하고 확정하면 Final Cut Pro용 FCPXML과 미리보기 mp4가 폴더에 생성된다. "컷편집 해줘", "이 영상 러프컷", "NG 잘라줘", "video-cut" 요청에 사용. 영상 없이 "video-cut 키 설정해줘", "API 키 설정해줘"처럼 이 스킬이 쓰는 Anthropic/ElevenLabs API 키만 먼저 설정해 달라는 요청에도 사용.
+description: 한국어 강의·토킹헤드 원본 영상의 컷편집 러프컷을 만든다. 트랜스크립션 → NG(재시작·말실수) 판별 → 카메라 밖 대화 블록 → 무음 리듬 다듬기를 자동 적용한 뒤, 로컬 웹 화면에서 텍스트로 검토·수정하고 확정하면 Final Cut Pro용 FCPXML과 미리보기 mp4가 폴더에 생성된다. "컷편집 해줘", "이 영상 러프컷", "NG 잘라줘", "video-cut" 요청에 사용. 영상 없이 "video-cut 키 설정해줘", "API 키 설정해줘"처럼 이 스킬이 쓰는 Anthropic/ElevenLabs API 키만 먼저 설정해 달라는 요청에도 사용. "바탕화면에 서버 켜고 끄는 아이콘 만들어줘"(맥)처럼 홈 서버 바로가기 아이콘을 요청할 때도 사용.
 ---
 
 # video-cut
@@ -127,6 +127,12 @@ uv run --directory <스킬 절대경로> python scripts/setup.py <프로젝트 �
 
 ## 에이전트가 지킬 것
 
+- **"바탕화면 아이콘 만들어줘"·"서버 켜고 끄는 아이콘"을 요청받으면**(맥 전용) 영상 없이
+  `uv run --directory <스킬 절대경로> python scripts/install_desktop_icons.py` 한 번이면 된다 -
+  바탕화면에 "홈 서버 켜기.app"·"홈 서버 끄기.app"이 생긴다. 같은 이름이 이미 있으면 덮어쓴다.
+  `uv`가 없으면 위 환경설정 항목처럼 먼저 안내한다. 아이콘은
+  `~/Library/Application Support/video-cut/`의 길잡이를 거쳐 스킬을 찾으니 플러그인을 업데이트해도
+  보통 그대로 동작하고, 못 찾으면 아이콘이 이 요청을 다시 하라고 알려 준다
 - **환경설정은 새 프로젝트 폴더에서 처음 이 스킬을 부를 때 한 번, 한 호출로 끝낸다.** 첫
   `uv run` 시도 전에 `which uv`부터 확인 - 없으면 `uv run`도 못 쓰니 스크립트가 확인할 방법이
   없다(부트스트랩 문제). 설치 방법을 안내하고(macOS: `curl -LsSf https://astral.sh/uv/install.sh | sh`)
