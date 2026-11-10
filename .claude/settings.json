@@ -41,6 +41,6 @@
     ]
   },
   "enabledPlugins": {
-    "studio@hack-collaboration-studio": true
+    "studio@hack-collaboration-studio": false
   }
 }
