@@ -34,7 +34,13 @@ PROMPT_URL = "https://jasonzhu.ai/data/opus-prompts/{id}.json"
 UA = {"User-Agent": "Mozilla/5.0"}
 # Second source for ids missing from INDEX_URL: the middle "__" segment of the name is a slug in this
 # repo's videos.json. It has no video files, so the video comes from the X post via yt-dlp.
+# Its rows are selected by new_extra_cases(); it stopped updating on 2026-10-12.
 EXTRA_URL = "https://raw.githubusercontent.com/yihui-dev/awesome-opus5-5-videos/main/data/videos.json"
+
+
+# Cases picked by hand from sources that have no data file (prompt-motion.com, 2026-11-10): manual.json keeps each
+# case's page and video URL. Only these listed cases are fetched from there - --sync does not look for new ones.
+MANUAL_PATH = os.path.join(HERE, "manual.json")
 
 
 def get(url):
@@ -77,12 +83,32 @@ def case_name(r):
     return f"{r['category']}__{slug}__{r['id']}"
 
 
+def skipped_ids():
+    """Post ids in skip.txt (one per line, "# why" allowed): cases --sync must never add again (video gone, etc.)."""
+    path = os.path.join(HERE, "skip.txt")
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {line.split("#")[0].strip() for line in f} - {""}
+
+
 def new_cases(index, have_ids):
     """Index rows that pass the selection rule (Opus 5.5 among the models + full prompt) and are not in cases.txt yet."""
     return [r for r in index.values()
             if "opus-5.5" in (r.get("models") or [])
             and (r.get("prompt") or {}).get("kind") == "full"
             and r["id"] not in have_ids]
+
+
+def new_extra_cases(have_ids):
+    """awesome-opus5-5-videos rows that pass its selection rule (whole prompt, 1000+ chars - shorter ones are
+    one-liners with no structure to borrow) and whose X post is not in cases.txt yet. Returns case names."""
+    out = []
+    for v in json.loads(get(EXTRA_URL)):
+        m = re.search(r"status(?:es)?/(\d+)", v.get("post_url") or "")
+        if m and m.group(1) not in have_ids and not v.get("prompt_partial") and len(v.get("prompt") or "") >= 1000:
+            out.append(f"{v['category']}__{v['slug']}__{m.group(1)}")
+    return out
 
 
 def missing_catalog(names):
@@ -128,11 +154,55 @@ def fetch_extra(name):
     return None
 
 
+def page_prompt(html):
+    """The prompt on a prompt-motion.com case page. Next.js streams the page data as self.__next_f.push([1, "..."])
+    chunks; a long prompt is a "$<hex>" reference to a "<hex>:T<byte length>,<text>" record in that stream."""
+    stream = "".join(json.loads(f'"{p}"') for p in re.findall(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)</script>', html, re.S))
+    m = re.search(r'"prompt":"((?:[^"\\]|\\.)*)"', stream)
+    if not m:
+        raise ValueError("no prompt on the page")
+    value = json.loads(f'"{m.group(1)}"')
+    if re.fullmatch(r"\$[0-9a-f]+", value):
+        head, body = stream[stream.index(value[1:] + ":T"):].split(",", 1)
+        value = body.encode()[:int(head.split(":T")[1], 16)].decode(errors="ignore")
+    return value
+
+
+def fetch_manual(m):
+    """Download one manual.json case (prompt .md from its page + .mp4 from the site's own media). None, or why it failed."""
+    md = os.path.join(DATA, m["name"] + ".md")
+    mp4 = os.path.join(DATA, m["name"] + ".mp4")
+    try:
+        if not os.path.exists(md):
+            prompt = page_prompt(get(m["page"]).decode("utf-8"))
+            with open(md, "w", encoding="utf-8") as f:
+                f.write(f"# {m['title']}\n\n- 작성자: @{m['author']}\n- 게시물: https://x.com/{m['author']}/status/{m['name'].rsplit('__', 1)[1]}\n"
+                        f"- 게시일: {m['posted']}\n- 출처: {m['source']} ({m['page']}, 콘텐츠 권리는 각 크리에이터)\n\n"
+                        f"## Prompt\n\n````text\n{prompt.rstrip()}\n````\n")
+        if not os.path.exists(mp4) or os.path.getsize(mp4) == 0:
+            with open(mp4 + ".part", "wb") as f:
+                f.write(get(m["video"]))
+            os.replace(mp4 + ".part", mp4)
+    except Exception as e:
+        return f"failed: {e}"
+    return None
+
+
+def load_manual():
+    if not os.path.exists(MANUAL_PATH):
+        return {}
+    with open(MANUAL_PATH, encoding="utf-8") as f:
+        return {m["name"]: m for m in json.load(f)}
+
+
 def fetch_one(name, index):
     """Download one case (prompt .md + .mp4) into this folder. Returns None, or why it failed."""
+    manual = load_manual().get(name)
+    if manual:
+        return fetch_manual(manual)
     cid = name.rsplit("__", 1)[1]
     r = index.get(cid)
-    if r is None:
+    if r is None or r.get("prompt") is None:  # not on jasonzhu, or listed there without a prompt: second source
         return fetch_extra(name)
     mp4 = os.path.join(DATA, name + ".mp4")
     md = os.path.join(DATA, name + ".md")
@@ -159,7 +229,7 @@ def fetch_cases(names):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--new", action="store_true", help="list full-prompt Opus 5.5 cases missing from cases.txt")
+    ap.add_argument("--new", action="store_true", help="list cases from both sources that pass the selection rule and are missing from cases.txt")
     ap.add_argument("--sync", action="store_true",
                     help="append those cases to cases.txt, download them, list cases missing a _META.md entry")
     ap.add_argument("--jobs", type=int, default=6)
@@ -180,13 +250,18 @@ def main():
     index = load_index()
 
     if args.new or args.sync:
-        new = new_cases(index, wanted)
+        known = set(wanted) | skipped_ids()
+        new = new_cases(index, known)
         for r in new:
             print(f"{r['id']}  {r['category']:<11} {r['title']['en']}")
         print(f"{len(new)} new case(s) not in cases.txt", file=sys.stderr)
+        extra = new_extra_cases(known | {r["id"] for r in new})
+        for n in extra:
+            print(f"{n.rsplit('__', 1)[1]}  extra       {n.split('__')[1]}")
+        print(f"{len(extra)} new awesome-opus5-5-videos case(s) not in cases.txt", file=sys.stderr)
         if args.new:
             return
-        added = [case_name(r) for r in new]
+        added = [case_name(r) for r in new] + extra
         with open(os.path.join(HERE, "cases.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(sorted(set(names) | set(added))) + "\n")
         wanted = {n.rsplit("__", 1)[1]: n for n in added}

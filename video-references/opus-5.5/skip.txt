@@ -1,0 +1,3 @@
+# Post ids that fetch.py --sync must not add again. One id per line, then "# reason".
+2107483570885312793  # awesome-opus5-5-videos rossaxbt-312793: no video in the X post (2026-11-10)
+2106774417732681887  # awesome-opus5-5-videos thewevr-681887: yt-dlp finds no video format (2026-11-10)

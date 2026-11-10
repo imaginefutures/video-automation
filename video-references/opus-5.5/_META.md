@@ -1,13 +1,13 @@
 # Opus 5.5 영상 레퍼런스 메타
 
-출처: jasonzhu.ai/en/prompts/claude-opus-5-5 에서 **Opus 5.5 + Full prompt** 조건으로 고른 **294건** (1차 142건 2026-10-08, 2차 152건 2026-11-10) + yihui-dev/awesome-opus5-5-videos에서 영상까지 받은 **13건** (extra, 2026-10-20). 합계 307건.
+출처: jasonzhu.ai/en/prompts/claude-opus-5-5 에서 **Opus 5.5 + Full prompt** 조건으로 고른 **294건** (1차 142건 2026-10-08, 2차 152건 2026-11-10) + 보조 출처 **65건** (extra: yihui-dev/awesome-opus5-5-videos 13건 10-20·41건 11-10, prompt-motion.com 11건 11-10). 합계 359건.
 새로 올라온 것을 받는 절차(출처·선택 조건·이름 규칙·동기화 기록)는 [_SYNC.md](_SYNC.md).
 각 케이스는 `<이름>.mp4`(결과 영상)와 `<이름>.md`(메타 헤더 + 원문 프롬프트)가 같은 이름으로 짝지어져 있다.
 
 **영상과 프롬프트는 저장소에 없다.** 원작자들의 콘텐츠라 재배포하지 않고, 각자 받아서 쓴다:
 
 ```bash
-python3 video-references/opus-5.5/fetch.py        # cases.txt의 307건을 이 폴더로 다운로드 (약 2.5GB, 이미 있는 파일은 건너뜀. extra 13건은 yt-dlp 필요)
+python3 video-references/opus-5.5/fetch.py        # cases.txt의 359건을 이 폴더로 다운로드 (약 3.7GB, 이미 있는 파일은 건너뜀. awesome-opus5-5-videos 출처는 yt-dlp 필요)
 python3 video-references/opus-5.5/fetch.py --new  # 사이트에 새로 올라온 full prompt 사례 확인
 python3 video-references/opus-5.5/fetch.py --sync # 그것들을 cases.txt에 넣고 받기 (이후 카탈로그 작성은 _SYNC.md)
 ```
@@ -15,7 +15,7 @@ python3 video-references/opus-5.5/fetch.py --sync # 그것들을 cases.txt에 �
 원본 사이트 데이터나 X 영상이 내려가면 그 케이스는 받아지지 않는다(스크립트가 실패 목록을 출력).
 
 이름 규칙: `<category>__<제목-slug>__<X 게시물 id>`
-category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · education 20 · product 19 · production 17 (+ extra 13)
+category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · education 20 · product 19 · production 17 (+ extra 65)
 
 ---
 
@@ -41,15 +41,15 @@ category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · edu
 | 강의·개념 설명 (다크, 차분) | [history-of-ai-documentary-short-film](education__history-of-ai-documentary-short-film__2102844654169575547.md) | [zoom-journey-from-a-cell-to-quantum-fields](education__zoom-journey-from-a-cell-to-quantum-fields__2103099756167991347.md), [how-a-language-model-answers-a-prompt-20-second-motion-graph](comparison__how-a-language-model-answers-a-prompt-20-second-motion-graph__2102724864205566388.md), [history-of-indonesia-animated-documentary](education__history-of-indonesia-animated-documentary__2103511590884815282.md) |
 | 강의·개념 설명 (종이/손그림, 따뜻함) | [animated-cycloid-lesson](education__animated-cycloid-lesson__2106052083040256293.md) | [talking-head-video-converted-to-line-art-b-roll](production__talking-head-video-converted-to-line-art-b-roll__2102827887732932956.md), [zero-shot-documentary-on-jewish-history](education__zero-shot-documentary-on-jewish-history__2103564391170089429.md), [doc-to-video-explainer-open-alignment](education__doc-to-video-explainer-open-alignment__2103545533474206118.md), [menu-scanning-taste-matching-app-demo](product__menu-scanning-taste-matching-app-demo__2112191630266761382.md) |
 | 토킹헤드 편집 + 그래픽 삽입 | [talking-head-video-edited-into-a-motion-graphics-cut](production__talking-head-video-edited-into-a-motion-graphics-cut__2109454493415023080.md) | [talking-head-video-converted-to-line-art-b-roll](production__talking-head-video-converted-to-line-art-b-roll__2102827887732932956.md), [automated-branded-video-edit-with-voice-sync](production__automated-branded-video-edit-with-voice-sync__2110019799342260630.md), [common-video-editing-effects-showcase](production__common-video-editing-effects-showcase__2111678979413598560.md), [ai-video-editing-workflow-comparison](comparison__ai-video-editing-workflow-comparison__2105682280765350117.md), [ai-edit-vs-human-edit-comparison](comparison__ai-edit-vs-human-edit-comparison__2103591152847118409.md), [ai-edited-travel-vlog](production__ai-edited-travel-vlog__2106091485125091695.md) |
-| SaaS/앱 제품 소개 (15~40초) | [reusable-prompt-template-for-a-product-motion-video](motion__reusable-prompt-template-for-a-product-motion-video__2103723183899852885.md) | [typingmind-product-intro-motion-video](motion__typingmind-product-intro-motion-video__2103703135902740699.md), [professional-30-second-product-showreel](motion__professional-30-second-product-showreel__2103845264649761062.md), [distilbook-motion-graphics-showreel](motion__distilbook-motion-graphics-showreel__2103469807375208546.md), [one-prompt-saas-launch-video](product__one-prompt-saas-launch-video__2103066071838466494.md), [launch-film-for-a-web-product](product__launch-film-for-a-web-product__2109019765134213540.md) |
+| SaaS/앱 제품 소개 (15~40초) | [reusable-prompt-template-for-a-product-motion-video](motion__reusable-prompt-template-for-a-product-motion-video__2103723183899852885.md) | [typingmind-product-intro-motion-video](motion__typingmind-product-intro-motion-video__2103703135902740699.md), [professional-30-second-product-showreel](motion__professional-30-second-product-showreel__2103845264649761062.md), [distilbook-motion-graphics-showreel](motion__distilbook-motion-graphics-showreel__2103469807375208546.md), [one-prompt-saas-launch-video](product__one-prompt-saas-launch-video__2103066071838466494.md), [launch-film-for-a-web-product](product__launch-film-for-a-web-product__2109019765134213540.md), [taxtello-bookkeeping-app-film](motion__taxtello-bookkeeping-app-film__2104139720829636937.md) |
 | Apple 키노트풍 런칭 필름 | [apple-style-product-launch-video](product__apple-style-product-launch-video__2103835273813496100.md) | [apple-keynote-style-launch-film](motion__apple-keynote-style-launch-film__2107123710251434330.md), [looping-product-launch-motion-template](motion__looping-product-launch-motion-template__2105927781678747965.md), [apple-liquid-glass-style-ui-motion-showcase](motion__apple-liquid-glass-style-ui-motion-showcase__2103510103622308152.md) |
-| UI 마이크로 인터랙션 쇼케이스 | [code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2103273003555402193.md) | [code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2106396375269134597.md), [apple-liquid-glass-style-ui-motion-showcase](motion__apple-liquid-glass-style-ui-motion-showcase__2103510103622308152.md), [animated-welcome-screen-for-the-nova-crypto-wallet](comparison__animated-welcome-screen-for-the-nova-crypto-wallet__2102681647720395115.md), [code-based-ui-motion-design-loop](motion__code-based-ui-motion-design-loop__2111814234090693110.md) |
-| 브랜드 쇼릴·인트로·범퍼 (15초) | [orange-dot-motion-design-system](motion__orange-dot-motion-design-system__2107121188027707651.md) | [20-second-kinetic-identity-bumper-for-techhalla](motion__20-second-kinetic-identity-bumper-for-techhalla__2103411244468498547.md), [15-second-motion-graphics-showcase](motion__15-second-motion-graphics-showcase__2106376222309761094.md), [15-second-motion-design-showreel-detailed-prompt](motion__15-second-motion-design-showreel-detailed-prompt__2103424524297420829.md), [high-energy-motion-graphics-showreel](motion__high-energy-motion-graphics-showreel__2103817034618339682.md) |
+| UI 마이크로 인터랙션 쇼케이스 | [code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2103273003555402193.md) | [code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2106396375269134597.md), [apple-liquid-glass-style-ui-motion-showcase](motion__apple-liquid-glass-style-ui-motion-showcase__2103510103622308152.md), [animated-welcome-screen-for-the-nova-crypto-wallet](comparison__animated-welcome-screen-for-the-nova-crypto-wallet__2102681647720395115.md), [code-based-ui-motion-design-loop](motion__code-based-ui-motion-design-loop__2111814234090693110.md), [okapi-fukugyo-166351](motion__okapi-fukugyo-166351__2103586082336166351.md), [twoclipping-762046](3d__twoclipping-762046__2104674464868762046.md) |
+| 브랜드 쇼릴·인트로·범퍼 (15초) | [orange-dot-motion-design-system](motion__orange-dot-motion-design-system__2107121188027707651.md) | [20-second-kinetic-identity-bumper-for-techhalla](motion__20-second-kinetic-identity-bumper-for-techhalla__2103411244468498547.md), [15-second-motion-graphics-showcase](motion__15-second-motion-graphics-showcase__2106376222309761094.md), [15-second-motion-design-showreel-detailed-prompt](motion__15-second-motion-design-showreel-detailed-prompt__2103424524297420829.md), [high-energy-motion-graphics-showreel](motion__high-energy-motion-graphics-showreel__2103817034618339682.md), [tanabe-fragm-706979](motion__tanabe-fragm-706979__2103802156675706979.md) |
 | 실사 클립 비트싱크 광고 | [beat-synced-showreel-from-real-clips](motion__beat-synced-showreel-from-real-clips__2102554209166000267.md) | [fast-paced-brand-advertisement](product__fast-paced-brand-advertisement__2106101651010449796.md) |
 | 세로 숏폼 (9:16) | [reels-made-with-opus-5-5](motion__reels-made-with-opus-5-5__2105283486487896448.md) | [talking-head-video-converted-to-line-art-b-roll](production__talking-head-video-converted-to-line-art-b-roll__2102827887732932956.md), [ai-video-editing-workflow-comparison](comparison__ai-video-editing-workflow-comparison__2105682280765350117.md), [chaotic-brain-rot-style-motion-video](motion__chaotic-brain-rot-style-motion-video__2103664956482941143.md), [fast-paced-brand-advertisement](product__fast-paced-brand-advertisement__2106101651010449796.md) |
 | 역사·연대기 다큐 | [epic-documentary-history-of-chinese-civilization](education__epic-documentary-history-of-chinese-civilization__2103964025683927166.md) | [history-of-indonesia-animated-documentary](education__history-of-indonesia-animated-documentary__2103511590884815282.md), [zero-shot-documentary-on-jewish-history](education__zero-shot-documentary-on-jewish-history__2103564391170089429.md), [battle-of-austerlitz-procedural-film](stories__battle-of-austerlitz-procedural-film__2103116235009347650.md), [mongol-conquest-data-visualization-comparison](comparison__mongol-conquest-data-visualization-comparison__2102566466121797767.md), [al-capone-documentary-film](education__al-capone-documentary-film__2119350502961889592.md) |
 | 과학·스케일 줌 (Powers of Ten) | [zoom-journey-from-a-cell-to-quantum-fields](education__zoom-journey-from-a-cell-to-quantum-fields__2103099756167991347.md) | [zoom-from-room-to-quarks-3d-scene](art3d__zoom-from-room-to-quarks-3d-scene__2103299766473875778.md), [working-computer-built-from-logic-gates-with-os](product__working-computer-built-from-logic-gates-with-os__2104301990985498783.md) |
-| 단계형 how-to / 레시피 | [cocktail-recipe-explainer-motion-graphic](motion__cocktail-recipe-explainer-motion-graphic__2102853258582880547.md) | [animated-pelican-explains-a-shell-command](education__animated-pelican-explains-a-shell-command__2103149526244618682.md) |
+| 단계형 how-to / 레시피 | [cocktail-recipe-explainer-motion-graphic](motion__cocktail-recipe-explainer-motion-graphic__2102853258582880547.md) | [animated-pelican-explains-a-shell-command](education__animated-pelican-explains-a-shell-command__2103149526244618682.md), [0xkarmi-129839](motion__0xkarmi-129839__2108495927988129839.md) |
 | 스포츠·규칙 해설 (TV 중계 그래픽) | [explainer-video-of-9-football-rules](education__explainer-video-of-9-football-rules__2105922894924501283.md) | |
 | 도면→3D 빌드업 (건축·제조) | [itsukushima-shrine-3d-scene](art3d__itsukushima-shrine-3d-scene__2103737014508216515.md) | [golden-pavilion-cad-to-3d-animation](art3d__golden-pavilion-cad-to-3d-animation__2103243328041132100.md), [underwater-palace-built-in-blender](art3d__underwater-palace-built-in-blender__2103669801554264378.md), [floor-plan-to-3d-interior-design-tool](art3d__floor-plan-to-3d-interior-design-tool__2104520072014508316.md), [blueprint-to-animated-pirate-ship](art3d__blueprint-to-animated-pirate-ship__2109043294911291886.md), [apartment-drafted-in-cad-then-built-in-3d](art3d__apartment-drafted-in-cad-then-built-in-3d__2111880621954081240.md), [fictional-rocket-cad-drawings-and-launch-animation](art3d__fictional-rocket-cad-drawings-and-launch-animation__2109515393220083912.md), [da-vinci-workshop-3d-build-gemini-vs-opus](comparison__da-vinci-workshop-3d-build-gemini-vs-opus__2110121002332295599.md) |
 | 제품 소재감·만족감 숏폼 (젤리/물리) | [jelly-watermelon-slicing-simulation](art3d__jelly-watermelon-slicing-simulation__2104285370951012504.md) | [interactive-jelly-press-toy](art3d__interactive-jelly-press-toy__2105285992865272110.md), [interactive-jelly-watermelon-toy](game__interactive-jelly-watermelon-toy__2106056420131029473.md), [watermelon-rubber-band-test-opus-5-5-vs-gpt-6-astra](comparison__watermelon-rubber-band-test-opus-5-5-vs-gpt-6-astra__2104994617573970308.md), [jelly-slice-material-test-comparison](comparison__jelly-slice-material-test-comparison__2109424502237016076.md), [gummy-bear-soft-body-physics-scene](comparison__gummy-bear-soft-body-physics-scene__2110131790136401989.md) |
@@ -68,7 +68,10 @@ category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · edu
 | 로드맵·단계 흐름 (목차·커리큘럼) | [animated-minecraft-treasure-map-graphic](motion__animated-minecraft-treasure-map-graphic__2113248976984068329.md) | [stickman-survival-thriller](stories__stickman-survival-thriller__2115786060231770351.md) (규칙·단계를 긴장감 있게) |
 | 작업 과정 STEP 설명 (코드 카드 + 결과) | [rigged-rowing-game-character-from-a-concept-sheet](art3d__rigged-rowing-game-character-from-a-concept-sheet__2117273092284112963.md) | |
 | 반복 개선·비포/애프터 | [frost-fortress-fantasy-scene](art3d__frost-fortress-fantasy-scene__2116533061495947270.md) | [voxel-island-on-a-flying-sea-turtle](art3d__voxel-island-on-a-flying-sea-turtle__2116169391301607810.md) |
-| 핵심 문장 키네틱 타이포 | [beat-synced-k-pop-motion-graphics-music-video](motion__beat-synced-k-pop-motion-graphics-music-video__2110001964402831512.md) | [automated-branded-video-edit-with-voice-sync](production__automated-branded-video-edit-with-voice-sync__2110019799342260630.md) |
+| 핵심 문장 키네틱 타이포 | [beat-synced-k-pop-motion-graphics-music-video](motion__beat-synced-k-pop-motion-graphics-music-video__2110001964402831512.md) | [automated-branded-video-edit-with-voice-sync](production__automated-branded-video-edit-with-voice-sync__2110019799342260630.md), [gdgtify-989608](3d__gdgtify-989608__2105669567036989608.md), [gdgtify-130294](explainer__gdgtify-130294__2105570411870130294.md) |
+| 설명 스타일 견본 (화이트보드·아이소메트릭·3B1B 등 15종) | [nft-chen-068069](3d__nft-chen-068069__2107653056771068069.md) | |
+| 수학·논리 증명 (기계 장치 비유) | [gdgtify-393073](motion__gdgtify-393073__2107054188836393073.md) | |
+| 웹사이트·서비스 페이지 소개 (3D 스크롤) | [landing-page-3d-scroll](motion__landing-page-3d-scroll__2110329502676951367.md) | [voice-agent-landing-page](motion__voice-agent-landing-page__2112540104896241791.md) |
 | 실사풍 생성 영상 (외부 모델) | [ai-documentary-about-superintelligence](education__ai-documentary-about-superintelligence__2103304514329854102.md) | [promotional-travel-video-about-poland](product__promotional-travel-video-about-poland__2102728913579327722.md), [ai-pipeline-short-video-with-opus-5-5](production__ai-pipeline-short-video-with-opus-5-5__2105370568178479476.md) |
 | 도서·출판 프로모 (빈티지) | [promo-video-for-a-science-based-book](product__promo-video-for-a-science-based-book__2103904736160120935.md) | |
 | 채용·회사 소개 + TTS | [opus-5-5-plus-gemini-tts-demo](production__opus-5-5-plus-gemini-tts-demo__2103590367518171295.md) | |
@@ -78,10 +81,10 @@ category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · edu
 ## 2. 스타일 계열
 
 **A. 다크 미니멀 + 단일 강조색** — 검정/차콜 배경, 흰 또는 크림 산세리프, 강조색 1개(주황·앰버·코랄). 차분하고 고급스러움. 설명·브랜드·런칭 모두 무난.
-[history-of-ai-documentary-short-film](education__history-of-ai-documentary-short-film__2102844654169575547.md), [15-second-motion-design-showreel-detailed-prompt](motion__15-second-motion-design-showreel-detailed-prompt__2103424524297420829.md), [motion-design-and-sound-engineering-demo](motion__motion-design-and-sound-engineering-demo__2103557735086428547.md), [cinematic-product-launch-film](product__cinematic-product-launch-film__2104805179401068964.md), [chaotic-brain-rot-style-motion-video](motion__chaotic-brain-rot-style-motion-video__2103664956482941143.md), [ai-self-introduction-song-and-video](stories__ai-self-introduction-song-and-video__2103698854399099057.md), [radial-engine-animation-comparison](comparison__radial-engine-animation-comparison__2116606788241969445.md), [launch-film-for-a-web-product](product__launch-film-for-a-web-product__2109019765134213540.md), [beat-synced-k-pop-motion-graphics-music-video](motion__beat-synced-k-pop-motion-graphics-music-video__2110001964402831512.md), [talking-head-video-edited-into-a-motion-graphics-cut](production__talking-head-video-edited-into-a-motion-graphics-cut__2109454493415023080.md)
+[history-of-ai-documentary-short-film](education__history-of-ai-documentary-short-film__2102844654169575547.md), [15-second-motion-design-showreel-detailed-prompt](motion__15-second-motion-design-showreel-detailed-prompt__2103424524297420829.md), [motion-design-and-sound-engineering-demo](motion__motion-design-and-sound-engineering-demo__2103557735086428547.md), [cinematic-product-launch-film](product__cinematic-product-launch-film__2104805179401068964.md), [chaotic-brain-rot-style-motion-video](motion__chaotic-brain-rot-style-motion-video__2103664956482941143.md), [ai-self-introduction-song-and-video](stories__ai-self-introduction-song-and-video__2103698854399099057.md), [radial-engine-animation-comparison](comparison__radial-engine-animation-comparison__2116606788241969445.md), [launch-film-for-a-web-product](product__launch-film-for-a-web-product__2109019765134213540.md), [beat-synced-k-pop-motion-graphics-music-video](motion__beat-synced-k-pop-motion-graphics-music-video__2110001964402831512.md), [talking-head-video-edited-into-a-motion-graphics-cut](production__talking-head-video-edited-into-a-motion-graphics-cut__2109454493415023080.md), [taxtello-bookkeeping-app-film](motion__taxtello-bookkeeping-app-film__2104139720829636937.md), [tanabe-fragm-706979](motion__tanabe-fragm-706979__2103802156675706979.md), [gdgtify-989608](3d__gdgtify-989608__2105669567036989608.md)
 
 **B. 오프화이트 에디토리얼 / Apple 미니멀** — 웜 화이트 캔버스, 검정 UI·필 버튼, Geist류 산세리프, 여백 많음. UI·제품·런칭.
-[code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2103273003555402193.md), [code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2106396375269134597.md), [apple-style-product-launch-video](product__apple-style-product-launch-video__2103835273813496100.md), [apple-keynote-style-launch-film](motion__apple-keynote-style-launch-film__2107123710251434330.md), [professional-30-second-product-showreel](motion__professional-30-second-product-showreel__2103845264649761062.md), [reels-made-with-opus-5-5](motion__reels-made-with-opus-5-5__2105283486487896448.md), [cosmos-motion-piece-via-hyperframes](motion__cosmos-motion-piece-via-hyperframes__2103481296018092204.md), [code-based-ui-motion-design-loop](motion__code-based-ui-motion-design-loop__2111814234090693110.md), [relaxing-generative-visual-made-with-jig-and-opus-5-5](art3d__relaxing-generative-visual-made-with-jig-and-opus-5-5__2109943963536998694.md), [procedural-robotic-giant-squid-teardown](art3d__procedural-robotic-giant-squid-teardown__2119392067646345249.md), [automated-branded-video-edit-with-voice-sync](production__automated-branded-video-edit-with-voice-sync__2110019799342260630.md)
+[code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2103273003555402193.md), [code-based-ui-motion-design-showreel](motion__code-based-ui-motion-design-showreel__2106396375269134597.md), [apple-style-product-launch-video](product__apple-style-product-launch-video__2103835273813496100.md), [apple-keynote-style-launch-film](motion__apple-keynote-style-launch-film__2107123710251434330.md), [professional-30-second-product-showreel](motion__professional-30-second-product-showreel__2103845264649761062.md), [reels-made-with-opus-5-5](motion__reels-made-with-opus-5-5__2105283486487896448.md), [cosmos-motion-piece-via-hyperframes](motion__cosmos-motion-piece-via-hyperframes__2103481296018092204.md), [code-based-ui-motion-design-loop](motion__code-based-ui-motion-design-loop__2111814234090693110.md), [relaxing-generative-visual-made-with-jig-and-opus-5-5](art3d__relaxing-generative-visual-made-with-jig-and-opus-5-5__2109943963536998694.md), [procedural-robotic-giant-squid-teardown](art3d__procedural-robotic-giant-squid-teardown__2119392067646345249.md), [automated-branded-video-edit-with-voice-sync](production__automated-branded-video-edit-with-voice-sync__2110019799342260630.md), [okapi-fukugyo-166351](motion__okapi-fukugyo-166351__2103586082336166351.md), [landing-page-3d-scroll](motion__landing-page-3d-scroll__2110329502676951367.md), [0xnicc0-516612](motion__0xnicc0-516612__2107217691505516612.md)
 
 **C. 파스텔 글래스모피즘** — 파스텔 그라디언트 + 반투명 글래스 UI. iOS/macOS 기능 소개.
 [apple-liquid-glass-style-ui-motion-showcase](motion__apple-liquid-glass-style-ui-motion-showcase__2103510103622308152.md), [looping-product-launch-motion-template](motion__looping-product-launch-motion-template__2105927781678747965.md), [animated-welcome-screen-for-the-nova-crypto-wallet](comparison__animated-welcome-screen-for-the-nova-crypto-wallet__2102681647720395115.md) (다크 핀테크 변형)
@@ -90,10 +93,10 @@ category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · edu
 [typingmind-product-intro-motion-video](motion__typingmind-product-intro-motion-video__2103703135902740699.md), [one-prompt-motion-graphic-from-codebase](motion__one-prompt-motion-graphic-from-codebase__2105268326381625845.md), [30-second-motion-promo-for-kody](motion__30-second-motion-promo-for-kody__2103638102333858193.md), [ai-generated-animated-video-demo](motion__ai-generated-animated-video-demo__2105279421435572498.md), [how-a-language-model-answers-a-prompt-20-second-motion-graph](comparison__how-a-language-model-answers-a-prompt-20-second-motion-graph__2102724864205566388.md), [surveillance-style-subject-analysis-loop](motion__surveillance-style-subject-analysis-loop__2112590477144797190.md), [electric-motor-animation-model-comparison](comparison__electric-motor-animation-model-comparison__2110065587279798719.md), [explainer-video-on-jem-self-supervised-learning-paper](education__explainer-video-on-jem-self-supervised-learning-paper__2114676265093664978.md), [apartment-drafted-in-cad-then-built-in-3d](art3d__apartment-drafted-in-cad-then-built-in-3d__2111880621954081240.md), [tesla-roadster-explainer-video](education__tesla-roadster-explainer-video__2111440772998599022.md)
 
 **E. 볼드 그래픽 / 스위스·포스터** — 원색 풀스크린 컷, 초굵은 산세리프, 고대비. 범퍼·쇼릴·훅.
-[15-second-motion-graphics-showcase](motion__15-second-motion-graphics-showcase__2106376222309761094.md), [20-second-kinetic-identity-bumper-for-techhalla](motion__20-second-kinetic-identity-bumper-for-techhalla__2103411244468498547.md), [high-energy-motion-graphics-showreel](motion__high-energy-motion-graphics-showreel__2103817034618339682.md), [motion-showreel-with-a-fully-code-synthesized-soundtrack](motion__motion-showreel-with-a-fully-code-synthesized-soundtrack__2103538744695693512.md), [orange-dot-motion-design-system](motion__orange-dot-motion-design-system__2107121188027707651.md), [persian-language-motion-graphics-showreel](motion__persian-language-motion-graphics-showreel__2103562127474819150.md), [claude-made-showreel](motion__claude-made-showreel__2116296321313521795.md)
+[15-second-motion-graphics-showcase](motion__15-second-motion-graphics-showcase__2106376222309761094.md), [20-second-kinetic-identity-bumper-for-techhalla](motion__20-second-kinetic-identity-bumper-for-techhalla__2103411244468498547.md), [high-energy-motion-graphics-showreel](motion__high-energy-motion-graphics-showreel__2103817034618339682.md), [motion-showreel-with-a-fully-code-synthesized-soundtrack](motion__motion-showreel-with-a-fully-code-synthesized-soundtrack__2103538744695693512.md), [orange-dot-motion-design-system](motion__orange-dot-motion-design-system__2107121188027707651.md), [persian-language-motion-graphics-showreel](motion__persian-language-motion-graphics-showreel__2103562127474819150.md), [claude-made-showreel](motion__claude-made-showreel__2116296321313521795.md), [twoclipping-551116](motion__twoclipping-551116__2106101258834551116.md)
 
 **F. 종이·손그림·잉크** — 크림 종이 질감, 선화/두들/잉크 실루엣, 따뜻함. 교육·감성 단편.
-[talking-head-video-converted-to-line-art-b-roll](production__talking-head-video-converted-to-line-art-b-roll__2102827887732932956.md), [animated-cycloid-lesson](education__animated-cycloid-lesson__2106052083040256293.md), [the-first-spark-procedural-hand-drawn-short](motion__the-first-spark-procedural-hand-drawn-short__2102910531560731063.md), [animated-episode-drawn-entirely-in-code](stories__animated-episode-drawn-entirely-in-code__2102879301876031808.md), [distilbook-motion-graphics-showreel](motion__distilbook-motion-graphics-showreel__2103469807375208546.md), [cocktail-recipe-explainer-motion-graphic](motion__cocktail-recipe-explainer-motion-graphic__2102853258582880547.md), [remake-of-the-claude-pop-music-video](production__remake-of-the-claude-pop-music-video__2102801274173587569.md) (리소 프린트풍), [menu-scanning-taste-matching-app-demo](product__menu-scanning-taste-matching-app-demo__2112191630266761382.md), [motion-short-about-task-delegation](motion__motion-short-about-task-delegation__2108199183983497433.md), [paper-collage-momotaro-animation](stories__paper-collage-momotaro-animation__2110931024469540979.md)
+[talking-head-video-converted-to-line-art-b-roll](production__talking-head-video-converted-to-line-art-b-roll__2102827887732932956.md), [animated-cycloid-lesson](education__animated-cycloid-lesson__2106052083040256293.md), [the-first-spark-procedural-hand-drawn-short](motion__the-first-spark-procedural-hand-drawn-short__2102910531560731063.md), [animated-episode-drawn-entirely-in-code](stories__animated-episode-drawn-entirely-in-code__2102879301876031808.md), [distilbook-motion-graphics-showreel](motion__distilbook-motion-graphics-showreel__2103469807375208546.md), [cocktail-recipe-explainer-motion-graphic](motion__cocktail-recipe-explainer-motion-graphic__2102853258582880547.md), [remake-of-the-claude-pop-music-video](production__remake-of-the-claude-pop-music-video__2102801274173587569.md) (리소 프린트풍), [menu-scanning-taste-matching-app-demo](product__menu-scanning-taste-matching-app-demo__2112191630266761382.md), [motion-short-about-task-delegation](motion__motion-short-about-task-delegation__2108199183983497433.md), [paper-collage-momotaro-animation](stories__paper-collage-momotaro-animation__2110931024469540979.md), [paper-style-product-launch-film](motion__paper-style-product-launch-film__2103890476885585923.md), [0xkarmi-129839](motion__0xkarmi-129839__2108495927988129839.md)
 
 **G. 빈티지 양피지 / 세피아 다큐** — 양피지·고서 일러스트, 세리프. 역사·출판.
 [zero-shot-documentary-on-jewish-history](education__zero-shot-documentary-on-jewish-history__2103564391170089429.md), [promo-video-for-a-science-based-book](product__promo-video-for-a-science-based-book__2103904736160120935.md), [sand-painting-animation-with-narrated-soundtrack](art3d__sand-painting-animation-with-narrated-soundtrack__2102592355165782312.md), [animated-cycloid-lesson](education__animated-cycloid-lesson__2106052083040256293.md), [animated-minecraft-treasure-map-graphic](motion__animated-minecraft-treasure-map-graphic__2113248976984068329.md), [da-vinci-workshop-3d-build-gemini-vs-opus](comparison__da-vinci-workshop-3d-build-gemini-vs-opus__2110121002332295599.md), [al-capone-documentary-film](education__al-capone-documentary-film__2119350502961889592.md)
@@ -148,6 +151,7 @@ category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · edu
 
 - **비교 영상 (comparison 92건 대부분)**: 화면이 2~12분할이고 모델명·비용 라벨이 박혀 있다. 룩은 Opus 칸만 보고(2차 수집분은 각 항목 주의에 Opus 칸 위치를 적음), 프롬프트는 그대로 쓸 수 있다.
 - **비슷하거나 같은 영상**: 젤리 디오라마·젤리 생물 시리즈(vib3coded)는 수십 건이 거의 같은 룩이라 J 계열 대표 1~2건만 보면 된다. 같은 결과 영상이 두 케이스에 있는 경우: [golden-hour-japanese-temple-3d-scene](art3d__golden-hour-japanese-temple-3d-scene__2110657641831956870.md) = [code-only-three-js-temple-at-dusk](art3d__code-only-three-js-temple-at-dusk__2112545748944556038.md) (앞이 원본), [electric-motor-animation-model-comparison](comparison__electric-motor-animation-model-comparison__2110065587279798719.md) = [electric-motor-3d-animation-comparison](comparison__electric-motor-3d-animation-comparison__2111513156589629941.md) (Opus 칸).
+- **같은 영상 더**: [orange-dot-motion-system](motion__orange-dot-motion-system__2107486052550062398.md) = [orange-dot-motion-design-system](motion__orange-dot-motion-design-system__2107121188027707651.md) (다른 계정의 재게시, 해상도만 높음), [frame-by-frame-launch-video](motion__frame-by-frame-launch-video__2104229441211969685.md) = [launch-video-remake-comparison](motion__launch-video-remake-comparison__2104401208958230764.md)의 오른쪽 칸. 템플릿 하나를 여러 명이 돌린 UI 모핑 변형이 extra에 여러 건 있다.
 - **Opus 단독 아님**: 메타 models에 fable-5.5 등이 함께 적힌 케이스(2차 수집분 일부)는 결과가 Opus만의 것이 아닐 수 있다. 각 항목 주의 참고.
 - **화면 녹화 (게임·인터랙티브·툴)**: 편집된 영상이 아니라 브라우저/앱 녹화. 컷 리듬·전환 레퍼런스로는 약하다 (game 대부분, art3d 일부, [liquid-glass-web-hero-section](product__liquid-glass-web-hero-section__2106061619176620344.md) 는 13분 작업 녹화).
 - **외부 에셋 의존 (needs_assets)**: 제품 스크린샷, 음원, 캐릭터 시트, 원본 촬영본이 있어야 재현된다. 각 `.md` 헤더의 `needs reference assets` 확인.
@@ -3663,9 +3667,9 @@ category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · edu
 - **태그**: 젤리, 키위, 과일, soft-body, WebGPU, material-study, 에디토리얼, 비교영상
 - **주의**: 2x2 분할 비교(좌상 Opus 5.5 / 우상 Fable 5.1 / 좌하 Sonnet 5.5 / 우하 GPT-6.1 Sol)라 패널이 작고 모델명·비용 라벨이 있음. 좌상단 패널만 참고
 
-### extra (awesome-opus5-5-videos 추가분) — 13건
+### extra (보조 출처 추가분) — 65건
 
-> 두 번째 출처(yihui-dev/awesome-opus5-5-videos)에서 영상까지 받은 것. 요약은 프롬프트와 영상 메타 기준으로 작성. 조회수 자료 없음.
+> jasonzhu 밖에서 받은 것. 앞 13건은 yihui-dev/awesome-opus5-5-videos(10-20, 프롬프트·영상 메타 기준 요약), 다음 41건은 같은 저장소의 1,000자 이상 프롬프트(11-10), 마지막 11건은 prompt-motion.com에서 손으로 고른 것(11-10). 뒤의 52건은 영상 프레임을 보고 썼다. 조회수 자료 없음.
 
 #### [everestchris6-399895](3d__everestchris6-399895__2104965415164399895.md)
 `3d__everestchris6-399895__2104965415164399895` · 16:9 · 40s · 조회 - · 에셋필요 -
@@ -3796,3 +3800,623 @@ category: comparison 92 · art3d 52 · motion 49 · stories 23 · game 22 · edu
 - **스타일**: 빠른 컷의 펀치 있는 편집, 이미지 생성 소스 혼합.
 - **태그**: 토킹헤드, 자막, 편집, ai-image
 - **주의**: 프롬프트는 한 줄. 영상으로 룩을 판단할 것
+
+#### [agioyaz-397647](3d__agioyaz-397647__2103167623303397647.md)
+`3d__agioyaz-397647__2103167623303397647` · 9:16 · 37s · 조회 - · 에셋필요 -
+
+- **요약**: 어두운 고딕 성당에서 BUSY·KPI·DEADLINE 같은 단어 블록이 창을 막아 빛이 사라지고, 블록이 하나씩 빠지며 스테인드글라스 빛이 쏟아지는 'White Space' 세로 단편
+- **어울리는 경우**: 번아웃·여유·비움 같은 메시지형 오프닝 / "하나를 내려놓으면" 식 전환점 강조 / 감성 브랜드 필름·세로 숏폼 / 강의 마무리의 여운 있는 클로징
+- **잘하는 표현**: 단어가 새겨진 3D 큐브가 날아와 쌓이는 은유 / 볼류메트릭 광선과 바닥 투영(막힌 곳은 그림자) / 무채색에서 보석색으로 넘어가는 색 대비 서사 / 광선 사이로 올라가 내려다보는 카메라
+- **스타일**: 거의 검은 석조 성당에 흰 광선, 회색 매트 큐브와 작은 흰 각인 글자, 후반은 코발트 블루·루비·금색 스테인드글라스. 얇은 세리프 영문 자막이 조용히 떴다 사라지는 엄숙한 시네마틱 3D.
+- **기술**: three.js
+- **프롬프트 구조**: 【Experience】【Setting】【품질 기준】【Timeline 초 단위】【블록 단어】【자막】【음악·사운드】 블록으로 나눈 감성 단편 스펙
+- **태그**: 스테인드글라스, 성당, 볼류메트릭 라이트, 키네틱 타이포, 은유, 세로영상, three.js, 시네마틱, 비움
+- **주의**: 같은 작가의 일본어판(agioyaz-986461)과 구성이 같음. 성모·천사 종교 도상이 나오므로 쓰임에 맞는지 볼 것. 스테인드글라스는 프롬프트가 말한 샤르트르급이 아니라 단순한 일러스트 수준
+
+#### [agioyaz-986461](3d__agioyaz-986461__2103145567945986461.md)
+`3d__agioyaz-986461__2103145567945986461` · 9:16 · 37s · 조회 - · 에셋필요 -
+
+- **요약**: '余白' 일본어판. 忙しい·効率化·締切 등 일본어 단어 큐브가 성당 창을 막았다가 하나씩 빠지며 스테인드글라스 빛이 바닥을 채우는 세로 단편
+- **어울리는 경우**: 아시아권 언어 단어를 블록에 새기는 메시지 영상 / 쉼·여백 주제 강의 오프닝·클로징 / 세로 숏폼 감성 캠페인
+- **잘하는 표현**: 동아시아 문자가 새겨진 3D 큐브 쌓기 / 창의 빈칸을 그대로 반영하는 바닥 빛 투영 / 무채색→보석색 색 전환 / 마지막 대형 세로쓰기 명조 문구
+- **스타일**: 검은 석조 성당, 흰 광선, 회색 큐브에 흰 일본어 각인, 후반엔 방사형 노랑·빨강·파랑 스테인드글라스. 명조체 가로 자막과 마지막 세로쓰기 큰 명조 문구로 마무리하는 시네마틱 3D.
+- **기술**: three.js
+- **프롬프트 구조**: 【作品名】【見せたい体験】【舞台】【時間の構成】【言葉】【光と質感】【技術条件】로 나눈 일본어 스펙. 스테인드글라스 그림을 이미지로 만들어 창·광선·바닥에 공통으로 쓰라고 지시
+- **태그**: 스테인드글라스, 성당, 일본어 타이포, 세로쓰기, 볼류메트릭 라이트, 여백, 세로영상, three.js, 시네마틱
+- **주의**: 영어판(agioyaz-397647)과 같은 구성. 한국어로 옮길 때 참고하기 좋음. 종교 도상 포함
+
+#### [gdgtify-989608](3d__gdgtify-989608__2105669567036989608.md)
+`3d__gdgtify-989608__2105669567036989608` · 1:1 · 20s · 조회 - · 에셋필요 -
+
+- **요약**: 케네디 '우리는 달에 가기로 했다' 연설 문장이 타원 궤도를 따라 돌다가 'hard'에서 궤도가 열리며 직선으로 탈출하는 키네틱 타이포그래피
+- **어울리는 경우**: 명언·핵심 문장 한 줄 인용 강조 / "제자리를 돌다가 벗어난다" 같은 전환·돌파 메시지 / 우주·도전 주제 강의 인트로 / 문장 단위 타이포 인서트
+- **잘하는 표현**: 기준선을 경로로 삼아 글자가 곡선을 따라 흐르는 텍스트 패스 / 궤도 이탈로 표현한 수사적 전환 / 카메라 롤과 글자 역회전으로 가독성 유지 / 강조 단어만 이탤릭으로 바꾸기
+- **스타일**: 미드나잇 네이비 배경에 따뜻한 흰색 굵은 그로테스크, 코랄 궤적선·블루 헤어라인 타원, 작은 달 점과 마지막 초승달. 장식 없는 천문기기 같은 절제된 2D 모션.
+- **기술**: Canvas/SVG/WebGL 단일 HTML
+- **프롬프트 구조**: 표시 문구 원문 고정 → 색 HEX·서체 아트 디렉션·금지 목록 → 중심 시각 규칙(기준선=궤적) → 초 단위 스토리보드 → 카메라 동작 3종 제한
+- **태그**: 키네틱타이포, 텍스트패스, 궤도, 우주, 인용문, 다크네이비, 미니멀, 2D, 명언
+- **주의**: 실존 인물(케네디) 연설 인용
+
+#### [morse-369333](3d__morse-369333__2103485566570369333.md)
+`3d__morse-369333__2103485566570369333` · 1:1 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: 커서 클릭에 맞춰 하나의 흰 카드가 이모지 반응·별점·인원 스테퍼·달력·색상 피커·요금제 토글·진행 링·아바타·토스트로 끊김 없이 변신하는 UI 마이크로 인터랙션 루프
+- **어울리는 경우**: 앱·SaaS 기능 소개 / UI·UX 강의의 컴포넌트 예시 / 제품 런칭 숏 티저 / "버튼 하나가 여러 기능이 된다" 설명
+- **잘하는 표현**: 단일 도형 모핑으로 상태 전환 / 커서 클릭·드래그로 만드는 실제 조작감 / 상태마다 배경색이 바뀌는 비트 동기 컷 / 스프링 이징과 짧은 블러 교체
+- **스타일**: 핫핑크·보라·시안·블루·오렌지·그린·옐로 등 채도 높은 단색 배경에 반투명 원·둥근 사각 장식, 흰 라운드 UI 카드와 검은 산세리프. 밝고 경쾌한 Dribbble풍 2D UI 모션.
+- **기술**: Playwright, ffmpeg tmix 모션블러, numpy 비트 분석
+- **프롬프트 구조**: <inputs><direction><structure><build><gotchas><start> 태그로 나눈 템플릿. 먼저 상태 목록·음악을 물어본 뒤 비트 그리드에 배치하게 함
+- **태그**: UI모션, 마이크로인터랙션, 모핑, 커서, 비트싱크, 컬러풀, Dribbble, 루프, 2D
+- **주의**: 프롬프트는 밝은 웜그레이 배경·흑백 컴포넌트·버튼→로더→뮤직플레이어 순서를 말하지만 결과는 채도 높은 색 배경과 다른 상태 목록이라 서로 다름. 음악은 직접 준비해야 하는 템플릿
+
+#### [nft-chen-068069](3d__nft-chen-068069__2107653056771068069.md)
+`3d__nft-chen-068069__2107653056771068069` · 16:9 · 171s · 조회 - · 에셋필요 -
+
+- **요약**: 그림자극·아이소메트릭 흐름도·화이트보드·한자 변천·3D 분해도·그림책·3B1B 수학·고지도·쿠르츠게작트 인포그래픽·플랫 MG·비트 타이포·만화 칸·타임라인 등 지식 설명 스타일 15종을 프롬프트와 함께 카드로 넘겨 보여주는 중국어 쇼케이스
+- **어울리는 경우**: 강의 인서트 스타일 고르기용 견본집 / 개념 설명(과정·비교·비율·역사) 인서트 / 수학·과학·역사 교양 강의 / 스타일별 짧은 프롬프트 출발점
+- **잘하는 표현**: 한 주제를 10초 안에 설명하는 짧은 설명 애니메이션 15종 / 번호·스타일명·프롬프트를 옆에 둔 갤러리 프레젠테이션 / 스타일마다 다른 질감(양피지·종이·화이트보드·다크 수학)
+- **스타일**: 흐린 배경 위 큰 카드에 각 데모를 띄우고 오른쪽에 '01/15' 번호·명조 제목·프롬프트 본문을 둔 레이아웃. 데모는 따뜻한 양피지·파스텔 아이소·흰 화이트보드·다크 블루 수학 등 제각각인 2D/2.5D 위주.
+- **기술**: WebGL, three.js(일부 스타일)
+- **프롬프트 구조**: "做一支 N 秒 [스타일]，讲【주제】" 형식의 한두 문장 미니 프롬프트 15개를 나열(길이·스타일·주제·핵심 연출·자막)
+- **태그**: 설명영상, 스타일카탈로그, 화이트보드, 아이소메트릭, 3Blue1Brown, Kurzgesagt, 고지도, 그림자극, 한자, 중국어
+- **주의**: 15개 데모를 한 편으로 묶은 쇼케이스라 개별 데모는 각 10초 남짓이고 화면 일부만 차지함. 모든 글자가 중국어. 3B1B·Kurzgesagt 화풍을 이름으로 지목함
+
+#### [raphaelaubryy-687877](3d__raphaelaubryy-687877__2103413596822687877.md)
+`3d__raphaelaubryy-687877__2103413596822687877` · 16:9 · 20s · 조회 - · 에셋필요 -
+
+- **요약**: 'Does ChatGPT [recommend you]' 훅에서 검색창 UI로 넘어가 ChatGPT 답변 화면 벽·3D 캐러셀·큰 숫자·로고로 이어지는 Howseen AI 제품 런칭 광고
+- **어울리는 경우**: SaaS·AI 서비스 런칭 광고 / 실제 화면 캡처를 여러 장 보여주는 기능 소개 / 통계 숫자 강조 / 음악 드롭에 맞춘 프로모 숏
+- **잘하는 표현**: 한 단어씩 떨어지는 훅 타이포 / 버튼에서 원이 열리며 다크 씬으로 전환 / 바닥 반사가 있는 3D 화면 캐러셀과 휩팬 / 푸시 컷으로 넘기는 큰 숫자·한 단어
+- **스타일**: 오프화이트로 시작해 검은 배경으로 넘어가는 하이엔드 미니멀, 흰 산세리프(Geist/Inter)에 하늘색 강조 하나, 실제 모바일 화면 캡처 사용. 군더더기 없는 Apple식 제품 광고 톤.
+- **기술**: Playwright(서브프레임 모션블러), ffmpeg, numpy 비트 분석
+- **프롬프트 구조**: <inputs><direction><structure><build><gotchas><start> 템플릿. 120BPM 10마디 구성을 마디별로 정하고 먼저 스토리보드를 확인받게 함
+- **태그**: 제품광고, SaaS, 런칭영상, 3D캐러셀, 키네틱타이포, 다크미니멀, 비트싱크, 화면캡처
+- **주의**: 실제 소유한 세로 영상 클립 10~20개와 음악·제품 정보를 넣어야 하는 템플릿. 결과물에 ChatGPT·HubSpot 등 타사 로고·화면이 나옴
+
+#### [tanabe-fragm-322001](3d__tanabe-fragm-322001__2107644501372322001.md)
+`3d__tanabe-fragm-322001__2107644501372322001` · 16:9 · 30s · 조회 - · 에셋필요 -
+
+- **요약**: 회반죽 바닥에 타일 한 장이 떨어지고 수십만 장이 소용돌이치며 쌓여 소녀 일러스트가 되고, 마지막에 문구·버튼 타일이 뒤집혀 AI 스쿨 광고 배너가 완성되는 반전 광고
+- **어울리는 경우**: 완성 이미지를 마지막에 공개하는 리빌 광고 / 포스터·썸네일·배너를 극적으로 등장시키기 / "작은 것이 모여 큰 그림" 은유 / 강의 표지·결과물 공개 장면
+- **잘하는 표현**: 인스턴싱한 수십만 개 3D 타일 쌓기 / 얕은 피사계심도 보케와 낮은 앵글에서 부감으로 빠지는 카메라 / 글자 타일이 왼쪽부터 파닥파닥 뒤집히는 리빌 / 소재별 타일 재질(도자기·슬레이트·자개)
+- **스타일**: 밝은 베이지 회반죽 바닥에 붉은 초크선, 갈색 타일이 쌓이며 파스텔 핑크·민트 애니풍 광고 이미지로 수렴. 따뜻한 자연광의 포토리얼 3D에서 마지막에 평면 광고 그래픽으로 끝남.
+- **기술**: Three.js, esbuild, puppeteer-core, ffmpeg, ElevenLabs 효과음
+- **프롬프트 구조**: 목표 → 사양 → 초 단위 흐름 → 꼭 지킬 함정 → 소리 → 진행 순서 → [입력] 빈칸(엔드프레임·시작 위치·보여줄 그림·버튼 문구)의 일본어 템플릿
+- **태그**: 타일, 모자이크, 리빌, 광고, 인스턴싱, 피사계심도, 3D, 반전, 일본어
+- **주의**: 마지막 화면이 될 광고 이미지를 첨부해야 하는 빈칸 템플릿. 결과의 소녀 일러스트·광고는 외부 이미지(생성 이미지로 보임). 효과음은 ElevenLabs 유료 API
+
+#### [twoclipping-762046](3d__twoclipping-762046__2104674464868762046.md)
+`3d__twoclipping-762046__2104674464868762046` · 1:1 · 22s · 조회 - · 에셋필요 -
+
+- **요약**: 검은 알약 버튼이 스피너·체크·말풍선 점으로 변하고, 재생 버튼에서 다크 음악 앱이 열려 커버 스와이프·볼륨 드래그·초록 차트를 지나 다시 버튼으로 돌아오는 원테이크 UI 루프
+- **어울리는 경우**: 앱 기능을 끊김 없이 이어 보여주는 소개 / 음악·미디어 앱 데모 / "코드로 만든 영상" 메타 데모 / UI 모션 강의 예시
+- **잘하는 표현**: 컷 없이 한 도형이 다음 장면으로 자라나는 모핑 / 커서 제스처가 카메라를 끌고 가는 전환 / 앨범 커버 색으로 앱 전체 리틴트 / 볼륨 바 러버밴드와 숫자 카운트업 차트
+- **스타일**: 밝은 웜그레이 스테이지에 검은 UI, 앱 부분은 커버 색이 번진 다크 그레이, 강조색은 초록(#1ed760) 하나. Geist 산세리프와 부드러운 그림자의 Apple풍 2D UI 모션.
+- **프롬프트 구조**: <inputs>(질문·답·앨범 커버 2장·음악·로고, 기본값 제공) → <direction>(크기·이징·색·금지) → <structure>(장면별 제스처) 템플릿
+- **태그**: UI모션, 모핑, 원테이크, 뮤직플레이어, 커서, 루프, 오프화이트, 2D, Spotify풍
+- **주의**: 앨범 커버 사진 2장과 음악이 필요한 템플릿(결과의 커버는 분위기 사진). 초록 강조와 화면 구성이 Spotify를 닮음. 끝부분에 Claude 로고를 쓰는 기본값이 있음
+
+#### [xanares-738984](3d__xanares-738984__2105770390924738984.md)
+`3d__xanares-738984__2105770390924738984` · 16:9 · 37s · 조회 - · 에셋필요 -
+
+- **요약**: 안개 속 크롬 구가 음악 타격마다 맨델박스 프랙털로 자라고, 드롭에서 그 표면이 석양 지형이 되어 저공비행한 뒤 금색 'ZERO SHOT' 글자로 끝나는 데모씬 영상
+- **어울리는 경우**: 음악에 맞춘 추상 오프닝·타이틀 / 기술·AI 주제의 강렬한 인트로 / 프랙털·수학적 형태 시각화 / 단계가 쌓여 복잡해지는 성장 은유
+- **잘하는 표현**: 셰이더 레이마칭 크롬 반사 재질 / 비트마다 한 단계씩 깊어지는 프랙털 / 오브젝트 표면이 지형으로 바뀌는 스케일 전환과 플라이오버 / 피사계심도·안개·블룸
+- **스타일**: 짙은 회흑색 안개 속 은색 크롬 오브젝트에서 호박색 석양 하늘과 거친 프랙털 지형으로 넘어감. 마지막은 갈색 배경 위 금색 굵은 타이틀의 묵직한 시네마틱 3D.
+- **기술**: WebGL2 프래그먼트 셰이더 레이마처, headless Chrome, ffmpeg
+- **프롬프트 구조**: 원테이크 스토리 3단계 → 룩(패스트레이싱급 효과 목록) → 싱크(비트맵 JSON) → 기술 조건 순의 짧은 브리프
+- **태그**: 데모씬, 프랙털, 맨델박스, 레이마칭, 셰이더, 크롬, 석양, 시네마틱, 3D, 음악싱크
+- **주의**: 사용자가 음악 파일을 넣어야 함. 패스트레이싱급이라는 프롬프트와 달리 중반 지형은 노이즈와 블러가 심함
+
+#### [gdgtify-130294](explainer__gdgtify-130294__2105570411870130294.md)
+`explainer__gdgtify-130294__2105570411870130294` · 1:1 · 20s · 조회 - · 에셋필요 -
+
+- **요약**: "We were told to wait."로 시작하는 짧은 연설을 자기장 유선 위에서 글자가 기울고 처지고 일어서다 마지막에 평평한 'FLOOR'에 서는 키네틱 스포큰워드
+- **어울리는 경우**: 선언문·슬로건 한 단락 강조 / 동기부여·변화 메시지 클로징 / 단어 의미를 글자 움직임으로 보여주는 타이포 인서트 / 낭독 없이 읽히는 자막형 영상
+- **잘하는 표현**: 단어마다 역할(밀어내는 판·처지는 짐·뒤집힌 극·고요한 중심)을 준 의미 기반 타이포 / 흐르는 유선과 금빛 쇳가루 입자 / 세리프와 굵은 그로테스크 대비 / 장면마다 프레임 전체가 재배치되는 레이아웃
+- **스타일**: 짙은 포레스트 그린 배경에 크림색 글자, 겨자 금색 유선·쇳가루. 고대비 세리프 문장과 묵직한 대문자 그로테스크, 작은 모노스페이스 계기 숫자의 절제된 2D 에디토리얼 타이포.
+- **기술**: SVG/Canvas 단일 HTML
+- **프롬프트 구조**: 아트 디렉션(HEX·서체·금지) → 원문 연설 고정 → 중심 시각 규칙(단어별 자기장 역할) → 초 단위 스토리보드
+- **태그**: 키네틱타이포, 스포큰워드, 자기장, 유선, 다크그린, 세리프, 에디토리얼, 2D, 선언문
+- **주의**: 끝에 화면 전체가 겨자색 단색으로 덮이는 프레임이 있음
+
+#### [koushikde-937635](explainer__koushikde-937635__2105730717455937635.md)
+`explainer__koushikde-937635__2105730717455937635` · 16:9 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: 빈 이력서가 비트마다 스킬 한 줄씩 채워지고, 각 스킬(스프링·타이포·픽셀·3D·프레임 수)을 화면에서 증명한 뒤 완성된 'Claude Motion Designer' 이력서로 끝나는 쇼릴
+- **어울리는 경우**: 자기소개·포트폴리오 오프닝 / 항목별 역량을 하나씩 보여주는 목록형 설명 / 모션 그래픽 기법 소개 / 체크리스트가 채워지는 진행 표현
+- **잘하는 표현**: 이력서 항목이 하나씩 타이핑되는 문서 UI / 오렌지 점이 화면을 채우며 넘어가는 강조색 전환 / 스킬 미터·서체 바꾸기·도트 그리드 마스코트·사각 터널·스프링 곡선 그래프 / 한 단어씩 비트에 맞춘 대형 타이포
+- **스타일**: 거의 검은 바탕·테라코타 오렌지·크림·머스터드 옐로·딥 그린을 장면마다 바꾸는 단색 면, 굵은 산세리프와 이탤릭 세리프, 모노스페이스 라벨. 오른쪽 위 Claude 로고가 계속 붙은 볼드 그래픽 2D.
+- **기술**: Playwright, ffmpeg, 합성 사운드
+- **프롬프트 구조**: 기술 조건 한 줄 → Idea → 화살표로 이은 Story 장면 목록 → Rules(강조색·스프링·비트·금지)의 짧은 3단 브리프
+- **태그**: 쇼릴, 이력서, 포트폴리오, 볼드그래픽, 키네틱타이포, 픽셀마스코트, 비트싱크, 2D, 오렌지
+- **주의**: 화면 내내 Claude 로고와 'Claude Motion Designer' 문구가 들어간 Claude 홍보 맥락
+
+#### [verbove-268381](explainer__verbove-268381__2103483957266268381.md)
+`explainer__verbove-268381__2103483957266268381` · 1:1 · 20s · 조회 - · 에셋필요 -
+
+- **요약**: MakerMap 로고 버튼이 핸들 입력·"is this you?" 프로필 카드·로더·주황 점이 퍼지는 도트 지구본·매치·탭·RSVP·검색으로 차례로 변하는 원셰이프 제품 소개 루프
+- **어울리는 경우**: 커뮤니티·플랫폼 앱 소개 / 사용자 흐름(가입→매칭→검색)을 순서대로 보여주기 / 지도·전 세계 분포 통계 강조 / 제품 런칭 숏
+- **잘하는 표현**: 하나의 도형이 커지고 줄며 상태를 바꾸는 모핑 / 사용자가 늘어나는 도트 지구본 / 실제 데이터 카드와 타이핑 검색 / 탭 인디케이터 스트레치와 카운트업
+- **스타일**: 밝은 웜그레이 배경에 흰 카드·검은 알약 버튼, 강조색은 주황 하나. 깔끔한 산세리프와 모노 URL, 부드러운 그림자의 Apple풍 미니멀 2D UI.
+- **기술**: Canvas draw(t), headless Chrome, ffmpeg
+- **프롬프트 구조**: <inputs>(제품·UI 상태·실데이터·브랜드) → <rules> → <structure>(120BPM 상태 순서) → <motion>(스프링·블러 규칙) → <export> 템플릿
+- **태그**: UI모션, 원셰이프모핑, 제품소개, 지구본, 오프화이트, 주황강조, 루프, 2D, 커서
+- **주의**: 실제 제품 UI·데이터·브랜드 정보를 넣어야 하는 템플릿. 결과에 실존 인물 사진·이름(작성자 본인 프로필 등)이 나옴
+
+#### [curieuxexplorer-016717](interactive__curieuxexplorer-016717__2103373314354016717.md)
+`interactive__curieuxexplorer-016717__2103373314354016717` · 약 2.27:1 (1892x834) · 128s · 조회 - · 에셋필요 -
+
+- **요약**: 1형 당뇨를 몸 전체→췌장→섬→베타세포→세포막 분자까지 3D로 확대하며 혈당 그래프·생리 지표·시나리오 버튼으로 조작하는 'The Broken Message' 교육용 인터랙티브 앱 화면 녹화
+- **어울리는 경우**: 의학·생물 강의의 몸속 스케일 확대 설명 / 정상 vs 질환 비교 시뮬레이션 / 대시보드형 지표 설명 / 과학 교육용 인터랙티브 데모 소개
+- **잘하는 표현**: 신체→장기→세포→분자로 이어지는 스케일 줌 / 3D 세포·수용체·면역세포 일러스트 / 실시간 혈당 곡선과 원형 게이지 지표 패널 / 슬라이더로 신호를 약하게 만드는 상태 비교
+- **스타일**: 검은 배경 다크 대시보드에 얇은 테두리 패널, 세리프 제목과 작은 모노 라벨, 노랑·하늘색 게이지. 가운데 3D는 핑크 살빛 장기와 청록 반투명 세포의 부드러운 반사실 렌더.
+- **기술**: Three.js
+- **프롬프트 구조**: 질병 원리를 설명하는 서술문(원인→기전→치료→기술) 뒤에 앱에서 할 수 있는 조작 목록을 한 단락으로 덧붙인 짧은 브리프
+- **태그**: 의학교육, 당뇨, 세포, 스케일줌, 대시보드, 3D, 인터랙티브, 과학시각화, 다크UI
+- **주의**: 편집된 영상이 아닌 앱 화면 녹화라 UI 패널과 작은 글자가 화면을 많이 덮고 3D 장면은 가운데 일부만 차지함. 2.27:1 비율이라 그대로 쓰기 어려움. 의료 정보는 교육용
+
+#### [godsboy7777-150194](interactive__godsboy7777-150194__2103117450854150194.md)
+`interactive__godsboy7777-150194__2103117450854150194` · 16:9 · 79s · 조회 - · 에셋필요 -
+
+- **요약**: 구슬이 기계식 토글을 지나며 두 4비트 수를 더하는 3D 구슬 컴퓨터를 GPT-6 Astra(왼쪽)와 Opus 5.5(오른쪽) 결과로 나란히 비교한 화면 녹화
+- **어울리는 경우**: 이진수·덧셈기·논리회로 원리 설명 / 모델·툴 결과 비교 콘텐츠 / 기계 장치 시뮬레이션 데모 / 컴퓨터 구조 기초 강의
+- **잘하는 표현**: 구슬이 토글을 뒤집으며 자리올림하는 기계식 연산 / 나무판·황동·유리 구슬 재질 / 바쁜 곳을 따라가는 카메라 / 이진·십진 결과 판독 UI
+- **스타일**: 오른쪽 Opus 쪽은 따뜻한 호박색 조명 아래 나무판에 황동 레일·토글이 빽빽한 근접 3D와 갈색 반투명 HUD 패널. 왼쪽 GPT 쪽은 크림색 UI에 정면 기판으로 더 단순함.
+- **기술**: Three.js, OrbitControls, Web Audio
+- **프롬프트 구조**: 한 줄 목표 뒤 번호 붙인 9개 하드 룰(단일 HTML·연산은 기계로만·입출력·DEMO 버튼·룩·사운드·성능)
+- **태그**: 구슬컴퓨터, 이진수, 논리회로, 기계장치, 나무·황동, 3D, 비교영상, 교육
+- **주의**: 두 모델 결과를 좌우 분할로 비교하며 하단에 모델명·소요 시간·토큰 수 라벨이 붙음. 오른쪽이 Opus. 편집 영상이 아니라 브라우저 화면 녹화
+
+#### [niegramotny-197521](interactive__niegramotny-197521__2103128800909197521.md)
+`interactive__niegramotny-197521__2103128800909197521` · 16:9 · 30s · 조회 - · 에셋필요 -
+
+- **요약**: 눈 덮인 산골 마을 트랙을 경찰차·머슬카·몬스터트럭·우편 밴이 달리는 로우폴리 탑다운 레이싱 게임 'Thawline' 플레이 트레일러
+- **어울리는 경우**: 웹 게임·인디 게임 소개 / 차량·캐릭터마다 다른 특성 비교 설명 / 로우폴리 미니어처 세계 배경 / 코드로 만든 게임 데모 소개
+- **잘하는 표현**: 코드로 만든 로우폴리 지형·마을·다리·기차 / 기울어진 탑다운 추적 카메라 / 빙판·기차 같은 구간 라벨 / 녹색 도로표지판풍 타이틀 카드
+- **스타일**: 흰 눈과 초록 잔디, 회색 도로, 빨간 지붕 집, 짙은 침엽수의 단색 면 로우폴리 3D. 녹색 고속도로 표지판 같은 타이틀·라벨로 산뜻한 장난감 마을 느낌.
+- **기술**: Vite, TypeScript, Three.js, 자체 2.5D 물리
+- **프롬프트 구조**: 레퍼런스 게임 → Stack → Architecture(폴더 구조) → Vehicles(4종 성격) → Boost 규칙 … 섹션별 게임 개발 명세
+- **태그**: 레이싱게임, 로우폴리, 탑다운, 겨울마을, 게임트레일러, Three.js, 3D, 인터랙티브
+- **주의**: 게임 플레이 화면 녹화를 편집한 트레일러. Ignition(1997)에서 영감을 받았다고 명시
+
+#### [op7418-814408](interactive__op7418-814408__2103724883301814408.md)
+`interactive__op7418-814408__2103724883301814408` · 16:9 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: 툰 셰이딩 3D 보물상자가 커먼(초록)→레어(파랑)→에픽(보라)→레전더리(금)로 등급이 오르며 색이 바뀌고 열려 보상 아이콘을 쏟아내는 모바일 게임식 보상 연출
+- **어울리는 경우**: 성과·레벨업·달성 축하 장면 / 단계별 등급 상승 표현 / 퀴즈·과제 보상 리빌 / 게임화 콘텐츠 강조
+- **잘하는 표현**: 두께·리벳이 있는 툰 셰이딩 3D와 후처리 외곽선 / 등급마다 바뀌는 주색·광선·배경 / 회전 광선·충격파·파티클 폭발 / 글자가 튕기며 박히는 굵은 게임 타이틀
+- **스타일**: 등급색(청록→파랑→보라→호박 금)으로 바뀌는 방사형 광선 배경 위에 진한 외곽선의 채도 높은 카툰 보물상자, 검은 테두리 둥근 굵은 게임 서체. 화려한 모바일 게임 결산 화면 톤.
+- **기술**: Three.js(MeshToonMaterial), GSAP, Canvas 2D 파티클, Web Audio 합성음
+- **프롬프트 구조**: [주체]·[등급 단계] 빈칸이 있는 중국어 템플릿. 세계관·3D 주체·2D 일러스트·리빌 무대·광효·재질·애니 원칙·음향·공학·납품 전 자가점검 섹션의 상세 스펙
+- **태그**: 게임UI, 보물상자, 레벨업, 툰셰이딩, 보상연출, 파티클, 3D, 카툰, 고채도
+- **주의**: 주체와 등급 단계를 채워 넣는 템플릿. 원래 클릭해서 재생하는 웹페이지라 결과는 그 녹화
+
+#### [redpersongpt-284430](interactive__redpersongpt-284430__2103807094554284430.md)
+`interactive__redpersongpt-284430__2103807094554284430` · 9:16 · 24s · 조회 - · 에셋필요 -
+
+- **요약**: 채팅 목업 앱 Mimicly 세로 광고. 팝콘 든 마스코트와 함께 iMessage 대화가 타이핑되고, 앱 템플릿 수·플랫폼 아이콘·편집·PNG/MP4 저장을 거쳐 앱 아이콘과 'Try it free'로 끝남
+- **어울리는 경우**: 모바일 앱 세로 광고 / 메신저 대화 장면 연출 / 기능 수를 숫자로 보여주는 앱 소개 / 숏폼 CTA 엔딩
+- **잘하는 표현**: 폰 목업 안 채팅 말풍선이 타이핑되는 장면 / 휴대폰 여러 대를 부채꼴로 펼친 3D 배치 / 플랫폼 아이콘이 흩어지는 구성 / 굵은 헤드라인의 한 단어 강조색
+- **스타일**: 연한 피치·크림 그라데이션 배경에 테라코타 강조색 굵은 산세리프, 사실적인 아이폰 목업, 귀여운 갈색 마스코트 캐릭터. 따뜻하고 친근한 앱스토어 광고 톤(한 장면만 다크).
+- **기술**: SVG
+- **프롬프트 구조**: 리드 크리에이티브 전략가 역할 부여 → 제품 설명·브랜드 방향 → PHASE 1~10(제품 조사·템플릿 선정·카피·전환·최종 출력 형식) 마케팅 브리프
+- **태그**: 앱광고, 세로영상, 채팅목업, 폰목업, 마스코트, 피치톤, CTA, 2D
+- **주의**: 프롬프트는 광고 전략·카피 문서를 요구하는 마케팅 브리프라 영상 스펙과 다름. 실제 제품 화면·마스코트가 필요하고 X·Instagram·WhatsApp 등 타사 로고가 많이 나옴
+
+#### [zacxbt-944604](interactive__zacxbt-944604__2103808699466944604.md)
+`interactive__zacxbt-944604__2103808699466944604` · 약 1.27:1 (1526x1202) · 19s · 조회 - · 에셋필요 -
+
+- **요약**: 밤하늘 아래 동그란 노란 고양이 마법사가 지팡이로 주문을 날려 집들의 불을 켜고, 달을 해로 바꿔 'NIGHT 1 CLEAR'를 띄우는 픽셀아트 미니 게임 화면
+- **어울리는 경우**: 레트로·게임 감성 인서트 / 귀여운 캐릭터의 짧은 루프 / 단계 완료·클리어 표현 / 게임화된 진행도 표시
+- **잘하는 표현**: 정수 스케일 크리스프 픽셀 렌더 / 궤적을 그리며 날아가는 마법 입자 / 차지·캐스트 상태 애니메이션 / 진행도·클리어 HUD 문구
+- **스타일**: 짙은 남보라 밤하늘과 작은 별, 검은 집 실루엣에 노란 창, 황금색 둥근 캐릭터와 민트·노랑 마법 입자. 제한된 팔레트의 16비트풍 2D 픽셀아트.
+- **기술**: Canvas 2D, 바닐라 JS
+- **프롬프트 구조**: RENDERING(해상도·팔레트) → CHARACTER(절차적 생성) → ANIMATION(상태 머신·파티클 풀) → SCENE → QUALITY BAR 섹션 스펙
+- **태그**: 픽셀아트, 레트로, 마법사, 게임, 밤하늘, 캐릭터루프, 2D, Canvas
+- **주의**: 프롬프트는 수염 달린 마법사가 주문을 쏘는 애니메이션 루프인데 결과는 고양이 같은 둥근 캐릭터와 진행도·클리어가 있는 게임이라 서로 다름(후속 수정이 있었던 것으로 보임). 게임 화면 녹화
+
+#### [0xkarmi-129839](motion__0xkarmi-129839__2108495927988129839.md)
+`motion__0xkarmi-129839__2108495927988129839` · 4:5 · 24s · 조회 - · 에셋필요 -
+
+- **요약**: "영상은 프로그램이다" 원칙(프레임=draw(n), 시계·난수 없음, 0번=720번 프레임, 스모크 테스트 6카운터)을 X레이 나비 날갯짓과 계기판 패널로 설명하는 인포그래픽 영상
+- **어울리는 경우**: 개념·원리를 패널로 나눠 설명하는 강의 인서트 / 개발·자동화 워크플로 설명 / 체크리스트·검증 단계 표시 / 대시보드형 정보 정리
+- **잘하는 표현**: 여러 패널이 동시에 상태를 보여주는 대시보드 레이아웃 / 큰 프레임 카운터와 필름 스트립 타임라인 / 와이어프레임 X레이 나비 / 탭·체크 칩이 순서대로 불 켜지는 단계 진행
+- **스타일**: 크림 종이색 바탕에 남색 다크 뷰어 창, 굵은 모노스페이스 제목·숫자, 마젠타·하늘·민트·노랑 파스텔 칩과 테두리 박스. 기술 문서 같은 에디토리얼 2D 인포그래픽.
+- **기술**: 창 없는 렌더러 draw(f), ffmpeg H.264
+- **프롬프트 구조**: 스펙이 아닌 짧은 서술형 기사체(나비 은유 → 4단계 스튜디오 → 결정론 원칙 → 스모크·이음새 검사)로 영상 내용을 설명
+- **태그**: 인포그래픽, 대시보드, 설명영상, 결정론렌더, 나비, 와이어프레임, 크림톤, 모노스페이스, 2D
+- **주의**: 프롬프트가 영상 제작 지시라기보다 영상에 담을 내용을 적은 글. 글자가 작고 정보가 빽빽함
+
+#### [0xnicc0-516612](motion__0xnicc0-516612__2107217691505516612.md)
+`motion__0xnicc0-516612__2107217691505516612` · 1:1 · 12s · 조회 - · 에셋필요 -
+
+- **요약**: 프롬프트 입력창에 "a launch film for orbit"를 치면 버튼→진행 링(칩 4개)→타임라인과 미리보기 창→'orbit' 워드마크→토스트→빈 입력창으로 돌아오는 원셰이프 제품 런칭 루프
+- **어울리는 경우**: AI·생성 도구 작동 과정 소개 / 입력→처리→결과 흐름 설명 / 제품·브랜드 워드마크 공개 / 짧은 루프형 런칭 티저
+- **잘하는 표현**: 입력창·버튼·진행 링·창·토스트로 이어지는 단일 도형 모핑 / 단계 칩이 튀어나와 타임라인으로 날아가는 연출 / 마스크선에서 올라오는 워드마크와 궤도 행성 / 커서 클릭에 맞춘 스프링
+- **스타일**: 따뜻한 오프화이트 배경에 흰 입력창과 검은 원·창, 주황 강조색 하나, Inter 산세리프와 모노 소제목. 군더더기 없는 Apple풍 미니멀 2D UI.
+- **기술**: Canvas seek(t), Playwright, ffmpeg
+- **프롬프트 구조**: <inputs>(제품명·강조색·음악) → <direction> → <structure>(24비트 순서) → <build>(스프링·타이핑·비트·렌더) 템플릿
+- **태그**: UI모션, 원셰이프모핑, 런칭영상, 프롬프트바, 워드마크, 오프화이트, 주황강조, 루프, 2D
+- **주의**: 제품명·강조색·음악을 넣는 템플릿
+
+#### [anabology-491441](motion__anabology-491441__2103534482930491441.md)
+`motion__anabology-491441__2103534482930491441` · 16:9 · 306s · 조회 - · 에셋필요 -
+
+- **요약**: 특이점·AGI를 노래하는 'Claude Pop' 곡에 맞춰 단발머리 여성 실사풍 장면 위에 HUD 패널·스캐너 UI·가사 타이포를 얹은 5분짜리 뮤직비디오
+- **어울리는 경우**: 실사 영상 위 HUD·데이터 오버레이 / 가사·키워드를 크게 띄우는 뮤직비디오형 편집 / AI·미래 주제의 분위기 영상 / 터미널·대시보드 UI를 섞은 패러디 그래픽
+- **잘하는 표현**: 실사 프레임 위 얇은 선의 HUD·카운터·티커 / 주황 강조 대형 가사 타이포와 자막형 가사 혼용 / 공항 전광판식 플립 글자 / 터미널·채팅 UI 패널 삽입
+- **스타일**: 필름 그레인 실사풍 장면(서버실·고속도로·안개)에 흰 산세리프와 주황 강조 가사, 얇은 흰 HUD 프레임, 간간이 밝은 크림색 UI 화면. 패션 화보 같은 시네마틱 사이버 감성.
+- **기술**: JS/Canvas 애니메이션, fal 이미지 생성, ElevenLabs
+- **프롬프트 구조**: 기존 곡·영상을 주고 "완전히 새로 해석하라"는 자유 서술형 장문. 참고 자료 폴더·스킬·API 예산·캐릭터 방향·가사 배치 원칙·반복 검토 요구를 길게 나열
+- **태그**: 뮤직비디오, HUD, 가사타이포, 실사, 생성영상, 사이버, 필름그레인, AI, 장편
+- **주의**: 인물 장면은 fal 등 외부 생성 모델 결과(화면에 'MIDJOURNEY' 라벨도 보임)라 코드만으로 재현 불가. 프롬프트는 종이 질감과 해바라기형 Claude 캐릭터를 말하지만 결과는 실사풍 여성 인물이라 다름. 원곡 음원이 필요하고 5분으로 김
+
+#### [anjmaxx-459455](motion__anjmaxx-459455__2103173729656459455.md)
+`motion__anjmaxx-459455__2103173729656459455` · 4:5 · 20s · 조회 - · 에셋필요 -
+
+- **요약**: 픽셀아트 소년·소녀 캐릭터가 등장하는 'line go up' 20초 뮤직비디오로, 오려 붙인 몸값 편지식 가사 타이포와 점점 빨라지는 배속(1.04x→64x) 연출로 AI 가속 밈을 풀어낸 영상
+- **어울리는 경우**: 트렌드·밈을 다루는 짧은 훅 인트로 / "점점 빨라진다·가속" 개념 설명 / 큰 키워드 가사형 자막 강조 / 캐릭터 둘이 대화하는 상황극 인서트
+- **잘하는 표현**: 신문 오려붙이기 몸값 편지 타이포 / 픽셀아트 캐릭터+말풍선 / 화면 구석 배속·BPM 카운터 HUD로 템포 상승 표현 / 노트 격자 배경과 수식 낙서
+- **스타일**: 연녹색 모눈 노트 종이 배경에 핫핑크·블랙·노랑·코발트 블루 강조, 잘라 붙인 종이 글자와 하프톤 점. 2D 인터넷 브루탈리즘+K팝 MV 감성의 콜라주에 중간중간 검정 화면 세리프 카드와 눈 달린 검은 덩어리 괴물.
+- **기술**: Canvas, 픽셀아트, JavaScript 애니메이션 (프롬프트상 Seedance 2.5 영상 생성 허용)
+- **프롬프트 구조**: 장문 구어체 크리에이티브 브리프 — 스토리·캐릭터·밈 조사·가사 타이포 배치·자기검수 반복을 자유롭게 지시
+- **태그**: 뮤직비디오, 픽셀아트, 콜라주, 키네틱타이포, 밈, 인터넷브루탈리즘, 가사자막, 종이질감, 캐릭터
+- **주의**: 음악 트랙이 필요하고 프롬프트는 외부 영상 생성 모델(Seedance)·참고 스타일 첨부를 전제함. 나비에-스토크스·신지 밈 등 X 타임라인 맥락 의존이 커서 그대로 재현하기 어려움
+
+#### [annacher-433425](motion__annacher-433425__2103571096549433425.md)
+`motion__annacher-433425__2103571096549433425` · 1:1 · 42s · 조회 - · 에셋필요 -
+
+- **요약**: 광고 자동화 SaaS(sprites.ai) UI를 하나의 도형이 버튼→로더→체크→프롬프트 바→광고 라이브러리→승인 카드→예산 슬라이더→토글→탭→ROAS 차트→⌘K→토스트로 끊김 없이 변형되는 14초 루프 프로모
+- **어울리는 경우**: SaaS 제품 기능 흐름 소개 / "클릭 몇 번으로 끝" 워크플로 설명 / 앱 온보딩·자동화 단계 시연 / 지표 상승(ROAS 등) 강조
+- **잘하는 표현**: 단일 셰이프 모핑으로 UI 상태 전환 / 커서 클릭·드래그로 구동되는 직접 조작감 / 스프링 슬라이더 오버슈트와 액체형 탭 인디케이터 / 스스로 그려지는 차트+툴팁
+- **스타일**: 따뜻한 웜그레이 캔버스에 흰색·검정 UI 컴포넌트, 오렌지(#FD9543) 단일 강조색, Geist 산세리프. 그림자 약한 플랫 2D Apple/Dribbble풍.
+- **기술**: SVG, 단일 HTML seek(t), 폐형식 스프링, numpy 합성 UI 사운드, Playwright 렌더, ffmpeg tmix 모션블러
+- **프롬프트 구조**: direction / structure(비트별 상태 흐름) / build(구현 규칙 번호 목록) / gotchas XML 태그 블록 — 같은 UI 모핑 템플릿의 제품 맞춤 변형
+- **태그**: UI모션, 모핑, SaaS프로모, 커서, 스프링, 루프, 웜그레이, 단일강조색, 대시보드
+- **주의**: 14초 루프가 3번 반복된 42초 영상. 광고 라이브러리·승인 카드에 실제 광고 썸네일(OpusClip, 실존 인물 사진)과 플랫폼 로고가 들어 있음
+
+#### [demonugc-525162](motion__demonugc-525162__2103526713208525162.md)
+`motion__demonugc-525162__2103526713208525162` · 1:1 · 14s · 조회 - · 에셋필요 -
+
+- **요약**: 버튼→로더→체크→뮤직 플레이어→진행바→토글→탭→차트→⌘K→토스트로 이어지는 UI 모핑 템플릿을 녹색 강조색으로 구현한 14초 루프
+- **어울리는 경우**: 앱 UI 상호작용 흐름 소개 / 미니멀 UI 모션 예시 / 기능 단계 전환 인서트
+- **잘하는 표현**: 검정 알약형 컴포넌트의 상태 모핑 / 녹색 진행바·라인 차트 드로잉 / 커서 클릭 구동
+- **스타일**: 오프화이트 웜그레이 배경에 검정 다크 컴포넌트와 흰 카드, 녹색 단일 강조색, 작은 산세리프. 여백이 매우 큰 플랫 2D.
+- **기술**: SVG, 단일 HTML seek(t), 폐형식 스프링, Playwright 렌더, ffmpeg tmix
+- **프롬프트 구조**: inputs(사용자에게 상태·색·곡 질문) / direction / structure / build / gotchas / start XML 블록의 재사용 템플릿
+- **태그**: UI모션, 모핑, 템플릿, 미니멀, 녹색강조, 루프, 커서
+- **주의**: 카메라 줌이 제대로 안 먹어 컴포넌트가 화면의 작은 부분에 치우쳐 떠 있음(프롬프트의 "각 상태가 화면을 채움"과 다름). 소리 트랙 없음. 같은 템플릿의 더 완성도 높은 예는 nezbuilds·sanjeevn72·okapi-fukugyo
+
+#### [dzhohola-249003](motion__dzhohola-249003__2103605737595249003.md)
+`motion__dzhohola-249003__2103605737595249003` · 1:1 · 60s · 조회 - · 에셋필요 -
+
+- **요약**: 코딩 에이전트 앱 T3 Code의 실제 UI(모델 선택, 권한 모드, 설정 토글, 사용량 대시보드, 테마, PR 목록, 모바일 화면)를 카드 단위로 커서가 조작하며 넘겨 보여주는 60초 제품 프로모
+- **어울리는 경우**: 개발자 도구·AI 에이전트 앱 기능 투어 / 설정·옵션 화면 하나씩 짚는 튜토리얼 인서트 / 라이트·다크 모드 전환 강조 / 오픈소스 스타 수 등 지표 마무리
+- **잘하는 표현**: 실제 앱 UI 카드 클로즈업과 커서 조작 / 라이트↔다크 배경 플러드 전환 / 사용량 막대·면적 차트 애니메이션 / 휴대폰 프레임 속 텍스트 블러 전환
+- **스타일**: 연회색·흰 배경과 순검정 배경을 오가는 구성, 흰 카드·다크 카드 UI에 청록 토글·코랄 차트 포인트, 작은 시스템 산세리프. 정돈된 플랫 2D 프로덕트 데모.
+- **기술**: CSS, 단일 HTML seek(t), Playwright 렌더, ffmpeg tmix
+- **프롬프트 구조**: 범용 UI 모핑 템플릿(inputs/direction/structure/build/gotchas/start)을 그대로 붙여 넣은 형태
+- **태그**: 제품프로모, 개발자도구, AI에이전트, UI투어, 다크모드, 대시보드, 커서, SaaS
+- **주의**: 프롬프트(단일 도형 모핑, 뮤직 플레이어 흐름)와 결과(여러 카드로 된 T3 Code 실제 UI 투어)가 다름 — 실제 제품 UI 캡처·정보를 별도로 준 것으로 보임. 상표(T3, GPT, Claude) 노출
+
+#### [eric-khun-667455](motion__eric-khun-667455__2103112385380667455.md)
+`motion__eric-khun-667455__2103112385380667455` · 16:9 · 30s · 조회 - · 에셋필요 -
+
+- **요약**: 대만 흑곰 캐릭터가 야경 속 바비큐 냄새를 따라가 가족과 고기 굽기·유자 껍질 모자·월병·달 구경을 하는 30초 손그림풍 중추절 축하 애니메이션
+- **어울리는 경우**: 명절·기념일 인사 영상 / 지역 문화·풍습 소개 / 마스코트 캐릭터 스토리텔링 / 한 장면 한 키워드 자막형 설명
+- **잘하는 표현**: 플랫 실루엣 마스코트 캐릭터 연기 / 장면마다 큰 한자+작은 영문 이중 자막 / 방사형 햇살 배경과 보름달 클라이맥스 / 빠른 컷·줌 전환
+- **스타일**: 남보라 밤하늘과 도시 실루엣, 크림색 방사선 배경, 노란 보름달·주황 불꽃 강조. 검정 곰 캐릭터의 플랫 2D 카툰, 굵은 흰 외곽선 한자 타이틀과 붉은 낙관 도장.
+- **기술**: Canvas
+- **프롬프트 구조**: 캐릭터 외형 고정 묘사 + 조사할 문화 요소 목록 + 언어·포맷·길이 제약을 담은 짧은 단락형 지시
+- **태그**: 명절인사, 마스코트, 캐릭터애니, 대만, 중추절, 손그림풍, 플랫2D, 이중자막
+- **주의**: 첨부한 대만 흑곰 캐릭터 이미지를 기준으로 함(캐릭터 레퍼런스 필요). 텍스트가 번체 중국어+영어
+
+#### [flxrnc-251921](motion__flxrnc-251921__2108242454105251921.md)
+`motion__flxrnc-251921__2108242454105251921` · 1:1 · 14s · 조회 - · 에셋필요 -
+
+- **요약**: 코랄색 픽셀 마스코트가 재생 버튼→로더→타임라인 스크럽→베지어 이징 에디터→프레임 카운터→렌더 진행바→토스트로 변형됐다가 다시 마스코트로 돌아오는 영상 편집툴 컨셉의 14초 UI 루프
+- **어울리는 경우**: 영상 렌더링·편집 과정 설명 / 이징·애니메이션 곡선 개념 설명 / 브랜드 마스코트를 살린 앱 기능 소개 / 진행률·카운터 강조
+- **잘하는 표현**: 픽셀 마스코트↔UI 컴포넌트 모핑 / 베지어 곡선 핸들 드래그 / 숫자 롤링 카운터 / 블러 페이드 콘텐츠 교체
+- **스타일**: 오프화이트 비네트 배경에 짙은 검정 다크 패널, 코랄·테라코타 단일 강조색, 모노스페이스 라벨. 단정한 플랫 2D UI에 픽셀아트 캐릭터 포인트.
+- **기술**: Canvas 2D, renderAt(t) 순수 함수, 폐형식 스프링, 서브프레임 모션블러, H.264 60fps
+- **프롬프트 구조**: inputs(색·반경·폰트를 수치로) / direction / 0.5초 비트별 타임코드 structure / build / gotchas / start — 형용사 대신 수치로 지정
+- **태그**: UI모션, 모핑, 픽셀마스코트, 영상편집툴, 베지어, 카운터, 루프, 단일강조색
+- **주의**: 대부분 시간 동안 컴포넌트가 화면 일부에만 작게 놓임
+
+#### [gdgtify-393073](motion__gdgtify-393073__2107054188836393073.md)
+`motion__gdgtify-393073__2107054188836393073` · 1:1 · 20s · 조회 - · 에셋필요 -
+
+- **요약**: 유클리드의 소수 무한성 증명("THERE IS NO LAST PRIME")을 소수 바퀴 랙·곱셈 벨트·나눗셈 게이트·나머지 표시기 같은 기계 장치로 단계별 시연하는 20초 키네틱 증명 루프
+- **어울리는 경우**: 수학 증명·논리 전개 설명 / 귀류법처럼 "가정→모순" 구조 설명 / 계산 과정을 단계별로 보여주는 교육 인서트 / 공학·정밀 장치 느낌의 개념도
+- **잘하는 표현**: 숫자가 새겨진 바퀴·벨트 기계 메타포 / 굴러가다 딱 멈추는 롤링 숫자 / 여섯 결과를 나란히 비교하는 정렬 레이아웃 / 단 하나의 주황 강조로 결정적 순간 표시
+- **스타일**: 포슬린 아이보리(#F0EEE6) 배경에 그래파이트 선화, 산업용 녹색과 경고 주황 소량 강조. 굵은 지오메트릭 산세리프 선언문 + 탭룰러 모노 숫자 + 작은 세리프 수식의 기술 도면풍 플랫 2D.
+- **기술**: SVG/Canvas, 단일 HTML, 결정론적 60fps
+- **프롬프트 구조**: 산출물·팔레트(HEX)·타이포·고정 문구·수학 예시·논리 주의점·초 단위 스토리보드·필수 모션을 대문자 섹션으로 나눈 스펙
+- **태그**: 수학증명, 교육, 기계장치, 키네틱타이포, 인포그래픽, 테크니컬드로잉, 아이보리, 루프
+- **주의**: 문구가 영어 대문자 고정이라 한국어로 바꿀 때 타이포 위계 재설계 필요
+
+#### [hicallmechai-878304](motion__hicallmechai-878304__2103600312296878304.md)
+`motion__hicallmechai-878304__2103600312296878304` · 16:9 · 54s · 조회 - · 에셋필요 -
+
+- **요약**: AI 에이전트를 사무실 직원처럼 관리하는 데스크톱 앱 'Munder Difflin' 런칭 영상으로, 에이전트 하니스 비교 막대·터미널·에이전트 목록·픽셀 오피스·연동 아이콘·받아쓰기 기능을 장면별로 소개하고 다운로드 CTA로 끝남
+- **어울리는 경우**: AI 도구·앱 런칭 프로모 / 기능 하나씩 짚는 제품 소개 / "이걸로 X를 대체" 비교 메시지 / 연동 서비스 다수 보여주기
+- **잘하는 표현**: 한 줄 헤드라인+중앙 UI 카드 장면 구성 / 노란 형광펜 하이라이트 키워드 / 중앙 아이콘에서 방사형으로 뻗는 연동 노드 / 큰 단어 슬라이드 인('Local')
+- **스타일**: 크림·버터 옐로 배경에 흰 카드 UI, 노랑·코랄 강조, 굵은 산세리프 헤드라인. 친근한 플랫 2D SaaS 런칭 영상에 어두운 터미널 장면이 한 번 섞임.
+- **기술**: SVG, GSAP
+- **프롬프트 구조**: 범용 UI 모핑 템플릿(inputs/direction/structure/build/gotchas/start)을 그대로 붙여 넣은 형태
+- **태그**: 제품런칭, AI에이전트, SaaS, 기능소개, 하이라이트, 연동아이콘, 옐로, 플랫2D
+- **주의**: 프롬프트(웜그레이 단일 도형 모핑)와 결과(노란색 다장면 제품 런칭 영상)가 전혀 다름. 'The Office' 패러디(Dunder Mifflin, Michael·Pam·Jim 등 인물명)와 다수 서비스 로고가 들어 있음
+
+#### [howdevelop-733090](motion__howdevelop-733090__2103840883812733090.md)
+`motion__howdevelop-733090__2103840883812733090` · 16:9 · 30s · 조회 - · 에셋필요 -
+
+- **요약**: TanStack AI 소개 런칭 필름으로, 프롬프트 커서의 신호가 chat()·24개 프로바이더·멀티모달 스트림·에이전트 분기·스트림 재연결을 거쳐 'TanStack AI / Build what's next.'로 수렴하는 영상
+- **어울리는 경우**: 개발자 라이브러리·API 기능 소개 / 데이터 흐름·스트리밍 개념 설명 / 멀티모달(텍스트·음성·이미지·영상) 설명 / 기술 키노트 오프닝
+- **잘하는 표현**: 하나의 수평 데이터 라인이 노드·분기로 변하는 흐름 / 텍스트→파형→필름 스트립 모달리티 전환 / 끊긴 스트림 재연결·타입체크 배지 / 몽환적 그라디언트 블롭 위 짧은 2줄 카피
+- **스타일**: 순흑 배경에 청록·보라·주황의 흐릿한 빛 번짐, 가는 점선 라인과 작은 모노 코드 라벨, 굵은 흰 산세리프 중앙 카피. 다크테크 네온 SaaS 키노트 무드의 2D.
+- **기술**: Canvas (Remotion 등 코드 기반 모션 권장)
+- **프롬프트 구조**: 포맷·납품물 / 비주얼 방향 / 초 단위 정확한 시퀀스와 화면 문구 / 사실 정확성 가드레일 / 자기검수 지시
+- **태그**: 개발자도구, 런칭필름, 데이터흐름, 다크테크, 네온, 멀티모달, API, 키노트
+- **주의**: 프롬프트는 15초 지정이지만 영상은 30초(장면 홀드가 길고 마지막 로고 홀드 큼)
+
+#### [iamtanzil-120030](motion__iamtanzil-120030__2103459843831120030.md)
+`motion__iamtanzil-120030__2103459843831120030` · 약 1.44:1 (3106x2160) · 13s · 조회 - · 에셋필요 -
+
+- **요약**: 다크 e-bike 랜딩페이지 헤더에서 커서를 움직이면 원형 'X-ray' 스포트라이트가 자전거 외관을 지워 내부 배터리·기어박스 구조를 드러내는 인터랙션 화면 녹화
+- **어울리는 경우**: 제품 내부 구조·속을 들여다보는 설명 / "겉 vs 속" 비교 / 하드웨어 제품 히어로 섹션 / 숨은 기능 드러내기
+- **잘하는 표현**: 커서 추종 radial mask 리빌 / 외관 사진과 내부 사진 레이어 겹침 / 하단 대형 헤드라인 워드 풀업 / 미니멀 에디토리얼 랜딩 레이아웃
+- **스타일**: #272727 다크 차콜 배경에 회색 제품 사진, 내부 구조는 청록 하이라이트, 크림색(#E0E1CC) 대형 산세리프 'Ready For The Ride'. 시네마틱 다크 미니멀 웹 히어로.
+- **기술**: React, CSS keyframes, CSS mask-image (애니메이션 라이브러리 없음)
+- **프롬프트 구조**: 컴포넌트 재현용 상세 명세 — 기술 스택, 폰트, 섹션별 구조·CSS 값, 에셋 URL, 애니메이션 키프레임, 반응형, 흔한 실수, 통합 규칙
+- **태그**: 랜딩페이지, 히어로섹션, X-ray리빌, 마스크, 제품, 다크미니멀, 인터랙티브, 웹UI
+- **주의**: 편집 영상이 아니라 웹페이지 커서 조작 화면 녹화. 외관·X-ray 제품 이미지 2장이 외부 에셋으로 필요(프롬프트에 CDN URL)
+
+#### [nezbuilds-294391](motion__nezbuilds-294391__2103487427365294391.md)
+`motion__nezbuilds-294391__2103487427365294391` · 1:1 · 14s · 조회 - · 에셋필요 -
+
+- **요약**: 검정 알약 버튼이 체크→뮤직 플레이어→볼륨 슬라이더→토글→탭→매출 차트→⌘K 검색→'Chart exported' 토스트로 변형되는 순수 흑백 UI 모핑 14초 루프
+- **어울리는 경우**: 앱 UI 상호작용 흐름 소개 / 미니멀 흑백 브랜드의 기능 시연 / 대시보드·차트 기능 인서트 / UI 모션 디자인 예시
+- **잘하는 표현**: 단일 셰이프 크기·반경 모핑 / 재생↔일시정지 아이콘 모핑과 스크럽 / 액체형 탭 인디케이터 / 스스로 그려지는 곡선 차트+툴팁
+- **스타일**: 따뜻한 웜그레이 캔버스에 검정·흰색 컴포넌트만 쓴 순수 흑백, Geist 산세리프, 부드러운 그림자. 컴포넌트가 화면을 크게 채우는 플랫 2D Dribbble풍.
+- **기술**: SVG, 단일 HTML seek(t), 폐형식 스프링, Playwright 렌더, ffmpeg tmix
+- **프롬프트 구조**: inputs / direction / structure / build / gotchas / start XML 블록의 재사용 UI 모핑 템플릿(원본 그대로)
+- **태그**: UI모션, 모핑, 흑백, 미니멀, 대시보드, 커서, 스프링, 루프
+- **주의**: 같은 템플릿이 여러 사례에 쓰임 — 원본 템플릿의 가장 충실한 결과물 중 하나
+
+#### [okapi-fukugyo-166351](motion__okapi-fukugyo-166351__2103586082336166351.md)
+`motion__okapi-fukugyo-166351__2103586082336166351` · 1:1 · 14s · 조회 - · 에셋필요 -
+
+- **요약**: UI 모핑 템플릿을 일본어 UI로 옮긴 버전으로, 'はじめる' 버튼→로더→녹음 중 아일랜드→뮤직 플레이어→볼륨→토글→日次/週次/月次 탭→주간 접속 차트→⌘K '保存'→다시 버튼으로 이어지는 14초 루프
+- **어울리는 경우**: 한국어 등 비라틴 문자 UI의 모션 시연 / 로컬라이즈된 앱 기능 흐름 소개 / 흑백 미니멀 UI 인서트
+- **잘하는 표현**: CJK 문자가 들어간 UI 컴포넌트 모핑 / 녹음 파형 다이내믹 아일랜드 / 스프링 토글·탭 인디케이터 / 차트 드로잉+툴팁
+- **스타일**: 웜그레이 캔버스에 검정·흰 컴포넌트, Noto Sans JP+Geist 조합, 부드러운 그림자. 순수 흑백 플랫 2D.
+- **기술**: 단일 HTML seek(t), 폐형식 스프링, numpy 비트 분석, Playwright 렌더, ffmpeg tmix
+- **프롬프트 구조**: 영어 UI 모핑 템플릿을 일본어로 풀어 쓰고 전문용어마다 괄호 설명을 붙인 번역판(inputs/direction/structure/build/gotchas/start)
+- **태그**: UI모션, 모핑, 일본어UI, CJK타이포, 흑백, 미니멀, 루프, 템플릿
+- **주의**: 한국어 UI로 응용할 때 가장 가까운 참고(폰트만 Noto Sans KR 등으로 교체)
+
+#### [pluvio9yte-662953](motion__pluvio9yte-662953__2107087191738662953.md)
+`motion__pluvio9yte-662953__2107087191738662953` · 16:9 · 20s · 조회 - · 에셋필요 -
+
+- **요약**: 실사·애니 영상 소스를 깊이·주체 마스크로 분해해 도트·하프톤·점묘 입자로 재구성하고, 비트마다 스타일·배색을 바꿔 치는 20초 입자화 뮤직 몽타주
+- **어울리는 경우**: 기존 촬영본을 스타일라이즈한 오프닝·트랜지션 / 하이라이트 액션 장면 리믹스 / 음악 비트에 맞춘 몽타주 / 강의 원본 영상을 그래픽 질감으로 바꾸는 인서트
+- **잘하는 표현**: 원본 프레임 → 도트·하프톤 입자 재구성 / 깊이 기반 3D 입자 공간과 카메라 회전 / 비트마다 강하게 대비되는 배색 전환 / 마지막에 입자가 커져 색면으로 수렴
+- **스타일**: 주황·코발트 블루·핫핑크·짙은 갈색·남색 단색 배경 위 흰·금색·청록 점 입자, 하프톤 인쇄물과 점묘 사이를 오가는 2D/2.5D. 강렬한 포스터 컬러의 그래픽 몽타주.
+- **프롬프트 구조**: 중국어 제작 방법론 — 소재 선택 기준, 분해(색·깊이·주체), 입자·스타일 규칙, 박자, 편성 원칙, 타격점 피드백 등급, 작업 방법을 번호 단계로 정리
+- **태그**: 입자, 하프톤, 점묘, 깊이추정, 뮤직몽타주, 스타일라이즈, 비트싱크, 포스터컬러
+- **주의**: 원본 영상 소스와 음악이 필요하고 깊이 추정·세그멘테이션 모델을 씀. 소스 영상의 권리 확인 필요(출처 불명의 인물·캐릭터 장면)
+
+#### [pound75423-464968](motion__pound75423-464968__2103722556918464968.md)
+`motion__pound75423-464968__2103722556918464968` · 16:9 · 64s · 조회 - · 에셋필요 -
+
+- **요약**: 모자 쓴 흰머리 애니 소녀 캐릭터 일러스트를 1박마다 컷 전환하며 무지개 스파이럴·만화경·RGB 글리치·거대 한자 플래시를 얹은 사이키델릭 글리치 MV
+- **어울리는 경우**: 음악·캐릭터 중심 하이텐션 인트로 / 버튜버·캐릭터 브랜드 티저 / 비트에 맞춘 빠른 컷 몽타주 / 강렬한 키워드 한 글자 플래시
+- **잘하는 표현**: 매 박 컷 로테이션과 흰 플래시 / 가로 띠 찢김+RGB 분리 글리치 / 회전 컬러휠·동심원 무지개 배경 / difference 합성 거대 한자
+- **스타일**: 형광 무지개·빨강·파랑 원색 배경에 흰 스티커 테두리 애니 캐릭터, 필름 그레인·스캔라인, 모서리 작은 HUD 문구(SOREHA·BAR·BPM). 2D 사이키델릭 콜라주.
+- **기술**: HTML Canvas, Playwright 프레임 캡처, ffmpeg 오디오 합성
+- **프롬프트 구조**: 제작 방법 / 전처리(배경 제거·곡 분석) / 편집 규칙 / 효과 번호 목록 / 기타 — 일본어 템플릿에 【 】 빈칸(대문자 내용·타이틀·날짜) 포함
+- **태그**: MV, 사이키델릭, 글리치, 애니캐릭터, 만화경, 비트싱크, 스티커, 무지개
+- **주의**: 캐릭터 일러스트 여러 장과 음악이 외부 에셋으로 필요. 【 】 빈칸 채우는 템플릿. 자극적인 플래시가 많아 강의용으로는 아주 짧게만
+
+#### [sanjeevn72-457691](motion__sanjeevn72-457691__2103456358125457691.md)
+`motion__sanjeevn72-457691__2103456358125457691` · 1:1 · 14s · 조회 - · 에셋필요 -
+
+- **요약**: UI 모핑 템플릿을 코발트 블루 강조색으로 구현한 14초 루프로, 버튼→체크→다이내믹 아일랜드→뮤직 플레이어→볼륨 슬라이더→토글→탭→청취 시간 차트→⌘K 'Publish'로 변형
+- **어울리는 경우**: 앱 UI 상호작용 흐름 소개 / 단일 브랜드 컬러가 있는 제품 기능 시연 / 미니멀 UI 모션 인서트
+- **잘하는 표현**: 단일 셰이프 모핑 / 드래그로 최대치를 넘겨 늘어나는 슬라이더 / 액체형 탭 인디케이터 / 명령 팔레트 타이핑 필터
+- **스타일**: 웜그레이 캔버스에 검정·흰 컴포넌트, 코발트 블루 단일 강조색, Geist 산세리프. 부드러운 그림자의 플랫 2D Dribbble풍.
+- **기술**: SVG, 단일 HTML seek(t), 폐형식 스프링, Playwright 렌더, ffmpeg tmix
+- **프롬프트 구조**: inputs / direction / structure / build / gotchas / start XML 블록의 재사용 UI 모핑 템플릿(원본 그대로)
+- **태그**: UI모션, 모핑, 코발트블루, 단일강조색, 미니멀, 커서, 스프링, 루프
+
+#### [superalesha-970412](motion__superalesha-970412__2103052154931970412.md)
+`motion__superalesha-970412__2103052154931970412` · 16:9 · 390s · 조회 - · 에셋필요 -
+
+- **요약**: '안개 속의 고슴도치'에서 영감을 받아 빨간 목도리 생쥐가 안개 낀 호수에서 할아버지 두더지를 찾아가는 6분 30초 단편 애니메이션으로, 9363프레임 전부를 Canvas 코드로 그림
+- **어울리는 경우**: 감성적인 스토리텔링 인서트 / 동화·그림책풍 설명 / 장면마다 다른 미술 기법 예시 / 따뜻한 오프닝·엔딩
+- **잘하는 표현**: 찢은 종이 콜라주·분필·티슈 페이퍼·모래 애니·팝업북 등 장면별 질감 전환 / 반딧불 빛 입자와 안개 / 다층 레이어 패럴랙스 / 캐릭터 연기
+- **스타일**: 노을 분홍·보라, 밤 남색, 물속 청록, 세피아 모래 톤을 오가는 따뜻한 팔레트에 종이 오려낸 2D 캐릭터. 그림책 같은 아날로그 질감의 서정적 무드.
+- **기술**: Canvas, Python 작곡(Steinway 피아노 샘플)
+- **프롬프트 구조**: 실제 프롬프트가 아니라 제작 의도·줄거리·장면별 기법을 설명한 짧은 작가 노트
+- **태그**: 단편애니, 종이콜라주, 그림책, 스토리텔링, 손그림질감, 서정적, 캐릭터, Canvas
+- **주의**: 6.5분 장편이라 인서트 참고는 특정 장면만 볼 것. 프롬프트가 소개 글 수준이라 재현용 지시는 없음. 화면 우상단에 @superalesha 워터마크
+
+#### [tanabe-fragm-706979](motion__tanabe-fragm-706979__2103802156675706979.md)
+`motion__tanabe-fragm-706979__2103802156675706979` · 16:9 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: Claude가 자기소개하는 15초 모션 쇼릴로, 한 줄 선이 'Hello'·코드 줄·입자 구체·0→100% 카운터·'write/solve' 단어로 변신하다 'Claude' 워드마크로 끝남
+- **어울리는 경우**: 자기소개·채널 인트로 / 브랜드 워드마크 리빌 / 능력·키워드 나열(쓰다·풀다) / 진행률 카운트 강조
+- **잘하는 표현**: 선→글자 변형과 1글자씩 등장 / 입자 집합·확산 / 원형 게이지 숫자 카운트업 / 다크↔아이보리 마스크 전환
+- **스타일**: 짙은 차콜 배경과 아이보리 배경을 오가며 테라코타 오렌지 단일 강조색, 우아한 이탤릭 세리프+작은 모노 HUD 라벨. 절제된 다크 미니멀 에디토리얼 2D.
+- **기술**: HTML·CSS·JavaScript, requestAnimationFrame, Web Audio API
+- **프롬프트 구조**: 역할 / 만들 것 / 진행 순서 / 구성 목표(초 단위) / 필수 기법 6개 / 합격 기준 / 산출물 — 일본어 단계형 브리프
+- **태그**: 자기소개, 쇼릴, 워드마크리빌, 키네틱타이포, 입자, 카운터, 다크미니멀, 세리프
+- **주의**: 브라우저에서 재생하는 HTML 화면을 녹화한 결과물로 보임
+
+#### [thegrootdev-966114](motion__thegrootdev-966114__2103516567824966114.md)
+`motion__thegrootdev-966114__2103516567824966114` · 1:1 · 14s · 조회 - · 에셋필요 -
+
+- **요약**: 포켓몬 도감 'Field Index' 카드가 스캔→매치→피카츄 프로필→울음소리 재생→볼륨→이로치 토글→스탯 차트→검색 'Eevee'→팀 추가 토스트로 변형되는 UI 모핑 14초 루프
+- **어울리는 경우**: 캐릭터·IP 테마 앱 UI 시연 / 도감·카드형 정보 화면 설명 / 스탯·능력치 막대 비교 / 게임 UI 컨셉 소개
+- **잘하는 표현**: 카드형 컨테이너 유지하며 내부 콘텐츠 교체 / 스탯 막대 드로잉+툴팁 / 이로치 토글로 이미지 변형 / 검색 타이핑 필터
+- **스타일**: 웜그레이 캔버스에 크림색 카드, 포켓볼 레드 헤더·검정 디바이더, Geist 산세리프와 컬러 포켓몬 아트. 깔끔한 플랫 2D 모던 도감 UI.
+- **기술**: SVG, 단일 HTML seek(t), 폐형식 스프링, numpy 비트 분석, Playwright 렌더, ffmpeg
+- **프롬프트 구조**: UI 모핑 템플릿을 포켓몬 테마로 확장 — 7마디 28비트를 마디별 번호 목록으로 상세 지정
+- **태그**: UI모션, 포켓몬, 도감, 카드UI, 스탯차트, 모핑, 레드강조, 루프
+- **주의**: 포켓몬 IP(피카츄 등 공식 아트) 사용. 프롬프트의 '포켓볼이 변형' 대신 실제로는 빨간 헤더 카드가 주 형태
+
+#### [twoclipping-551116](motion__twoclipping-551116__2106101258834551116.md)
+`motion__twoclipping-551116__2106101258834551116` · 1:1 · 25s · 조회 - · 에셋필요 -
+
+- **요약**: AI UGC 광고 캐스팅 서비스 'castr'의 25초 런칭 트레일러로, 코발트 옵아트 선버스트·3D 박스 카피·브리프 티켓·크리에이터 캐스팅 무대·폰 4대·웨이팅리스트 티켓·포스터 아치 워드마크로 이어짐
+- **어울리는 경우**: 서비스 런칭·웨이팅리스트 홍보 / 3단계 작동 방식 설명 / 사람·크리에이터 소개 카드 / 실제 영상 클립을 디자인 안에 넣는 프로모
+- **잘하는 표현**: 회전하는 옵아트 선버스트와 물결 패턴 / 마스크 라인에서 한 글자씩 올라오는 헤드라인 / 다이컷 흰 테두리 스티커 / 원형 디스크→폰 화면 모핑과 매치% 카운트업
+- **스타일**: 코발트 블루·잉크 네이비·크림·핑크·탠저린 고대비 팔레트, 굵은 컨덴스드·익스팬디드 산세리프 포스터 타이포, 필름 그레인. 시끄럽고 대담한 볼드 그래픽 포스터 2D+정사영 3D 박스.
+- **기술**: Canvas seek(t), 정사영 3D, ffmpeg 클립 시퀀스, Playwright 8서브프레임 모션블러, loudnorm
+- **프롬프트 구조**: inputs(기본값 포함) / direction(HEX 팔레트·폰트·모션 규칙·금지) / 54비트 structure / build / gotchas / start
+- **태그**: 런칭트레일러, 볼드그래픽, 옵아트, 포스터, 스티커, 코발트블루, 키네틱타이포, 실사클립
+- **주의**: 세로 토킹 클립 4개·인물 사진 12장·스티커 PNG·음악이 외부 에셋으로 필요(실존 인물 영상·사진 포함)
+
+#### [wani-shola-459278](motion__wani-shola-459278__2103769906638459278.md)
+`motion__wani-shola-459278__2103769906638459278` · 16:9 · 102s · 조회 - · 에셋필요 -
+
+- **요약**: 데브렐 엔지니어 개인 포트폴리오 사이트(sholajegede.com)의 실제 페이지·채팅 답변·패키지 차트·발표 이력을 브라우저 프레임 안에서 보여주는 102초 쇼릴
+- **어울리는 경우**: 개인 포트폴리오·이력 소개 / 웹사이트 기능 투어 / 채팅 Q&A 답변 강조 / 강연자·강사 소개 인서트
+- **잘하는 표현**: 실제 웹페이지 캡처를 브라우저 프레임에 넣어 줌·패닝 / 큰 세리프 헤드라인+작은 대문자 아이브로 / 채팅 질문·답변 타이핑 / 숫자 지표 카드
+- **스타일**: 크림·아이보리 배경과 짙은 갈색·검정 다크 화면, 테라코타 소량 강조, 우아한 세리프 헤드라인('I teach it.'). 여백 넉넉한 에디토리얼 2D 웹 쇼케이스.
+- **기술**: Remotion, 브라우저 캡처 (메타: SVG, GSAP)
+- **프롬프트 구조**: 사이트 URL·목적 + 사용할 실제 페이지·사실 제약·브랜드 규칙·음악·포맷을 짧은 불릿으로 지시
+- **태그**: 포트폴리오, 쇼릴, 웹사이트투어, 브라우저프레임, 에디토리얼, 세리프, 크림톤, 개인브랜딩
+- **주의**: 실존 인물의 실제 웹사이트 캡처가 핵심 에셋. 음악 필요
+
+#### [Landing page 3D scroll](motion__landing-page-3d-scroll__2110329502676951367.md)
+`motion__landing-page-3d-scroll__2110329502676951367` · 5:4 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: 바닥에 눕힌 랜딩 페이지 위를 카메라가 한 번도 끊지 않고 미끄러지듯 훑고, 위로 올라가 전체 페이지를 한 줄로 보여 준 뒤 히어로 카드로 내려앉아 두 줄 타이틀로 끝나는 3D 플라이오버
+- **어울리는 경우**: 강의에서 웹사이트·서비스·포트폴리오 페이지 소개 / 랜딩 페이지 런칭 티저 / "이 페이지 하나로 끝" 같은 결과물 공개 장면 / 웹 제작 강의 완성본 쇼케이스
+- **잘하는 표현**: 낮은 앵글 연속 글라이드와 얕은 피사계심도(앞쪽이 녹아내리는 블러) / 카드·사진·칩이 페이지에서 떠올라 렌즈 쪽으로 일어서는 레이어 분리 / 오버헤드 전체 조망 → 히어로로 다이브하는 카메라 연결 / 단어 단위로 블러에서 떠오르는 엔드 타이틀
+- **스타일**: 밝은 회백색 스튜디오 바닥(#f9fbfb)에 둥근 모서리 페이지와 넓고 부드러운 그림자, 하늘색 히어로와 사진 카드가 떠 있는 매끈한 3D. 엔드카드는 Geist 산세리프 + 회색 이탤릭 세리프 꼬리, 모서리에 주황·검정·파랑 로고 타일이 떠 있는 깔끔한 Apple풍.
+- **기술**: Playwright(헤드리스 Chromium 캡처·렌더), WebGL2, 피사계심도 셰이더, 16 서브프레임 모션 블러, H.264
+- **프롬프트 구조**: inputs/direction/structure/build/gotchas/start 태그로 나누고, 0.1초 단위 카메라 타임라인과 속도 곡선·블러 공식까지 수치로 지정한 상세 스펙(입력 받은 뒤 스틸 7장 확인 후 렌더)
+- **태그**: 랜딩페이지, 3D 플라이오버, 웹사이트 소개, 피사계심도, 원테이크, WebGL, Apple풍, 페이지 캡처
+- **주의**: 사용자의 실제 랜딩 페이지 URL·브랜드 로고·마무리 문구가 필요한 템플릿(영상 속 페이지는 "Design with Opus 5.5" 예시 사이트). voice-agent-landing-page가 같은 프롬프트를 줄여 다른 사이트에 적용한 사례
+
+#### [Launch video remake comparison](motion__launch-video-remake-comparison__2104401208958230764.md)
+`motion__launch-video-remake-comparison__2104401208958230764` · 16:9 · 12s · 조회 - · 에셋필요 -
+
+- **요약**: Manus 런칭 영상(dnyxstudios 제작) 원본과 이를 프레임 단위로 베껴 "Frame by Frame" 제품으로 재구성한 Opus 리메이크를 좌우로 나란히 재생하는 비교 영상
+- **어울리는 경우**: "레퍼런스 영상을 분석해 똑같이 재현" 같은 AI 리메이크 시연 / 원본 vs 결과 비교 장면 / 런칭 영상 구조(컷·비트) 분석 강의
+- **잘하는 표현**: 원본과 컷 타이밍·카메라 무빙까지 맞춘 샷 단위 재현 / 앱 아이콘 주위로 사각형이 궤도를 돌아 십자로 잠기는 모션 / 메뉴바 클릭 → 프로스티드 글래스 프롬프트 박스 타이핑 / 검은 엔드카드의 빛나는 워드마크
+- **스타일**: 흰 바탕에 밝은 파랑 하늘 그라디언트, 반투명 글래스 UI, Inter 산세리프의 Apple 키노트풍 2D. 두 패널이 거의 같은 구도라 색·로고만 다르고, 마지막은 검은 배경에 흰 글로우 워드마크.
+- **기술**: Playwright(프레임별 스크린샷), SVG feGaussianBlur, CSS blur, 합성 SFX, H.264 59.94fps
+- **프롬프트 구조**: 입력·기본값 → 방향(팔레트·금지 항목) → 프레임 번호(f0–f359) 단위 샷별 좌표·크기 테이블 → 빌드 규칙 → 주의 → 스틸 4장 승인 순서. frame-by-frame-launch-video 프롬프트에 브랜드 색 입력만 추가한 버전
+- **태그**: 리메이크, 비교영상, 런칭영상, Apple 키노트, 글래스, 커서 인터랙션, 프레임 단위 재현, UI 모션
+- **주의**: 좌우 분할 비교 영상. 왼쪽 "original" 라벨이 Manus 원본(타사 IP, 다른 제작사 작품), 오른쪽 "Frame by Frame remake"가 Opus 결과. 단독 스타일 참고는 frame-by-frame-launch-video(같은 리메이크의 1:1 단독본)를 쓸 것
+
+#### [Orange dot motion system](motion__orange-dot-motion-system__2107486052550062398.md)
+`motion__orange-dot-motion-system__2107486052550062398` · 16:9 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: 주황 점 하나가 토글 → "Motion"의 i 점 → 스프링 그래프 → 원·알약 도형 → 회전 타이포 링 → 하프톤 필드를 거쳐 "Opus 5.5 Motion designer. 0 keyframes" 엔드카드로 이어지는 15초 루프 2D 모션 필름
+- **어울리는 경우**: 채널·강의 브랜드 인트로/범퍼 / 하나의 모티프로 개념을 이어 가는 전환 인서트 / 스프링·이징 등 모션 원리 설명 / 수치 강조(+22%) 순간
+- **잘하는 표현**: 한 요소가 장면을 관통하며 모양을 바꾸는 연결 모션 / 데이터와 같은 함수로 그리는 스프링 그래프 / 원형 궤도 키네틱 타이포 / 하프톤 도트 필드 전환
+- **스타일**: 따뜻한 오프화이트와 거의 검정 배경을 번갈아 쓰고 선명한 주황 하나만 강조색으로 쓰는 2D. 굵은 그로테스크 산세리프, 그라디언트·글로우 없이 평면적이고 절제된 스위스풍.
+- **프롬프트 구조**: inputs/direction/structure/build/gotchas/start 태그 구조로, 장면 6개를 서술형으로 잇고 seek(t)·닫힌형 스프링·비트 동기 빌드 규칙을 단계별로 지정
+- **태그**: 주황 점, 모티프 연결, 스프링, 키네틱 타이포, 하프톤, 루프, 브랜드 범퍼, seek(t), 2D
+- **주의**: 이미 등록된 orange-dot-motion-design-system(@rossaxbt)과 프롬프트·영상이 동일한 재게시본(@ultimaxbt, 1920 해상도). 새 참고로 따로 고르지 말고 기존 항목과 같은 것으로 볼 것
+
+#### [White ball UI motion loop](motion__white-ball-ui-motion-loop__2108933141406638456.md)
+`motion__white-ball-ui-motion-loop__2108933141406638456` · 16:9 · 10s · 조회 - · 에셋필요 -
+
+- **요약**: 커서가 파란 토글을 누르면 튀어나온 흰 공이 슬라이더(0→100), 알림 카드 3장, 키보드 타이핑("retry")을 차례로 건드리며 한 UI 세계를 카메라로 따라가다 처음 토글로 돌아오는 10초 루프
+- **어울리는 경우**: 앱·UI 기능 흐름을 하나로 엮은 소개 인서트 / UI/UX 마이크로 인터랙션 강의 예시 / 짧은 루프 채널 범퍼 / "입력 → 반응" 연쇄를 보여 주는 설명 장면
+- **잘하는 표현**: 공 하나가 컴포넌트 사이를 이어 주는 연속 경로와 착지 스쿼시 / 공 위치에 묶여 차오르는 슬라이더 값 버블 / 한 월드 안에서 로그 줌 카메라로 이동하는 클로즈업 / 키 입력과 텍스트가 정확히 맞는 키보드 타이핑
+- **스타일**: 희미한 도트 그리드가 깔린 거의 검정 배경에 차콜 컨트롤, 선명한 흰 텍스트, 전기 파랑 강조 하나와 흰 공. iOS 다크모드 같은 깔끔한 2D UI.
+- **기술**: Playwright(60fps 렌더), seek(t) 단일 HTML
+- **프롬프트 구조**: inputs(기본값 포함)/direction/structure/build/gotchas/start 태그로, 장면 6개를 서술하고 결정론적 렌더·스프링·비트 정렬·루프 일치 규칙을 번호로 지정
+- **태그**: UI 모션, 다크모드, 마이크로 인터랙션, 커서, 슬라이더, 알림, 키보드, 루프, 원테이크 카메라
+- **주의**: orange-dot-motion-design-system과 같은 작성자(@rossaxbt)의 같은 틀 프롬프트로 만든 자매작(다크 UI 버전). code-based-ui-motion-design-showreel과도 커서 주도 UI 모션이라는 점이 비슷하지만 다른 영상
+
+#### [Voice agent landing page](motion__voice-agent-landing-page__2112540104896241791.md)
+`motion__voice-agent-landing-page__2112540104896241791` · 5:4 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: 가상 음성 AI 상담원 서비스 "Voicely"의 랜딩 페이지를 바닥에 눕혀 카메라가 연속으로 훑고, 전체 조망 후 히어로 카드로 내려앉아 "Every call, answered. even the ones at 3 a.m."로 끝나는 3D 플라이오버
+- **어울리는 경우**: SaaS·AI 서비스 웹사이트 소개 인서트 / 랜딩 페이지 런칭 티저 / 웹 제작 강의 결과물 쇼케이스
+- **잘하는 표현**: 페이지 위 연속 글라이드와 강한 피사계심도 / 카드·대시보드 목업이 살짝 떠오르는 레이어 분리 / 오버헤드 전체 조망 → 히어로 다이브 / 단어 단위 엔드 타이틀
+- **스타일**: 밝은 회백색 스튜디오 바닥에 흰 페이지, 파란 파도 모양 히어로 이미지와 검은 입력창, 모서리의 주황 로고 타일과 흐릿한 주황 보케. Geist 산세리프 + 회색 이탤릭 세리프의 깔끔한 Apple풍 3D.
+- **기술**: Playwright·Chromium 캡처, WebGL2, 피사계심도, 16 서브프레임 모션 블러, H.264
+- **프롬프트 구조**: 원본 landing-page-3d-scroll 스펙을 Inputs/Visual direction/Timeline/Motion rules/Build/Important/Workflow 단락으로 압축한 서술형 요약판(세부 수치·공식 생략)
+- **태그**: 랜딩페이지, 3D 플라이오버, SaaS, 음성 AI, 피사계심도, 원테이크, Apple풍, 페이지 캡처
+- **주의**: landing-page-3d-scroll(@twoclipping)과 같은 템플릿을 다른 작성자가 줄여 쓴 리메이크로 카메라 동선·타이밍·엔드카드 구성이 거의 같음. 실제 랜딩 페이지 URL·로고가 필요
+
+#### [Frame by Frame launch video](motion__frame-by-frame-launch-video__2104229441211969685.md)
+`motion__frame-by-frame-launch-video__2104229441211969685` · 1:1 · 12s · 조회 - · 에셋필요 -
+
+- **요약**: 가상 강의 제품 "Frame by Frame"의 12초 정사각 런칭 스팅. 앱 창 헤더 → 커서 클릭 → 궤도 사각형 아이콘 → Mac 메뉴바 → 글래스 프롬프트 타이핑 → 강의 페이지 → 글래스 타이틀 카드 2장 → 로고 → 검은 엔드카드로 이어짐
+- **어울리는 경우**: 앱·온라인 강의 상품 런칭 티저 / "프롬프트 입력 → 결과 페이지" 흐름 시연 / 강의 커리큘럼·모듈 소개 인서트 / 정사각 SNS 홍보 클립
+- **잘하는 표현**: 이미 움직이며 들어오고 가속·블러로 빠지는 샷 연결 / 속도 방향을 따르는 모션 블러 스미어 / 커서 호버·클릭과 프로스티드 글래스 프롬프트 박스 팝업 / 이미지를 잘라 넣은 거대한 글래스 글자 타이틀
+- **스타일**: 흰 바탕에 연파랑 헤이즈, 짙은 남색→하늘색 그라디언트 배경, 반투명 글래스 UI와 Inter 산세리프의 Apple 키노트풍 2D. 보라·주황 금지, 끝은 검은 배경의 흰 글로우 워드마크.
+- **기술**: Playwright(프레임별 스크린샷), SVG feGaussianBlur, 합성 SFX, H.264 59.94fps
+- **프롬프트 구조**: 입력·기본값 → 방향(팔레트·스토리·금지) → 프레임 번호 단위로 8개 샷의 좌표·크기·키프레임을 표처럼 적은 구조 → 빌드 → 주의 → 스틸 4장 승인
+- **태그**: 런칭 스팅, Apple 키노트, 글래스모피즘, 커서 인터랙션, 정사각, 모션 블러, 프롬프트 박스, 리메이크
+- **주의**: Manus 런칭 영상(dnyxstudios)을 샷 단위로 베낀 리메이크라 구도·흐름이 원본과 같음. 원본과 나란히 놓은 비교판은 launch-video-remake-comparison
+
+#### [Ora 2 image model launch film](motion__ora-2-image-model-launch-film__2107845961691091295.md)
+`motion__ora-2-image-model-launch-film__2107845961691091295` · 1:1 · 22s · 조회 - · 에셋필요 -
+
+- **요약**: 가상 이미지 생성 모델 "Ora 2"를 AI 연구소 런칭 영상처럼 소개하는 22초 정사각 필름. 이미지 콜라주, 글래스 프롬프트 바, 3x3 무드보드, 설정 슬라이더 패널, 120장 이미지 폭발이 로고로 모이는 장면을 내레이션 자막과 함께 보여 줌
+- **어울리는 경우**: AI 이미지·생성 도구 소개 인서트 / 많은 결과 이미지를 한 번에 보여 주는 포트폴리오 장면 / 슬라이더로 설정값을 바꾸는 기능 설명 / 신제품 공개 엔딩
+- **잘하는 표현**: 말하는 순간에 맞춰 한 단어씩 타이핑되는 자막 / 가장자리 굴절·광택까지 있는 리퀴드 글래스 UI / 16분음표마다 바뀌는 이미지 플래시·스타일 전환 / 수많은 이미지가 퍼졌다가 로고로 수렴
+- **스타일**: 순백 캔버스에 검은 산세리프 한 종, 실제 사진들(청사진 식물, 인물 사진), 글래스 패널 뒤 파스텔 민트·핑크 오라. 가볍고 깨끗한 AI 연구소 런칭풍 2D.
+- **기술**: ElevenLabs API(TTS), Whisper(단어 타이밍), Playwright(60fps, 8 서브프레임), ffmpeg, HTML canvas seek(t)
+- **프롬프트 구조**: inputs/script(빈칸 9줄 내레이션 틀)/voice/direction/structure(7장면)/sound(3밴드 사이드체인 수치)/build/gotchas/start 태그로 음성·자막·음향까지 다룬 풀 파이프라인 스펙
+- **태그**: AI 런칭, 이미지 모델, 리퀴드 글래스, 키네틱 자막, 내레이션, 이미지 콜라주, 파스텔 오라, 정사각
+- **주의**: 외부 TTS(ElevenLabs)·Whisper와 제품 스크린샷·이미지 40장 이상이 필요(기본값은 Unsplash·Pixabay 사진, 실존 인물 사진 포함). 영상 자체에 영어 내레이션이 깔려 있어 강의 인서트로 쓸 땐 음성·자막 부분을 빼고 화면 연출만 참고할 것
+
+#### [Food craving launch film](motion__food-craving-launch-film__2108210884799549714.md)
+`motion__food-craving-launch-film__2108210884799549714` · 16:9 · 16s · 조회 - · 에셋필요 -
+
+- **요약**: 음식 주문 AI 앱 "Cross AI" 런칭 필름. 무지개빛 글로우 입력창에 "배고픈데 맵고 바삭한 거" 요청을 타이핑 → 웍이 재료를 던지며 고민 → 라임 플러드와 함께 음식 카드가 튀어나와 "Fire Noodles"를 고르고 주문 완료까지 한 테이크로 이어짐
+- **어울리는 경우**: AI 챗봇·추천 서비스가 요청을 처리하는 흐름 설명 / 배달·커머스 앱 소개 인서트 / "질문 → 생각 중 → 결과 카드" 데모 장면 / 제품 카드 캐러셀
+- **잘하는 표현**: 전송 버튼이 웍으로, 버튼이 페이지로 바뀌는 공유 요소 전환 / 한 점에서 화면 전체로 번지는 라임 컬러 플러드 / Apple Intelligence풍 회전 무지개 글로우 입력창 / 어두운 음식 사진 카드 스트립 슬라이드
+- **스타일**: 따뜻한 흰 캔버스에 라임(#cdf24f)·주황·파랑 강조, 무지개빛 테두리 글로우, 검은 음식 사진 카드. Geist 산세리프의 밝고 경쾌한 2D 앱 UI.
+- **기술**: seek(t) 단일 HTML, Playwright(60fps, 8 서브프레임), ffmpeg tmix, Mixkit SFX
+- **프롬프트 구조**: inputs/direction/structure/build/gotchas/start 태그로, 130BPM 32비트를 구간별 비트 번호로 나눠 장면·문구·카드 크기까지 지정
+- **태그**: AI 챗봇, 음식 주문, 앱 런칭, 컬러 플러드, 공유 요소 전환, 무지개 글로우, 라임, 원테이크, 2D
+- **주의**: 프롬프트와 결과가 다름. 아웃트로는 검은 페이지의 92px 흰 글씨가 아니라 흰 화면에 작은 검은 글씨로 나오고, 배달 점·핀·로고 마크 없이 "Cross AI" 텍스트로만 끝남. 음식 사진(Pexels) 외부 에셋 필요
+
+#### [Taxtello bookkeeping app film](motion__taxtello-bookkeeping-app-film__2104139720829636937.md)
+`motion__taxtello-bookkeeping-app-film__2104139720829636937` · 16:9 · 14s · 조회 - · 에셋필요 -
+
+- **요약**: 독일 장부 관리 앱 Taxtello의 실제 UI로 만든 14초 프리미엄 제품 필름. 금색 로고 → 매출 대시보드(48.260€) → 영수증이 거래 내역에 연결 → 은행 매칭 → 세무 건강 점수 82→완료 → 워드마크 순으로 흘러감
+- **어울리는 경우**: 핀테크·회계·업무용 SaaS 소개 인서트 / 대시보드 숫자·차트를 고급스럽게 보여 주는 장면 / "흩어진 것 → 한곳에 정리" 서사 / 다크 프리미엄 브랜드 리빌
+- **잘하는 표현**: 원근 기울기와 얕은 심도로 띄운 실제 제품 화면 / 영수증이 거래 행으로 바뀌는 오브젝트 연결 전환 / 숫자 카운트업과 금색 차트 라인 드로잉 / 원형 점수 게이지가 채워지며 초록으로 바뀌는 상태 변화
+- **스타일**: 짙은 남색(#0c0f1a) 배경에 한 단계 밝은 패널, 따뜻한 금색(#e8b84b) 강조와 초록 상태 배지, Plus Jakarta Sans + JetBrains Mono 숫자. 절제된 Stripe·Apple풍 다크 프리미엄 2.5D.
+- **기술**: Remotion, React
+- **프롬프트 구조**: 역할 지정 → 저장소·브랜드 소스 경로 → 실제 디자인 토큰 → 크리에이티브 규칙 19개 → 포맷 → 감정선(CHAOS→CONTROL→CLARITY) → 초 단위 스토리보드 제안 → 구현·렌더 후 프레임 검사 반복 → 품질 기준·산출물 목록으로 된 긴 브리프
+- **태그**: 핀테크, 대시보드, 다크 프리미엄, 금색 강조, Remotion, 제품 필름, 숫자 카운트업, 오브젝트 전환
+- **주의**: 실제 Taxtello 저장소(디자인 토큰, 워드마크, 제품 스크린샷)를 읽어 만드는 브리프라 그대로 재사용 불가. 화면 문구가 독일어
+
+#### [Paper-style product launch film](motion__paper-style-product-launch-film__2103890476885585923.md)
+`motion__paper-style-product-launch-film__2103890476885585923` · 16:9 · 15s · 조회 - · 에셋필요 -
+
+- **요약**: 건설·건축 팀용 AI "Mebbian"을 설명하는 15초 모션그래픽. 종이 위로 튀는 민트 공 주변에 손글씨 메모와 서류 카드가 그려지고, 어두운 화면으로 전환해 "MEBBIAN LEARNS ALL OF IT" 키네틱 타이포와 성장 곡선 그래프를 거쳐 로고로 끝남
+- **어울리는 경우**: B2B·AI 서비스 개념 설명 인서트 / "흩어진 자료를 학습한다" 같은 추상 기능 시각화 / 전후 비교 그래프("천장" → 성장) / 손글씨 주석으로 강의 포인트 짚기
+- **잘하는 표현**: 획 순서대로 써지는 손글씨 마커 메모와 화살표 / 잔상(어니언 스킨)을 남기며 튀는 공 물리 / 흩어진 글자가 모여 완성되는 굵은 키네틱 타이포 / 밝은 종이 ↔ 어두운 화면의 급전환
+- **스타일**: 연한 종이색 캔버스와 짙은 녹회색 다크 화면을 번갈아 쓰고, 민트 공·로고 + 벽돌색 손글씨(Caveat) 메모, 크림색 서류·포스트잇 카드, Anton 굵은 대문자. 따뜻하고 손맛 있는 2D 노트 감성.
+- **기술**: HyperFrames, GSAP
+- **프롬프트 구조**: {{PRODUCT}}·{{COLOR_*}} 같은 빈칸 변수를 채우는 짧은 템플릿. 스타일 한 줄 → COPY → RULES(금지 문구·가짜 수치 금지) → CRAFT(색·폰트·이징·음향) 블록
+- **태그**: 손글씨, 종이 질감, 마커 메모, 키네틱 타이포, 공 물리, 라이트/다크 전환, B2B 설명, HyperFrames
+- **주의**: {{변수}}를 채워 쓰는 템플릿이라 제품 포지셔닝 문서·로고 파일이 필요. 장면 구성(공·그래프 등)은 프롬프트에 없고 결과에서 정해진 것
+
+#### [Prompt Motion site promo](motion__prompt-motion-site-promo__2107518066615582893.md)
+`motion__prompt-motion-site-promo__2107518066615582893` · 16:9 · 23s · 조회 - · 에셋필요 -
+
+- **요약**: Opus 모션 영상 갤러리 사이트 prompt-motion.com을 소개하는 23초 프로모. 풀블리드 영상이 홈의 첫 타일로 빠지고, 미리보기 그리드 스크롤 → 타일로 휩 줌 → 드롭에 맞춘 풀스크린 릴 3컷 → 엔트리 페이지 프롬프트 하이라이트·복사 → URL·타이틀 엔드카드로 이어짐
+- **어울리는 경우**: 웹사이트·갤러리·커뮤니티 서비스 소개 인서트 / 강의에서 참고 사이트를 보여 주는 장면 / "여기서 이 프롬프트를 복사한다" 같은 사용법 안내 / 여러 작품을 빠르게 훑는 몽타주
+- **잘하는 표현**: 타일 ↔ 풀블리드를 오가는 매치컷 줌(모서리 반경이 0으로) / 실제 사이트 그리드를 한 월드에 두고 움직이는 연속 카메라 / 빨간 형광펜이 프롬프트 한 구절을 긋는 강조 / Copy → Copied 버튼 상태 변화와 커서 헤일로
+- **스타일**: 거의 흰 페이지, 검은 알약 버튼, Geist + Geist Mono, 강조색은 적주황(#F0442C) 하나. 실제 사이트 화면을 그대로 쓰는 깔끔한 에디토리얼 웹 UI, 드롭 구간만 형광 연두·파랑·빨강의 다른 작품 릴이 꽉 참.
+- **기술**: Remotion, ffmpeg scdet(컷 감지)
+- **프롬프트 구조**: inputs/direction/structure/build/gotchas 태그로, 120BPM 46비트를 비트 구간별 장면으로 나누고 스크래핑·월드 좌표 카메라·루프 처리·비평 리뷰까지 빌드 단계로 지정
+- **태그**: 웹사이트 프로모, 갤러리, 매치컷, 휩 줌, 그리드, 형광펜 강조, 커서, 에디토리얼 UI, Remotion
+- **주의**: 화면 대부분이 다른 크리에이터들의 작품 영상(@handle 표기)과 실제 사이트 스크랩이라 외부 콘텐츠·권리 문제가 있음. 실제 갤러리 사이트가 있어야 하는 구성
