@@ -12,9 +12,7 @@
       "Bash(scripts/git/ship.sh)",
       "Bash(scripts/git/ship.sh *)",
       "Bash(./scripts/git/ship.sh)",
-      "Bash(./scripts/git/ship.sh *)",
-      "Bash(pnpm ship)",
-      "Bash(pnpm ship *)"
+      "Bash(./scripts/git/ship.sh *)"
     ]
   },
   "hooks": {
@@ -39,8 +37,5 @@
         ]
       }
     ]
-  },
-  "enabledPlugins": {
-    "studio@hack-collaboration-studio": false
   }
 }
