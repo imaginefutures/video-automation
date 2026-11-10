@@ -6,17 +6,20 @@ source (jasonzhu.ai data + X video CDN) into this folder.
 
     python3 video-references/opus-5.5/fetch.py          # download missing cases
     python3 video-references/opus-5.5/fetch.py --new    # list newer full-prompt cases not in cases.txt
+    python3 video-references/opus-5.5/fetch.py --sync   # add those to cases.txt, download them, list missing catalog entries
     python3 video-references/opus-5.5/fetch.py --only <name> ...   # just these cases
 
 scripts/inserts.py imports fetch_cases() to pull only the 1-3 references it picked for a motion
 insert, so a user without the full library still gets the catalog-wide pick.
 
 Stdlib only (cases from the second source also need the yt-dlp binary). Files that already exist are skipped, so it is safe to rerun.
+How a sync works end to end (selection rule, naming, catalog writing, log) is in _SYNC.md.
 """
 
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +28,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+DATA = HERE  # where .mp4/.md land; --dir points it elsewhere (e.g. the main checkout while cases.txt is edited in a worktree)
 INDEX_URL = "https://jasonzhu.ai/data/opus-prompts/index.json"
 PROMPT_URL = "https://jasonzhu.ai/data/opus-prompts/{id}.json"
 UA = {"User-Agent": "Mozilla/5.0"}
@@ -67,6 +71,27 @@ def write_prompt_md(path, name, r, prompt):
         f.write("\n".join(lines))
 
 
+def case_name(r):
+    """<category>__<title slug, 60 chars max>__<post id> - the naming rule of every jasonzhu case in cases.txt."""
+    slug = re.sub(r"[^a-z0-9]+", "-", r["title"]["en"].lower()).strip("-")[:60].strip("-")
+    return f"{r['category']}__{slug}__{r['id']}"
+
+
+def new_cases(index, have_ids):
+    """Index rows that pass the selection rule (Opus 5.5 among the models + full prompt) and are not in cases.txt yet."""
+    return [r for r in index.values()
+            if "opus-5.5" in (r.get("models") or [])
+            and (r.get("prompt") or {}).get("kind") == "full"
+            and r["id"] not in have_ids]
+
+
+def missing_catalog(names):
+    """Case names that have no `name` entry in _META.md section 5 yet."""
+    with open(os.path.join(HERE, "_META.md"), encoding="utf-8") as f:
+        meta = f.read()
+    return [n for n in names if f"`{n}`" not in meta]
+
+
 def load_index():
     return {r["id"]: r for r in json.loads(get(INDEX_URL))}
 
@@ -84,8 +109,8 @@ def fetch_extra(name):
     v = _extra.get(name.split("__")[1])
     if v is None:
         return "gone from source index"
-    md = os.path.join(HERE, name + ".md")
-    mp4 = os.path.join(HERE, name + ".mp4")
+    md = os.path.join(DATA, name + ".md")
+    mp4 = os.path.join(DATA, name + ".mp4")
     if not os.path.exists(md):
         with open(md, "w", encoding="utf-8") as f:
             f.write(f"# {v['slug']}\n\n- 작성자: @{v['author']}\n- 게시물: {v['post_url']}\n"
@@ -109,8 +134,8 @@ def fetch_one(name, index):
     r = index.get(cid)
     if r is None:
         return fetch_extra(name)
-    mp4 = os.path.join(HERE, name + ".mp4")
-    md = os.path.join(HERE, name + ".md")
+    mp4 = os.path.join(DATA, name + ".mp4")
+    md = os.path.join(DATA, name + ".md")
     try:
         if not os.path.exists(md):
             prompt = json.loads(get(PROMPT_URL.format(id=cid)))["prompt"]
@@ -135,9 +160,15 @@ def fetch_cases(names):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--new", action="store_true", help="list full-prompt Opus 5.5 cases missing from cases.txt")
+    ap.add_argument("--sync", action="store_true",
+                    help="append those cases to cases.txt, download them, list cases missing a _META.md entry")
     ap.add_argument("--jobs", type=int, default=6)
+    ap.add_argument("--dir", help="download into this folder instead of next to this script")
     ap.add_argument("--only", nargs="+", help="case names to fetch (default: every case in cases.txt)")
     args = ap.parse_args()
+    global DATA
+    if args.dir:
+        DATA = os.path.abspath(args.dir)
 
     with open(os.path.join(HERE, "cases.txt"), encoding="utf-8") as f:
         names = [line.strip() for line in f if line.strip()]
@@ -148,15 +179,17 @@ def main():
         wanted = {n.rsplit("__", 1)[1]: n for n in args.only}
     index = load_index()
 
-    if args.new:
-        new = [r for r in index.values()
-               if "opus-5.5" in (r.get("models") or [])
-               and (r.get("prompt") or {}).get("kind") == "full"
-               and r["id"] not in wanted]
+    if args.new or args.sync:
+        new = new_cases(index, wanted)
         for r in new:
             print(f"{r['id']}  {r['category']:<11} {r['title']['en']}")
         print(f"{len(new)} new case(s) not in cases.txt", file=sys.stderr)
-        return
+        if args.new:
+            return
+        added = [case_name(r) for r in new]
+        with open(os.path.join(HERE, "cases.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(sorted(set(names) | set(added))) + "\n")
+        wanted = {n.rsplit("__", 1)[1]: n for n in added}
 
     def work(item):
         cid, name = item
@@ -166,9 +199,14 @@ def main():
         results = list(ex.map(work, wanted.items()))
 
     failed = [(n, why) for n, why in results if why]
-    print(f"{len(results) - len(failed)}/{len(results)} cases ready in {HERE}")
+    print(f"{len(results) - len(failed)}/{len(results)} cases ready in {DATA}")
     for n, why in failed:
         print(f"  {n}: {why}")
+    if args.sync:
+        todo = missing_catalog(sorted(set(names) | set(wanted.values())))
+        print(f"{len(todo)} case(s) still need a _META.md catalog entry (see _SYNC.md step 3):")
+        for n in todo:
+            print(f"  {n}")
     sys.exit(1 if failed else 0)
 
 

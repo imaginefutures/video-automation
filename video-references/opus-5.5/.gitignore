@@ -3,4 +3,5 @@
 *.part
 *.md
 !_META.md
+!_SYNC.md
 _records.json
